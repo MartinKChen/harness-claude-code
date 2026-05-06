@@ -1,0 +1,17 @@
+{
+  "name": "harness-claude-code",
+  "version": "0.1.0",
+  "description": "Opinionated Claude Code dev workflow: feature deep-dive command, product-owner / architect / engineer agents, and a curated skill library covering TDD, coding patterns, frontend/backend conventions, git, Docker, and database migrations.",
+  "author": {
+    "name": "Martin Chen",
+    "email": "martinchen@gmail.com"
+  },
+  "keywords": [
+    "workflow",
+    "tdd",
+    "agents",
+    "skills",
+    "code-review",
+    "architecture"
+  ]
+}

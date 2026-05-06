@@ -1,0 +1,15 @@
+{
+  "name": "martinchen-marketplace",
+  "owner": {
+    "name": "Martin Chen",
+    "email": "martinchen77813@gmail.com"
+  },
+  "description": "Marketplace hosting the harness-claude-code plugin: feature deep-dive command, product/architect/engineer agents, and a curated skill library.",
+  "plugins": [
+    {
+      "name": "harness-claude-code",
+      "source": "./",
+      "description": "Opinionated Claude Code dev workflow: feature deep-dive command, product-owner / architect / engineer agents, and a curated skill library covering TDD, coding patterns, frontend/backend conventions, git, Docker, and database migrations."
+    }
+  ]
+}
