@@ -30,8 +30,8 @@ Subagents live in [`agents/`](agents/). Each one is scoped to a single role and 
 | Agent | Model | Role |
 | --- | --- | --- |
 | `product-owner` | opus | Interviews the user to clarify a feature, then produces the PRD, Critical Path, and Glossary and updates `CLAUDE.md`. |
-| `architect` | opus | Designs a ship-ready architecture without over-engineering, generating an ADR and an implementation-detail document and updating `CLAUDE.md` when high-level architecture shifts. |
-| `engineer` | sonnet | Implements one task at a time via strict outside-in TDD, applying backend or frontend pattern skills and touching container setup when needed. |
+| `architect` | opus | Designs a ship-ready architecture without over-engineering, generating an ADR, an implementation-detail document, per-entity data-model and api-contract files under `docs/PRDs/<feature>/`, and updating `CLAUDE.md` when high-level architecture shifts. |
+| `engineer` | sonnet | Implements one task at a time via strict outside-in TDD, applying backend or frontend pattern skills and touching container setup when needed. Pulls per-entity architecture context (data-models, api-contracts) on demand from the feature's `docs/PRDs/<feature>/` directory — resolved from the sub-issue's milestone — instead of bulk-loading. |
 | `e2e-runner` | sonnet | Maintains and executes Playwright E2E tests against the docker-compose stack; routes failures to the right engineer instead of patching tests around bugs. |
 | `security-reviewer` | sonnet | Read-only validator that checks the codebase and built images against the `security-patterns` skill, dispatches fixes to engineer teammates, and re-validates until clean. |
 
@@ -46,7 +46,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `tdd-workflow` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
 | `git-workflow` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
-| `implement-issue` | Drives a single GitHub issue from "ready" to "merged PR" by orchestrating an implementation team and a separate validation team. |
+| `implement-issue` | Drives a single GitHub issue from "ready" to "merged PR" by dispatching one-shot sub-agents per typed sub-issue (an `e2e-runner` for e2e, an `engineer` instructed as backend/frontend for the rest), then running a validation phase that dispatches further one-shot `e2e-runner`, `security-reviewer`, and `engineer` sub-agents until both gates are clean. |
 
 ### Coding patterns
 
