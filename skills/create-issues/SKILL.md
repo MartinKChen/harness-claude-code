@@ -27,7 +27,29 @@ Do NOT activate when the user is asking for a single one-off issue with no decom
 
 ## Workflow
 
-### 1. Analyze the context
+### 1. Verify feature lock-in (when `<feature-name>` is provided)
+
+When the user supplies a `<feature-name>`, the feature must be **locked in** before any issues are created. Lock-in is signaled by a **merged** PR titled `feature lockin` on the milestone whose title matches `<feature-name>` (this is the PR produced by `/deep-dive-feature`, see `commands/deep-dive-feature.md`).
+
+Check it via `gh` (defer to `git-workflow` for the canonical command shape):
+
+```bash
+gh pr list \
+  --search 'feature lockin in:title' \
+  --milestone "<feature-name>" \
+  --state all \
+  --json number,title,state,mergedAt,url
+```
+
+Decide based on the result:
+
+- **No PR returned** → the feature has not been locked in. **STOP.** Do not slice, do not draft, do not create issues. Surface the situation to the user and ask how they want to proceed (e.g. run `/deep-dive-feature <feature-name>` first, or correct the feature name).
+- **PR exists but `mergedAt` is null** (open or closed-without-merge) → lock-in is still in review or was rejected. **STOP.** Surface the PR URL and ask the user how to proceed (e.g. wait for / drive the PR to merge, or pick a different feature).
+- **PR exists and is merged** → proceed to Step 2.
+
+Skip this step when the user supplied a free-form requirement instead of a `<feature-name>` — there is no milestone to check.
+
+### 2. Analyze the context
 
 - If the user supplied a free-form requirement/enhancement description, treat that text as the source.
 - If the user supplied a `<feature-name>`, read both:
@@ -37,7 +59,7 @@ Do NOT activate when the user is asking for a single one-off issue with no decom
 - Also scan the repo for a domain glossary (e.g. `docs/glossary.md`, `GLOSSARY.md`) and any ADRs under `docs/adr/` that touch the affected areas. Slice titles and issue bodies MUST use glossary vocabulary and respect ADR decisions.
 - Note any user stories present in the source — they will be carried into the slice breakdown.
 
-### 2. Draft the slice breakdown
+### 3. Draft the slice breakdown
 
 Decompose the source into thin vertical slices following these rules:
 
@@ -54,7 +76,7 @@ For each slice, decide:
 - **Blocked by** — which slices (if any) must complete first. Most slices should have ≤1 blocker; a long blocker chain usually means the slices are too thick.
 - **User stories covered** — which user stories from the source this addresses, if the source has them. Omit if the source has no user stories.
 
-### 3. Quiz the user
+### 4. Quiz the user
 
 Present the breakdown as a numbered list. For each slice show: **Title**, **Type**, **Blocked by**, **User stories covered**.
 
@@ -66,7 +88,7 @@ Then ask the user explicitly:
 
 Iterate. Re-present the updated breakdown each round. Do not move on until the user gives an explicit approval ("looks good", "ship it", "approved", etc.). Soft acknowledgments ("ok", "sure") don't count — confirm.
 
-### 4. Create the issues
+### 5. Create the issues
 
 Once approved, create one issue per slice via `gh issue create` (defer to the `git-workflow` skill for the canonical invocation and labels). For each issue:
 
@@ -123,7 +145,7 @@ Good — vertical tracer bullets, each merge leaves the product working:
 
 ## Template
 
-### Slice breakdown (presented to user during step 3)
+### Slice breakdown (presented to user during step 4)
 
 ```markdown
 ## Proposed slice breakdown for <feature-name>
@@ -143,7 +165,7 @@ Good — vertical tracer bullets, each merge leaves the product working:
 Does the granularity feel right? Are dependencies correct? Should any slices be merged or split? Reply with explicit approval ("approved" / "ship it") to lock.
 ```
 
-### Issue body (used in step 4)
+### Issue body (used in step 5)
 
 ````markdown
 ## Context
