@@ -1,11 +1,11 @@
 ---
 name: implement-issue
-description: "Drive the end-to-end implementation of a GitHub issue: fetch the issue, derive a branch name, plan backend/frontend/e2e tasks (with E2E tests bookending implementation), create a worktree-backed feature branch, spin up an `implementation-team` of one `backend-engineer` and one `frontend-engineer` (both `subagent_type=engineer`) per implementation task plus an `e2e-runner` for the failing-test scaffold, drive tasks to green, open a PR that closes the issue, then tear down the implementation team and create a separate `validation-team` (`e2e-runner`, `backend-engineer`, `frontend-engineer`, `security-reviewer`) that first validates the E2E suite end-to-end and then runs the security review, dispatching fixes to the engineer teammates and pushing them to the same PR. Activate whenever the user asks to implement, build, ship, work on, or pick up an issue — phrases like 'implement issue 42', 'implement #42', 'work on issue 42', 'pick up #42', 'build out the feature in issue 42', 'ship issue 42', 'start implementation of issue 42', 'implement the issue', or any request that supplies a `gh` issue number / URL as the unit of work to implement. Triggers on verbs (implement, build, ship, deliver, develop, work on, pick up, start, kick off) paired with nouns (issue, ticket, #<n>, GitHub issue, story). Do NOT activate for issue *creation* (use `create-issues`), issue triage, or generic coding tasks without a referenced issue."
+description: "Drive the end-to-end implementation of a GitHub issue: fetch the main issue along with its typed sub-issues (e2e/backend/frontend) produced by `create-issues`, derive a branch name, create a worktree-backed feature branch, spin up an `implementation-team` of one `backend-engineer` / `frontend-engineer` (both `subagent_type=engineer`) per matching sub-issue plus an `e2e-runner` for the e2e sub-issue when one exists, register each sub-issue as a tracked task with the sub-issue body copied verbatim into the task body, drive tasks to green, open a PR that closes the issue, then tear down the implementation team and create a separate `validation-team` (`e2e-runner`, `backend-engineer`, `frontend-engineer`, `security-reviewer`) that first validates the E2E suite end-to-end and then runs the security review, dispatching fixes to the engineer teammates and pushing them to the same PR. Activate whenever the user asks to implement, build, ship, work on, or pick up an issue — phrases like 'implement issue 42', 'implement #42', 'work on issue 42', 'pick up #42', 'build out the feature in issue 42', 'ship issue 42', 'start implementation of issue 42', 'implement the issue', or any request that supplies a `gh` issue number / URL as the unit of work to implement. Triggers on verbs (implement, build, ship, deliver, develop, work on, pick up, start, kick off) paired with nouns (issue, ticket, #<n>, GitHub issue, story). Do NOT activate for issue *creation* (use `create-issues`), issue triage, or generic coding tasks without a referenced issue."
 ---
 
 # implement-issue
 
-Take a single GitHub issue from "ready" to "merged PR" by orchestrating two purpose-built agent teams. The skill fetches the issue, plans a strictly-typed (backend XOR frontend) task graph, isolates the work in a worktree-backed feature branch, dispatches each implementation task to a dedicated engineer in the `implementation-team`, opens a PR that closes the issue, then hands the diff to a separate `validation-team` that gates merge on a green E2E run followed by a clean security review.
+Take a single GitHub issue from "ready" to "merged PR" by orchestrating two purpose-built agent teams. The skill fetches the main issue along with the typed sub-issues (`e2e` / `backend` / `frontend`) that `create-issues` already laid down — the sub-issues ARE the work plan; this skill does not invent its own. It isolates the work in a worktree-backed feature branch, dispatches each sub-issue to a dedicated engineer in the `implementation-team`, opens a PR that closes the issue, then hands the diff to a separate `validation-team` that gates merge on a green E2E run followed by a clean security review.
 
 ## When to activate
 
@@ -31,25 +31,25 @@ Do NOT activate when the user is:
 
 ### Implement a referenced issue end-to-end
 
-1. **Fetch the issue.** Resolve the issue number from the user's request. Via `git-workflow`, run `gh issue view <n> --json number,title,body,labels,state,url` to pull the full issue. If the issue is closed or missing, stop and surface that — do not start work.
+1. **Fetch the main issue and its sub-issues.** Resolve the issue number from the user's request. Via `git-workflow`:
+   - Run `gh issue view <n> --json number,title,body,labels,state,url` to pull the full main issue.
+   - Fetch every sub-issue of `#<n>`. These are the typed task issues (`e2e` / `backend` / `frontend`) created by `create-issues`, and they ARE the work plan for this implementation — there is no separate planning step. Defer to `git-workflow` for the canonical sub-issue list invocation (typically `gh issue view <n> --json subIssues` or the equivalent GraphQL query when the CLI flag is unavailable). For each sub-issue, capture: number, title, body, parsed `Type` (`e2e` | `backend` | `frontend`), and the GitHub issue numbers in its `Dependencies` / `Blocked by` section.
 
-2. **Derive a branch name and task plan.** From the issue title and body:
-   - Pick a kebab-case `<branch-name>` (used for branch + worktree naming).
-   - Decompose the issue into discrete tasks. Every implementation task MUST be **either a backend implementation OR a frontend implementation — never a mix.** If a chunk of work would require both, split it into a backend task and a frontend task with an explicit dependency edge between them.
-   - For each task, record: short title, type (`backend` | `frontend` | `e2e`), what it delivers, and which other task(s) it depends on (`blockBy`).
-   - Always add the following `e2e` task to the plan, owned by `e2e-runner`:
-     - **Create/modify E2E test cases** — `type=e2e`, no blockers. Every backend/frontend implementation task MUST list this task in its `blockBy` so implementation cannot start until the failing E2E suite exists.
-   - Do NOT add a "validate E2E test cases" task here — that task is created later in step 9 by the validation team, not by the implementation team.
-   - Surface the plan back to the user before locking — confirm the feature name, the task list, and the dependency edges. Iterate until they approve.
+   Stop and surface back to the user — do not start work — if any of the following hold:
+   - The main issue is closed or missing.
+   - The main issue has zero sub-issues (it was not produced by `create-issues`, so there is no executable plan).
+   - A sub-issue has a `Type` that is not one of `e2e` / `backend` / `frontend`, or its body is missing the `Type` / `Delivery` / `Done criteria` sections.
+
+2. **Derive a branch name.** From the main issue title, pick a kebab-case `<branch-name>` used for branch + worktree naming. Confirm the branch name with the user before proceeding. **Do not invent a task plan here** — the work plan is the set of sub-issues already fetched in step 1, and their dependency graph is already final (`create-issues` resolved `Blocked by` to real issue numbers).
 
 3. **Create a worktree-backed feature branch.** Defer to `git-workflow` for the canonical worktree-creation flow. Use branch name `feature/<branch-name>` cut from up-to-date `origin/main`, and place the worktree at `../<repo>-<branch-name>` (or the repo's conventional sibling path). All subsequent steps run inside that worktree. **Capture the absolute worktree path** — every teammate spawned in step 4 must be told to operate inside it.
 
-4. **Spin up the implementation team.** Use `TeamCreate` to provision a team named **`implementation-team`**. Spawn one engineer teammate per implementation task plus a single `e2e-runner` for the failing-test scaffold task — every teammate is created with `mode=auto` so they execute their assigned task autonomously without prompting back on routine decisions:
-   - For every task with `type=backend`, spawn one `backend-engineer-<i>` (`subagent_type=engineer`, `mode=auto`). The count of `backend-engineer-*` teammates MUST equal the count of `backend` tasks from step 2.
-   - For every task with `type=frontend`, spawn one `frontend-engineer-<i>` (`subagent_type=engineer`, `mode=auto`). The count of `frontend-engineer-*` teammates MUST equal the count of `frontend` tasks from step 2.
-   - Spawn one `e2e-runner` (`subagent_type=e2e-runner`, `mode=auto`) to own the **Create/modify E2E test cases** task from step 2.
+4. **Spin up the implementation team.** Use `TeamCreate` to provision a team named **`implementation-team`**. The teammate roster is derived directly from the sub-issues fetched in step 1 — every teammate is created with `mode=auto` so they execute their assigned sub-issue autonomously without prompting back on routine decisions:
+   - For every sub-issue with `Type: backend`, spawn one `backend-engineer-<i>` (`subagent_type=engineer`, `mode=auto`). The count of `backend-engineer-*` teammates MUST equal the count of backend sub-issues from step 1.
+   - For every sub-issue with `Type: frontend`, spawn one `frontend-engineer-<i>` (`subagent_type=engineer`, `mode=auto`). The count of `frontend-engineer-*` teammates MUST equal the count of frontend sub-issues from step 1.
+   - If step 1 found a sub-issue with `Type: e2e`, spawn one `e2e-runner` (`subagent_type=e2e-runner`, `mode=auto`) to own it. For backend-only / data-model-only main issues with no `e2e` sub-issue, do NOT spawn an `e2e-runner` in `implementation-team`.
 
-   **One task per agent.** Each `backend-engineer-<i>` / `frontend-engineer-<i>` is assigned exactly one task — do not batch multiple tasks onto the same engineer teammate. The `<i>` suffix (`-1`, `-2`, …) makes each teammate addressable by name so `SendMessage` can dispatch the right task to the right agent.
+   **One sub-issue per agent.** Each `backend-engineer-<i>` / `frontend-engineer-<i>` is assigned exactly one sub-issue — do not batch multiple sub-issues onto the same engineer teammate. The `<i>` suffix (`-1`, `-2`, …) makes each teammate addressable by name so `SendMessage` can dispatch the right work to the right agent.
 
    Keep every teammate addressable by name (`SendMessage`) for the rest of the implementation phase.
 
@@ -57,7 +57,7 @@ Do NOT activate when the user is:
    - The absolute worktree path created in step 3 (e.g. `/Users/.../<repo>-<branch-name>`).
    - An explicit instruction that all work — file reads, edits, commands, commits — MUST happen inside that worktree, not in the main repo checkout.
    - The branch name `feature/<branch-name>` so they commit on the correct branch.
-   - The single task title + ID they own (so each engineer knows their one task).
+   - The sub-issue number + title they own (so each teammate knows their one piece of work and can re-read the full sub-issue body via `gh issue view <sub-issue-#>` if needed).
    - An instruction that **any further sub-agents they spawn must also be spawned with `mode=auto`**, since `mode` does not propagate to nested `Agent` calls automatically.
 
    Example briefing line to prepend to each teammate's first message:
@@ -67,12 +67,17 @@ Do NOT activate when the user is:
    Do not cd out of this path; all reads, edits, tests, and commits must happen here.
    ```
 
-5. **Create tasks for tracking and assignment.** For each task in the approved plan, call `TaskCreate` with the task title, description (incl. acceptance criteria pulled from the issue body), and the dependency hints noted in step 2. Capture the returned task IDs — they're needed for the next step.
+5. **Create tasks from the sub-issues.** For each sub-issue fetched in step 1, call `TaskCreate` to register a tracked task. Pass:
+   - `title` → the sub-issue title, prefixed with the sub-issue number for traceability, e.g. `[#<sub-issue>] <sub-issue title>`.
+   - `body` / description → the **full body of the GitHub sub-issue verbatim** (the `Type`, `Delivery`, `Done criteria`, `Dependencies`, and any other sections written by `create-issues`). Do not paraphrase or summarize — the sub-issue body is what `create-issues` produced for the assigned agent to execute against, and the agent reads this directly to know what to deliver and what "done" looks like. Optionally prepend a one-line header pointing back at the sub-issue URL so the agent can re-fetch via `gh issue view` if it needs labels / comments / attachments not captured in the body.
+
+   Capture a mapping of `<sub-issue number> → <returned local task ID>` for every sub-issue — step 6 needs it to translate the cross-sub-issue blocker references into local task-ID `blockBy` edges.
 
 6. **Update each task with owner and blockers.** For every created task, call `TaskUpdate` to set:
-   - `owner` → the specific teammate that will run it: `backend-engineer-<i>` for the i-th backend task, `frontend-engineer-<i>` for the i-th frontend task, or `e2e-runner` for the create-E2E task.
-   - `blockBy` → the task IDs of its dependencies determined in step 2 (omit / empty when the task has none).
-   This is what unblocks the teammates to start picking up work in the right order: the **Create/modify E2E test cases** task runs first (no blockers), and every backend/frontend task blocks on it.
+   - `owner` → the specific teammate matching the originating sub-issue's `Type`: `backend-engineer-<i>` for the i-th backend sub-issue, `frontend-engineer-<i>` for the i-th frontend sub-issue, or `e2e-runner` for the (at most one) e2e sub-issue.
+   - `blockBy` → translate the GitHub issue numbers from the originating sub-issue's `Dependencies` / `Blocked by` section into local task IDs using the `<sub-issue number> → <task ID>` mapping captured in step 5. Omit / empty when the sub-issue has no `Blocked by` entries.
+
+   This reproduces the dependency graph as it was approved during `create-issues`. Per the E2E-first rule baked in there, the e2e task runs first (no blockers) and every backend/frontend task lists the e2e task as a blocker — so the teammates pick up work in the correct order.
 
 7. **Drive tasks to completion.** Let the engineer agents execute their assigned tasks (each engineer follows its own TDD-driven workflow per the `engineer` agent definition). Monitor for blocked / failed tasks. Do NOT advance to step 8 until **every task** is reported complete with passing tests.
 
@@ -120,14 +125,15 @@ Task B (frontend): "Render user profile page consuming /users/:id"
 ### Iron rules
 
 - **One issue → one feature branch → one PR.** Never bundle multiple issues into one implementation run; never merge directly without a PR.
-- **Backend XOR frontend XOR e2e per task.** A task is owned by exactly one teammate. Mixed-layer implementation tasks must be split before `TaskCreate` is called.
-- **One task per engineer teammate in `implementation-team`.** Spawn one `backend-engineer-<i>` per `backend` task and one `frontend-engineer-<i>` per `frontend` task — never batch multiple tasks onto the same engineer instance.
+- **Sub-issues are the work plan — do not invent one.** The set of typed sub-issues (`e2e` / `backend` / `frontend`) attached to the main issue by `create-issues` is the canonical task graph; their `Dependencies` section is the canonical edge list. This skill faithfully executes that graph. If the main issue has no sub-issues, stop and tell the user — `create-issues` has not been run.
+- **Sub-issue body → Task body, verbatim.** When `TaskCreate` is called in step 5, the GitHub sub-issue body is copied into the Task description as-is so the assigned engineer agent has everything (`Type`, `Delivery`, `Done criteria`, `Dependencies`) without paraphrasing.
+- **Backend XOR frontend XOR e2e per task.** A task is owned by exactly one teammate. The sub-issue's `Type` field decides which.
+- **One sub-issue per engineer teammate in `implementation-team`.** Spawn one `backend-engineer-<i>` per backend sub-issue and one `frontend-engineer-<i>` per frontend sub-issue — never batch multiple sub-issues onto the same engineer instance.
 - **Two teams, two phases.** `implementation-team` (steps 4–8) ships the code and opens the PR; `validation-team` (step 9) gates merge on E2E + security. The teams never overlap — `implementation-team` is torn down at the end of step 8 before `validation-team` is created.
-- **E2E bookends implementation across teams.** The "Create/modify E2E test cases" task in step 2 (owned by `e2e-runner` in `implementation-team`) blocks every implementation task; the "Validate E2E test cases" task in step 9 (owned by `e2e-runner` in `validation-team`) gates the security review. No implementation task starts without failing E2E tests in place, and the security review does not start until the validation E2E suite is green.
+- **E2E bookends implementation across teams (when an `e2e` sub-issue exists).** The `e2e` sub-issue (owned by `e2e-runner` in `implementation-team`) blocks every implementation task — `create-issues` already encoded this via the E2E-first rule. The "Validate E2E test cases" task in step 9 (owned by `e2e-runner` in `validation-team`) gates the security review. For backend-only main issues with no `e2e` sub-issue, no `e2e-runner` is spawned in `implementation-team` and the bookend on the implementation side is skipped.
 - **Validation order is fixed: E2E first, then security.** In step 9, `security-reviewer` is only messaged after `e2e-runner` reports the validation suite green. If the security review surfaces fixes, re-run validation E2E after fixes land — both must be clean against the same commit before the PR is "ready".
-- **Dependencies are explicit.** Every cross-layer handoff (e.g. frontend consumes a new backend endpoint) appears as a `blockBy` edge — implicit ordering is not allowed.
+- **Dependencies come from the sub-issues.** Every `blockBy` edge in step 6 is the translation of a real GitHub issue number from a sub-issue's `Dependencies` section into a local task ID. No implicit ordering, and no edges that weren't in the source sub-issue graph.
 - **Worktree, not in-place checkout.** The feature branch lives in its own worktree directory so `main` and any sibling work stay untouched.
-- **Plan approval before task creation.** Do not call `TaskCreate` until the user has explicitly approved the feature name and task graph.
 - **PR closes the issue.** The PR body must contain `Closes #<n>` (or `Fixes #<n>`) so GitHub auto-closes on merge.
 - **Security review is mandatory before declaring done.** The PR is not "ready" until `security-reviewer` reports a clean pass and any fixes have been pushed to the PR branch.
 - **`security-reviewer` is read-only.** All code changes during the security loop are made by the engineer teammates in `validation-team`; the reviewer only validates and dispatches.
@@ -137,38 +143,32 @@ Task B (frontend): "Render user profile page consuming /users/:id"
 
 ## Template
 
-### Task plan presented to the user before locking (step 2)
+### Sub-issue roster + branch confirmation (step 2)
+
+Surface the sub-issues fetched in step 1 alongside the proposed branch name so the user can sanity-check both before the worktree is cut. The roster is read-only confirmation — do not edit / re-plan the graph; if it looks wrong, the right move is to fix the sub-issues via `create-issues` and re-invoke this skill.
 
 ```markdown
-## Implementation plan for issue #<n> — <issue title>
+## Ready to implement issue #<n> — <issue title>
 
-**Feature name:** `<branch-name>`
-**Branch:** `feature/<branch-name>` (worktree at `../<repo>-<branch-name>`)
+**Branch name:** `feature/<branch-name>` (worktree will be cut at `../<repo>-<branch-name>`)
 
-**Tasks (implementation-team, step 4–7):**
+**Sub-issues that will be executed (sourced from `gh`, not re-planned):**
 
-1. **Create/modify E2E test cases**
-   - Type: e2e (owner: `e2e-runner`)
-   - Delivers: failing Playwright suite covering this issue's acceptance criteria
-   - Blocked by: none — blocks every implementation task below
+1. `#<sub-issue>` — `<Type>` — <sub-issue title>
+   - Owner: `e2e-runner` | `backend-engineer-<i>` | `frontend-engineer-<i>`
+   - Blocked by: <list of GitHub sub-issue numbers from this sub-issue's Dependencies section, or "none">
 
-2. **<Backend or frontend task title>**
-   - Type: backend | frontend (owner: `backend-engineer-1` | `frontend-engineer-1`)
-   - Delivers: <one-line outcome>
-   - Blocked by: task #1 (and any other implementation tasks it depends on)
-
-3. **<Backend or frontend task title>**
-   - Type: ... (owner: `backend-engineer-2` | `frontend-engineer-2` | …)
-   - Delivers: ...
+2. `#<sub-issue>` — `<Type>` — <sub-issue title>
+   - Owner: ...
    - Blocked by: ...
 
 (…)
 
-**Created later by `validation-team` (step 9), not now:**
+**Created later by `validation-team` (step 9), not from the sub-issues:**
 
-- **Validate E2E test cases** — owner: `e2e-runner` in `validation-team`. Runs after the PR opens; gates the security review.
+- **Validate E2E test cases** — owner: `e2e-runner` in `validation-team`. Runs after the PR opens; gates the security review. Skipped when there is no `e2e` sub-issue (backend-only main issue).
 
-Confirm the feature name, task split, and dependency edges. Reply with explicit approval ("approved" / "ship it") to lock — once locked I'll create the worktree, the `implementation-team`, and the tracked tasks.
+Confirm the branch name. Reply with explicit approval ("approved" / "ship it") to lock — once locked I'll create the worktree, the `implementation-team`, and register each sub-issue as a tracked task.
 ```
 
 ### Final PR body (step 8)
