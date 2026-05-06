@@ -121,7 +121,7 @@ Once approved, create issues in this order. Defer to the `git-workflow` skill fo
 
 #### 5a. Create one parent issue per slice
 
-Use `gh issue create` with `--milestone "<feature-name>"` (only when a `<feature-name>` was provided; for free-form sources, omit the milestone flag). Body follows the [Parent issue body template](#parent-issue-template).
+Use `gh issue create` with `--milestone "<feature-name>"` (only when a `<feature-name>` was provided; for free-form sources, omit the milestone flag) and `--label "status:draft" --label "level:slice"`. Body follows the [Parent issue body template](#parent-issue-template).
 
 - Title uses glossary vocabulary.
 - The **Acceptance criteria** section is included **only when the slice has UI**, and only covers E2E behavior validatable from the UI. Use EARS notation, with non-trivial criteria expanded into 1+ Gherkin scenarios. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
@@ -129,7 +129,7 @@ Use `gh issue create` with `--milestone "<feature-name>"` (only when a `<feature
 
 #### 5b. Create task sub-issues per parent issue
 
-For each parent issue, create one task issue per task with `--milestone "<feature-name>"` (when applicable). Body follows the type-appropriate template:
+For each parent issue, create one task issue per task with `--milestone "<feature-name>"` (when applicable) and `--label "status:draft" --label "level:task" --label "type:<type>"` where `<type>` is the task's type (`e2e` | `backend` | `frontend`). The type label replaces the in-body `## Type` section, so the templates below omit that section. Body follows the type-appropriate template:
 
 - `e2e` → [E2E task body template](#e2e-task-template)
 - `backend` → [Backend task body template](#backend-task-template)
@@ -142,6 +142,10 @@ Blocker references and parent links can only be filled in once every issue has a
 1. **Update slice blockers.** Walk parent issues and edit each to link its blockers (e.g. `Blocked by #123`).
 2. **Update task blockers.** Walk task sub-issues and edit each to link blockers among siblings, translating task IDs (`1.be.1`, etc.) into real issue numbers via the mapping. Verify the E2E-first rule: every `backend` / `frontend` sub-issue on a slice with an `e2e` task MUST list that `e2e` task's issue number as a blocker.
 3. **Link tasks as sub-issues.** Set each task's parent to its corresponding slice's parent issue using GitHub's sub-issue mechanism via `gh` (route via `git-workflow`).
+
+#### 5d. Promote issues from draft to ready
+
+Once 5a–5c have completed cleanly (every parent + task issue has its blockers wired up and every task is linked to its parent), walk every issue created in this run and replace the `status:draft` label with `status:ready` (e.g. `gh issue edit <n> --remove-label "status:draft" --add-label "status:ready"`). This applies to both parent (slice) issues and task sub-issues. Do not promote partially — if any blocker / parent-link edit failed in 5c, fix it first, then promote.
 
 Report the created parent issue + task sub-issue numbers/URLs back to the user as a final summary, grouped by slice.
 
@@ -276,12 +280,9 @@ Scenario: <name tied to AC2>
 
 ### E2E task template
 
-Used in step 5b for tasks of type `e2e`.
+Used in step 5b for tasks of type `e2e`. The task's type is carried by the `type:e2e` label set in step 5b — do not duplicate it in the body.
 
 ```markdown
-## Type
-e2e
-
 ## Delivery
 E2E test cases to write (each maps to an AC / Gherkin scenario on the parent issue):
 - <test case 1>
@@ -289,7 +290,7 @@ E2E test cases to write (each maps to an AC / Gherkin scenario on the parent iss
 - <test case 3>
 
 ## Done criteria
-We have written E2E test cases that cover every scenario in the parent issue's acceptance criteria. The tests run in CI and pass against the implemented backend + frontend.
+We have written E2E test cases that cover every scenario in the parent issue's acceptance criteria.
 
 ## Dependencies
 - Blocked by: #<task> <!-- filled in during the post-creation task-blocker pass -->
@@ -297,12 +298,9 @@ We have written E2E test cases that cover every scenario in the parent issue's a
 
 ### Backend task template
 
-Used in step 5b for tasks of type `backend`. When the task changes a data model, the **Migration scenarios** block is mandatory.
+Used in step 5b for tasks of type `backend`. The task's type is carried by the `type:backend` label set in step 5b — do not duplicate it in the body. When the task changes a data model, the **Migration scenarios** block is mandatory.
 
 ````markdown
-## Type
-backend
-
 ## Delivery
 What is being created or modified:
 - API endpoint: `POST /<resource>` — <purpose>
@@ -345,12 +343,9 @@ Scenario: downgrade migration reverts cleanly
 
 ### Frontend task template
 
-Used in step 5b for tasks of type `frontend`.
+Used in step 5b for tasks of type `frontend`. The task's type is carried by the `type:frontend` label set in step 5b — do not duplicate it in the body.
 
 ````markdown
-## Type
-frontend
-
 ## Delivery
 What is being created or modified:
 - Page: `<path/to/page>` — <purpose>
