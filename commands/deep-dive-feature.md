@@ -9,7 +9,7 @@ Orchestrate a two-phase deep-dive on a new feature. Phase 1 is product discovery
 
 You (the orchestrator) coordinate the phases, gate on explicit user confirmation between them, and ferry messages between the user and the active teammate. Do **not** answer product or architectural questions yourself — route them to the right teammate. Equally important: do **not** answer on behalf of the user when a teammate asks the user a question — always wait for the human's actual reply.
 
-Git flow at a glance: orchestrator creates the feature branch after Phase 1 lock-in (Step 5b). `product-owner` commits its artifacts on that branch (Step 5c). `architect` commits its artifacts on the same branch (Step 9). Orchestrator opens the PR at the very end (Step 10).
+Git flow at a glance: orchestrator creates a milestone and the feature branch after Phase 1 lock-in (Step 5b). `product-owner` commits its artifacts on that branch (Step 5c). `architect` commits its artifacts on the same branch (Step 9). Orchestrator opens the PR linked to the milestone at the very end (Step 10).
 
 ## Initial input
 
@@ -69,7 +69,7 @@ Do not proceed to Step 5 without an explicit yes from the user.
 
 ---
 
-## Step 5 — Feature name → branch → product-owner writes + commits
+## Step 5 — Feature name → milestone → branch → product-owner writes + commits
 
 Once the user confirms lock-in, this step has three sub-stages. Run them in order.
 
@@ -78,15 +78,24 @@ Send `product-owner` a short message: "User locked requirements. Propose the keb
 
 When `product-owner` replies with a name, surface it to the user in one short sentence (e.g. "product-owner proposes `payment-retry-flow` — proceeding") and move on. If the name looks malformed (spaces, capitals, special chars), normalize it to kebab-case before using it.
 
-**5b. Orchestrator creates the branch.**
-You (the orchestrator) invoke the `git-workflow` skill yourself to **create and check out** `feature/{feature-name}` off the current default branch. This is a branch-only invocation — no commit, no PR yet. Both teammates' commits will land here.
+**5b. Orchestrator creates the milestone, then the branch.**
+
+First, create a GitHub milestone whose title is the feature name. Run:
+
+```
+gh api --method POST repos/:owner/:repo/milestones -f title="{feature-name}"
+```
+
+Set only the title — leave description, due_on, and state at their defaults. The milestone will be linked from the PR in Step 10.
+
+Then invoke the `git-workflow` skill yourself to **create and check out** `docs/{feature-name}` off the current default branch — this branch stages the documents that both teammates will generate. Branch-only invocation — no commit, no PR yet. Both teammates' commits will land here.
 
 If the working tree is dirty in a way that would block branching, stop and surface the issue to the user — don't try to clean it up unilaterally.
 
 **5c. `product-owner` writes artifacts and commits.**
 Now send `product-owner` a message instructing it to:
 - Generate its artifacts: PRD at `docs/PRDs/{feature-name}/requirement.md`, Critical Path (with the extend/supersede/new classification it already settled), Glossary updates, and CLAUDE.md product-context update if warranted.
-- After writing, **invoke `git-workflow` to commit on the current branch** (which is now `feature/{feature-name}`). The commit lands on this branch — do NOT create a new branch, do NOT open a PR. Suggested commit message: `docs(prd): {feature-name} requirements`.
+- After writing, **invoke `git-workflow` to commit on the current branch** (which is now `docs/{feature-name}`). The commit lands on this branch — do NOT create a new branch, do NOT open a PR. Suggested commit message: `docs(prd): {feature-name} requirements`.
 
 When `product-owner` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to Phase 2.
 
@@ -128,7 +137,7 @@ Same protocol as Step 4. When `architect` asks the user to lock decisions, **sto
 
 Once the user confirms lock-in, send `architect` a short message instructing it to:
 - Generate its artifacts: ADR (next zero-padded number, supersede set if any), `docs/ARDs/README.md` index update, `docs/PRDs/{feature-name}/implement-detail.md`, and CLAUDE.md architecture-context update if warranted. If any ADR is being superseded, the superseded `.md` file must be deleted per the agent's own rules.
-- After writing, **invoke `git-workflow` to commit on the current branch** (still `feature/{feature-name}` from Step 5b). Do NOT create a new branch, do NOT open a PR. Suggested commit message: `docs(adr): ADR-{NNNN} <short decision title>`.
+- After writing, **invoke `git-workflow` to commit on the current branch** (still `docs/{feature-name}` from Step 5b). Do NOT create a new branch, do NOT open a PR. Suggested commit message: `docs(adr): ADR-{NNNN} <short decision title>`.
 
 When `architect` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to Step 10.
 
@@ -140,8 +149,9 @@ The branch already exists (created in Step 5b) and both teammates' commits alrea
 
 Invoke the `git-workflow` skill **yourself** (via the Skill tool) to push the branch and open a single pull request. Brief git-workflow with:
 
-- **Action**: push current branch and `gh pr create`. Do NOT create a new branch — `feature/{feature-name}` is already checked out. Do NOT add new commits.
+- **Action**: push current branch and `gh pr create`. Do NOT create a new branch — `docs/{feature-name}` is already checked out. Do NOT add new commits.
 - **PR title**: `{Feature Name} — product + architecture deep-dive`.
+- **PR milestone**: link to the milestone created in Step 5b by passing `--milestone "{feature-name}"` to `gh pr create` (gh resolves milestones by title).
 - **PR body**: Summary section listing what was decided (one bullet per artifact: PRD, Critical Path, Glossary, ADR-{NNNN}, implement-detail, any CLAUDE.md updates, any superseded ADRs). Test plan section noting "documentation-only — no code changes" unless the rollout plan implies otherwise.
 
 Confirm the PR URL back to the user in one short sentence and stop.
@@ -153,7 +163,7 @@ Confirm the PR URL back to the user in one short sentence and stop.
 - **Never answer for a teammate.** If the user asks a product question while `architect` is active, route it to `product-owner`. If they ask a technical question while `product-owner` is active, note it for Phase 2 — don't answer it yourself.
 - **Never answer for the human.** When a teammate asks the user a question, your job is to surface it and wait. Do not simulate, infer, fabricate, or "best-guess" the user's answer from `$ARGUMENTS`, the seed sentence, prior turns, the codebase, memory files, or your own intuition. If you don't have a literal reply from the human in the most recent user turn, you do not have an answer — pause and let the user respond. This rule overrides auto mode: auto mode applies to *your* execution decisions, not to product or architectural decisions that belong to the user.
 - **Never skip a lock gate.** Both "lock requirements" and "lock decisions" require explicit user confirmation from the human — not your inference of consent. No silent advancement.
-- **Commits land on the feature branch, never on `main`.** The orchestrator creates `feature/{feature-name}` in Step 5b *before* either agent commits. Both agents commit on that branch (Steps 5c, 9). Never let either agent commit before the branch exists, and never let either agent open a PR — the PR is the orchestrator's job in Step 10.
+- **Commits land on the feature branch, never on `main`.** The orchestrator creates `docs/{feature-name}` in Step 5b *before* either agent commits. Both agents commit on that branch (Steps 5c, 9). Never let either agent commit before the branch exists, and never let either agent open a PR — the PR is the orchestrator's job in Step 10.
 - **Pass-through, don't paraphrase.** Forwarding teammate messages: keep the substance. The user is in the loop and reading every turn.
 - **Don't nudge on idle alone.** A bare `idle_notification` from a teammate is normal turn-end behavior, NOT a "no output" signal. Check for an actual message in the same turn-cycle before assuming silence; nudging on idle alone causes teammates to re-send and re-bundle prior questions, polluting the interview. If the teammate's last substantive message is unanswered, the next move belongs to the user — not to you.
 - **Don't dictate teammate working style.** Briefs should set goals and constraints, not micro-manage cadence (e.g. "group questions", "ask one at a time"). Each teammate's defaults are tuned for its role; trust them.
