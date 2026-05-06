@@ -1,6 +1,6 @@
 # harness-claude-code
 
-An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a feature deep-dive command, a roster of role-based agents, and a curated skill library covering TDD, coding patterns, frontend/backend conventions, git, Docker, and database migrations.
+An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a feature deep-dive command, a roster of role-based agents, and a curated skill library covering TDD (with bundled coding/frontend/backend/Docker references), git, database migrations, security, and API/module design.
 
 ## Install from GitHub
 
@@ -52,11 +52,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 
 | Skill | What it does |
 | --- | --- |
-| `coding-patterns` | Language-agnostic standards: naming, KISS/DRY/YAGNI, immutability, error handling, AAA tests, code-smell detection. |
-| `python-patterns` | Idiomatic Python: `uv`, PEP 8, type annotations, EAFP, Protocols, dataclasses, context managers, standard lint/test commands. |
-| `frontend-patterns` | React + TypeScript conventions: Next vs. Vite, composition, custom hooks, Context + Reducer, Tailwind tokens, accessibility, i18n. |
 | `database-patterns` | Code-first data modeling with SQLAlchemy + Alembic, naming conventions for tables / columns / constraints, migration testing with pytest-alembic. |
-| `docker-patterns` | Multi-stage builds, pinned tags, non-root runtime, narrow port exposure, deliberate volume choices, `docker compose` operations. |
 | `security-patterns` | Baseline app-sec checks: CVEs, secret handling, input validation, parameterized queries, auth/cookies, CSRF + rate limits, redacted logs. |
 
 ### Design
@@ -65,6 +61,17 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | --- | --- |
 | `design-api-endpoint` | Resource-oriented REST conventions: URLs, verbs, response/error shape, pagination, filtering, sorting, versioning, idempotency. |
 | `design-deep-module` | Ousterhout-style "deep module" design: narrow interfaces, hidden complexity, no shallow wrappers or pass-through layers. |
+
+### `tdd-workflow` references
+
+These were standalone skills; they now live under [`skills/tdd-workflow/references/`](skills/tdd-workflow/references/) and are loaded on demand by `tdd-workflow` (or read directly by agents that need them).
+
+| Reference | Read it when |
+| --- | --- |
+| `coding-patterns.md` | Always — language-agnostic standards (naming, KISS/DRY/YAGNI, immutability, error handling, AAA tests). |
+| `docker-patterns.md` | The task is container-related — modifying `Dockerfile`, `docker-compose.yaml`, or `.dockerignore`. |
+| `frontend-patterns.md` | The task implements frontend code — React + TypeScript, hooks, pages, forms, etc. |
+| `python-patterns.md` | The task implements backend code in Python — handlers, models, pytest tests. |
 
 ## Layout
 

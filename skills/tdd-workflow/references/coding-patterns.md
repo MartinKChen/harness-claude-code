@@ -1,8 +1,3 @@
----
-name: coding-patterns
-description: "Enforce general, language-agnostic coding standards whenever writing, editing, refactoring, or reviewing code. Activate on any implementation task — adding a function, fixing a bug, building a feature, refactoring a module, writing tests — across all languages (JavaScript/TypeScript, Python, Go, Rust, Java, C#, Ruby, Swift, Kotlin, etc.) and all file types (.ts, .tsx, .js, .py, .go, .rs, .java, .rb, .swift, .kt, .cpp, .cs). Triggers on verbs like implement, write, add, build, create, fix, refactor, extract, rename, simplify, clean up paired with code-shaped nouns (function, method, class, module, component, handler, test, util, helper). Encodes core principles (Readability, KISS, DRY, YAGNI), naming conventions (descriptive variables, verb-noun functions), immutability, error handling, async/parallel execution, type safety, AAA test structure, and code-smell detection (long functions, deep nesting, magic numbers)."
----
-
 # coding-patterns
 
 Language-agnostic coding standards that apply to every implementation task. The goal is consistent, readable, simple code: clear names, small functions, immutable data by default, parallel async where independent, strong types, and tests structured for clarity.

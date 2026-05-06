@@ -23,16 +23,25 @@ Do NOT activate when:
 - The change is non-behavioral: formatting, comments, type-only renames, dependency bumps, or doc edits.
 - The user has explicitly opted out of TDD for this task (rare — push back once before complying).
 
-## Sub-skill routing
+## References
 
-| Sub-skill | When to route to it |
-|-----------|---------------------|
+Read the reference files under `references/` on demand. They are not auto-activated — load them only when the conditions below apply.
+
+| Reference | When to read |
+|-----------|--------------|
+| `references/coding-patterns.md` | Always. Read at the start of every task — naming, KISS/DRY/YAGNI, immutability, error handling apply to every GREEN and REFACTOR step. |
+| `references/docker-patterns.md` | When the task is container-related — modifying `Dockerfile`, `docker-compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
+| `references/frontend-patterns.md` | When the task implements frontend code — React/TypeScript components, hooks, pages, forms, or anything under the frontend package. |
+| `references/python-patterns.md` | When the task implements backend code in Python — `.py` files, FastAPI/Flask/Django handlers, SQLAlchemy models, pytest tests. |
+
+Other skills still apply (route to them as you would any skill, not as files under this one):
+
+| Skill | When to route to it |
+|-------|---------------------|
 | `git-workflow` | Every RED, GREEN, REFACTOR, contract-test, and wiring step — produce a commit message and commit via this skill. Also for branch naming. |
-| `coding-patterns` | While writing the GREEN minimum implementation and the REFACTOR cleanup — naming, KISS/DRY/YAGNI, immutability, error handling. |
 | `design-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
 | `design-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
 | `database-patterns` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema/migration/naming. |
-| `frontend-patterns` / `python-patterns` | While writing module code in React+TS or Python — language-specific idioms inside the GREEN/REFACTOR steps. |
 
 ## Workflow
 

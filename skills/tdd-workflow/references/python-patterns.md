@@ -1,8 +1,3 @@
----
-name: python-patterns
-description: "Enforce idiomatic Python coding standards whenever writing, editing, refactoring, or reviewing Python code. Activate on any Python implementation task — adding a function, fixing a bug, building a feature, refactoring a module, writing tests — across .py files, pyproject.toml, conftest.py, and Python notebooks. Triggers on verbs like implement, write, add, build, create, fix, refactor, extract, simplify paired with Python-shaped nouns (function, class, module, dataclass, protocol, decorator, generator, context manager, fixture). Triggers on framework signals (FastAPI, Flask, Django, SQLAlchemy, Pydantic, pytest, mypy, ruff, black, isort, bandit, uv, poetry). Encodes uv environment management, PEP 8 conventions, type annotations on all signatures, EAFP over LBYL, modern type hints (PEP 604/585), Type Aliases and TypeVar, Protocol-based duck typing, dataclasses as DTOs, context managers, the canonical backend layout, and the standard lint/typecheck/test command set."
----
-
 # python-patterns
 
 Enforce idiomatic, modern Python practices on every Python implementation task. Encodes the conventions this project considers non-negotiable: `uv` for environments, PEP 8 style, type annotations on every signature, EAFP over LBYL, modern type hints, `Protocol` for duck typing, dataclasses as DTOs, context managers for resource handling, a fixed backend layout, and a standard lint/test command set.

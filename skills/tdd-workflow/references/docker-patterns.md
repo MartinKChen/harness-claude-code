@@ -1,8 +1,3 @@
----
-name: docker-patterns
-description: "Enforce idiomatic Docker and Docker Compose patterns whenever writing, editing, refactoring, or reviewing containerized setup. Activate on any container-shaped task — authoring a Dockerfile, wiring docker-compose.yaml, tuning a build, fixing image bloat, hardening a container, debugging a service. Triggers on file types Dockerfile, Dockerfile.*, docker-compose.yaml, docker-compose.yml, compose.yaml, compose.yml, .dockerignore. Triggers on verbs like containerize, dockerize, build, scaffold, harden, slim, optimize, refactor paired with container-shaped nouns (image, container, service, stage, layer, volume, network, compose, registry). Triggers on phrases like 'containerize this app', 'shrink the image', 'why is my image so large', 'add a service to compose', 'mount a volume', 'expose a port', 'run as non-root', 'multi-stage build'. Encodes mandatory multi-stage builds (base / build / final), pinned tags (never :latest), non-root runtime, runtime env-var secret injection, narrow port exposure, named/bind/anonymous volume selection, .dockerignore hygiene, and the standard `docker compose` operational command set."
----
-
 # docker-patterns
 
 Standardize how containerized setups are authored in this project. Every Dockerfile is multi-stage, every image is pinned and non-root, every compose service exposes only what it needs, and volumes are chosen deliberately. The skill also encodes the day-to-day `docker compose` commands used to operate and debug services.

@@ -36,16 +36,12 @@ Does NOT own: writing or editing any code, Dockerfile, config, or migration; dec
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
 | `security-patterns` | Once at the start of every review, before validating anything. The pattern catalogue lives in this skill — re-open whenever you need to recheck a pattern's exact bar. | Yes (always) |
-| `coding-patterns` | Before validating any source-code pattern, to anchor what idiomatic code should look like. | Yes (always) |
-| `docker-patterns` | Before validating image CVEs or any Dockerfile-touching pattern. | Yes, when the pattern touches container/image surface |
-
-This agent intentionally does **not** load `tdd-workflow`, `git-workflow`, or any pattern skill that prescribes writing code — it does not write code.
 
 ## Workflow
 
 ### Validate the branch end-to-end
 
-1. **Load skills.** Invoke `security-patterns` (the pattern catalogue you will iterate through) and `coding-patterns`. Invoke `docker-patterns` before any image- or container-touching pattern.
+1. **Load the pattern catalogue.** Invoke `security-patterns` — it is the catalogue you will iterate through.
 2. **Build images if missing.** The image-CVE pattern needs built images. If `docker compose build` has not been run on this branch, run it (read-only operation against source — produces images, does not modify code).
 3. **Resolve the open PR.** Determine the PR for the current branch with `gh pr view --json number,url,headRefName -q .` (or `gh pr list --head <branch>`). If no PR is open, halt and surface that to the user — this agent dispatches findings via PR comments and requires an open PR to operate.
 4. **Iterate the patterns from `security-patterns` in order, validate-only.** For each pattern in the skill, run the checks the skill prescribes, translated to this project's stack (FastAPI + SQLAlchemy + Postgres / React + Vite). Collect findings as a list of `{pattern, file:line, evidence, severity, owner}` records, where `owner` is `backend-engineer` or `frontend-engineer`. If the pattern fully passes, log "PATTERN <name>: PASS". For the image-CVE pattern, MEDIUM/LOW issues that are non-trivial to fix are recorded as per-image counts (reported only; not dispatched). Do not dispatch yet — collect everything first so the dispatch wave is a single PR comment.

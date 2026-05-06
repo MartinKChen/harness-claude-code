@@ -33,9 +33,7 @@ Does NOT own: writing or modifying production code (backend or frontend) to make
 
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
-| `coding-patterns` | At the start of any maintain run, before writing or editing test code. | Yes, in maintain mode |
 | `git-workflow` | For every commit produced during a maintain run. | Yes, in maintain mode |
-| `frontend-patterns` | When a test interacts with React component conventions (form controls, routing, ARIA roles) and the canonical selector for an element is unclear. | Optional |
 
 ## Workflows
 
@@ -44,20 +42,19 @@ Does NOT own: writing or modifying production code (backend or frontend) to make
 Inputs from the orchestrator: one or more critical-path file paths, the GitHub issue (number or body), and the assigned task ID.
 
 1. **Gate on inputs.** If zero critical-path file paths were supplied, stop immediately and report: *"No critical path provided — no new E2E test cases should be created for this issue."* Do not proceed.
-2. **Load skills.** Invoke `coding-patterns` before writing any test code.
-3. **Read the critical path(s).** Read every supplied critical-path file in full. Extract the ordered user-visible steps (`a → b → c → d …`) and the boundary conditions noted along the way.
-4. **Read the issue.** Pull the issue body and acceptance criteria (`gh issue view <n>` or the body passed in). List each acceptance criterion verbatim.
-5. **Map criteria to the critical path.** For each acceptance criterion, decide:
+2. **Read the critical path(s).** Read every supplied critical-path file in full. Extract the ordered user-visible steps (`a → b → c → d …`) and the boundary conditions noted along the way.
+3. **Read the issue.** Pull the issue body and acceptance criteria (`gh issue view <n>` or the body passed in). List each acceptance criterion verbatim.
+4. **Map criteria to the critical path.** For each acceptance criterion, decide:
    - **In scope** — it advances or refines a step on the critical path **and** has a user-visible manifestation in the UI that a browser can drive and assert against. Continue.
    - **Out of scope (API-only)** — the criterion is purely a backend contract (status codes, validation errors, persistence, auth rules) with no user-visible counterpart on the critical path. Record it for the report and note that backend integration tests should cover it; do not write an E2E for it.
    - **Out of scope (unrelated)** — it is unrelated to the supplied critical path. Record it for the report; do not write a test for it.
-6. **Survey existing E2E specs.** Read `e2e/` (or the project's E2E directory) and identify any spec that already covers part of the same critical-path flow. For each in-scope criterion, decide:
+5. **Survey existing E2E specs.** Read `e2e/` (or the project's E2E directory) and identify any spec that already covers part of the same critical-path flow. For each in-scope criterion, decide:
    - **Extend** an existing spec when the new criterion is a continuation of, or refinement to, an already-covered flow segment.
    - **Create** a new spec only when the flow is independent of every existing spec.
-7. **Author or edit the specs.** Write Playwright tests that walk the critical path end-to-end **through the browser UI**. Every spec must start with a `page.goto(...)` (or equivalent navigation) and exercise the feature via rendered elements; assertions must be on user-visible state (`expect(locator).toBeVisible()`, `toHaveText`, URL, etc.), never on a raw HTTP response from a backend call. Default to semantic selectors (`getByRole`, `getByLabel`, `getByText`); justify any `data-testid` use in a one-line comment. Keep one critical-path flow per spec file.
-8. **Smoke-execute each new/edited spec.** Bring up the docker-compose stack if needed and run only the touched specs (`npx playwright test <files>`). Confirm each spec loads, navigates, and reaches a real assertion — failures here must be assertion failures (feature not built yet), not load/parse/locator-API errors.
-9. **Commit through `git-workflow`.** One commit per logical test addition/extension, on the assigned feature branch.
-10. **Report back.** Return a structured summary (see Template) listing every spec created or modified, with file paths and the critical-path segment each spec now covers, plus any out-of-scope acceptance criteria you flagged.
+6. **Author or edit the specs.** Write Playwright tests that walk the critical path end-to-end **through the browser UI**. Every spec must start with a `page.goto(...)` (or equivalent navigation) and exercise the feature via rendered elements; assertions must be on user-visible state (`expect(locator).toBeVisible()`, `toHaveText`, URL, etc.), never on a raw HTTP response from a backend call. Default to semantic selectors (`getByRole`, `getByLabel`, `getByText`); justify any `data-testid` use in a one-line comment. Keep one critical-path flow per spec file.
+7. **Smoke-execute each new/edited spec.** Bring up the docker-compose stack if needed and run only the touched specs (`npx playwright test <files>`). Confirm each spec loads, navigates, and reaches a real assertion — failures here must be assertion failures (feature not built yet), not load/parse/locator-API errors.
+8. **Commit through `git-workflow`.** One commit per logical test addition/extension, on the assigned feature branch.
+9. **Report back.** Return a structured summary (see Template) listing every spec created or modified, with file paths and the critical-path segment each spec now covers, plus any out-of-scope acceptance criteria you flagged.
 
 ### Validate E2E test cases
 

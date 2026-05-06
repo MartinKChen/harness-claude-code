@@ -31,27 +31,19 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-ta
 
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
-| `coding-patterns` | At the start of every task, before writing any code. | Yes (always) |
-| `security-patterns` | At the start of every task, before writing any code; re-open whenever the task touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. | Yes (always) |
-| `docker-patterns` | At the start of every task, and again before touching any container file. | Yes (always) |
 | `tdd-workflow` | To drive the entire implementation loop (acceptance → red/green/refactor → wiring). | Yes |
+| `security-patterns` | At the start of every task, before writing any code; re-open whenever the task touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. | Yes (always) |
 | `git-workflow` | For every commit, branch, and any PR/issue interaction the task requires. | Yes |
-| `python-patterns` | When agent-name is `backend-engineer` and the task touches Python code. | Yes, when agent-name is `backend-engineer` |
 | `database-patterns` | When agent-name is `backend-engineer` and the task touches models, schemas, or migrations. | Yes, when agent-name is `backend-engineer` and the task changes the data layer |
-| `frontend-patterns` | When agent-name is `frontend-engineer` and the task touches React/TypeScript code. | Yes, when agent-name is `frontend-engineer` |
 
 ## Workflows
 
 ### Implement a received task
 
 1. **Receive and read the task.** Parse the task description and acceptance criteria. If anything required to start is missing or ambiguous, stop and ask — do not guess.
-2. **Determine role context from agent-name.** Read the agent-name assigned by the `implement-issue` skill: `backend-engineer` → backend role, `frontend-engineer` → frontend role. Do NOT re-derive the role from the task description or file paths. Record the role so the right pattern skills load in step 4.
-3. **Load always-on skills.** Invoke `coding-patterns`, `security-patterns`, and `docker-patterns` to anchor coding standards, security constraints, and container conventions before any code is written. Carry the security constraints (env-only secrets, schema-validated input, parameterized queries, `HttpOnly; Secure; SameSite` cookies, authorize-before-act, sanitized output, CSRF, per-route rate limits, redacted logs, locked dependencies) through every red/green/refactor step.
-4. **Load role-specific skills.**
-   - If agent-name is `backend-engineer`: invoke `python-patterns`, and also `database-patterns` if the task touches models/schemas/migrations.
-   - If agent-name is `frontend-engineer`: invoke `frontend-patterns`.
-5. **Drive implementation via TDD.** Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first.
-6. **Update container setup if affected.** If the implementation changed the runtime surface (new dependency, port, env var, volume), update `Dockerfile` / compose files under `docker-patterns` guidance. Otherwise leave them alone.
-7. **Commit through `git-workflow`.** Use the prescribed cadence; do not invent your own commit boundaries.
-8. **Verify against acceptance criteria.** Re-read the task and confirm each criterion is satisfied by a passing test or observable behavior.
-9. **Report completion via `TaskUpdate`.** Call `TaskUpdate` on the assigned task to mark it complete. Do NOT emit a free-form completion template — the task tracker is the source of truth.
+2. **Determine role context from agent-name.** Read the agent-name assigned by the `implement-issue` skill: `backend-engineer` → backend role, `frontend-engineer` → frontend role. Do NOT re-derive the role from the task description or file paths. Pass the role into `tdd-workflow` so it can pick the right language reference.
+3. **Load always-on security context.** Invoke `security-patterns` to anchor security constraints before any code is written. Carry the security constraints (env-only secrets, schema-validated input, parameterized queries, `HttpOnly; Secure; SameSite` cookies, authorize-before-act, sanitized output, CSRF, per-route rate limits, redacted logs, locked dependencies) through every red/green/refactor step. If the task touches models/schemas/migrations and agent-name is `backend-engineer`, also invoke `database-patterns`.
+4. **Drive implementation via TDD.** Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. The skill loads its own references (`coding-patterns`, `docker-patterns`, `frontend-patterns`, `python-patterns`) on demand based on the task — do not pre-load them here. All production code must be justified by a failing test first.
+5. **Commit through `git-workflow`.** Use the prescribed cadence; do not invent your own commit boundaries.
+6. **Verify against acceptance criteria.** Re-read the task and confirm each criterion is satisfied by a passing test or observable behavior.
+7. **Report completion via `TaskUpdate`.** Call `TaskUpdate` on the assigned task to mark it complete. Do NOT emit a free-form completion template — the task tracker is the source of truth.
