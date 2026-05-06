@@ -150,7 +150,7 @@ The branch already exists (created in Step 5b) and both teammates' commits alrea
 Invoke the `git-workflow` skill **yourself** (via the Skill tool) to push the branch and open a single pull request. Brief git-workflow with:
 
 - **Action**: push current branch and `gh pr create`. Do NOT create a new branch — `docs/{feature-name}` is already checked out. Do NOT add new commits.
-- **PR title**: `{Feature Name} — product + architecture deep-dive`.
+- **PR title**: `feature lockin`.
 - **PR milestone**: link to the milestone created in Step 5b by passing `--milestone "{feature-name}"` to `gh pr create` (gh resolves milestones by title).
 - **PR body**: Summary section listing what was decided (one bullet per artifact: PRD, Critical Path, Glossary, ADR-{NNNN}, implement-detail, any CLAUDE.md updates, any superseded ADRs). Test plan section noting "documentation-only — no code changes" unless the rollout plan implies otherwise.
 
