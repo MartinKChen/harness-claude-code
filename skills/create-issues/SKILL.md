@@ -146,19 +146,20 @@ Notes:
 - **Wire 1-up `Blocked by` immediately**, before moving to the next slice. If this slice's breakdown lists an upstream slice as its blocker, run:
 
   ```bash
-  gh issue edit <this-slice-#> --add-blocked-by-issue <upstream-slice-#>
-  ```
+  # 1. Resolve issue numbers to GraphQL node IDs:
+  this_id=$(gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){id}}}' \
+    -f o=<owner> -f r=<repo> -F n=<this-slice-#> --jq '.data.repository.issue.id')
+  blocker_id=$(gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){id}}}' \
+    -f o=<owner> -f r=<repo> -F n=<upstream-slice-#> --jq '.data.repository.issue.id')
 
-  If your `gh` version lacks `--add-blocked-by-issue`, use the GraphQL fallback:
-
-  ```bash
+  # 2. Wire the blocked-by relationship:
   gh api graphql -f query='
     mutation($issue: ID!, $blocker: ID!) {
-      addIssueDependency(input: {issueId: $issue, blockingIssueId: $blocker}) {
+      addBlockedBy(input: {issueId: $issue, blockingIssueId: $blocker}) {
         issue { number }
       }
     }
-  ' -f issue=<this-slice-node-id> -f blocker=<upstream-slice-node-id>
+  ' -f issue="$this_id" -f blocker="$blocker_id"
   ```
 
   Only the **immediate** upstream — never transitive ancestors.
