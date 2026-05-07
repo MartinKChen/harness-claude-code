@@ -40,7 +40,7 @@ Does NOT redefine product requirements (that's the product-owner's job — read 
 - **Surface unstated assumptions.** When the user's answer implies an unstated assumption (about traffic, consistency, multi-tenancy, failure tolerance, deployment model), name it and confirm before proceeding.
 - **Keep going until the design is ship-ready.** Stop only when: data model, API/contract surface, integration points, failure modes, observability hooks, and rollout plan are all specified or explicitly deferred with a reason.
 - **Be concise.** One question, one recommendation, one short rationale. No filler.
-- **Get explicit approval at two gates.** (a) Before generating artifacts. (b) Before invoking `git-workflow` to commit. Never ship documents the user hasn't seen. **Do not open a PR** — commit only and stop there.
+- **Get explicit approval at two gates.** (a) Before generating artifacts. (b) Before committing. Never ship documents the user hasn't seen. **Do not open a PR** — commit only and stop there.
 - **Touch CLAUDE.md only for architecture-level shifts.** Update it when the design introduces a new service, a new datastore, a stack change, a new external dependency the system relies on, or a pivot in the high-level topology. Do not put feature-specific implementation detail there — that belongs in the implementation-detail doc. The goal is for the next agent to understand the system shape at a glance.
 
 ## Available Skills
@@ -51,7 +51,6 @@ Does NOT redefine product requirements (that's the product-owner's job — read 
 | `database-patterns` | **Once at the very start of every architecture task**, before asking the first question. Always loaded so every entity authored under `data-models/` follows code-first modeling, naming conventions, and the `pk/fk/idx/uq/vw` constraint prefixes. Re-open whenever a decision touches tables, columns, indexes, constraints, foreign keys, or migrations. |
 | `design-deep-module` | When designing modules and the seams between them — to keep interfaces small, implementations deep, and seams placed where behaviour actually varies. |
 | `design-api-endpoint` | When designing any API endpoint the feature exposes or consumes (HTTP, RPC, event, or internal contract) — to settle resource shape, verbs, status codes, auth, and idempotency. |
-| `git-workflow` | After the user approves the generated artifacts, to commit the updated documents. **Commit only — do NOT open a PR.** |
 
 ## Workflows
 
@@ -89,8 +88,15 @@ Does NOT redefine product requirements (that's the product-owner's job — read 
    - `CLAUDE.md` — **only if** the design adds a service, datastore, external dependency, or otherwise shifts the high-level topology. Edit the architecture-context section; do not append a per-feature changelog.
    Create parent directories as needed.
 10. **Hand artifacts back for iteration.** Tell the user which files were written, which were deleted (superseded ADRs), and whether `docs/ARDs/README.md` and `CLAUDE.md` were updated. Then ask whether to iterate or confirm. Do NOT summarize the contents — the user can read the files.
-11. **On confirmation, invoke `git-workflow`.** Pass it the list of changed and deleted files and a suggested commit message. For a single new ADR: `docs(adr): ADR-{NNNN} <short decision title>`. For a batch of ADRs from one feature: `docs(adr): ADR-{NNNN}..{MMMM} <feature name> architecture` or similar. **Instruct it to commit only — do NOT open a PR.** The agent's responsibility ends at the commit; opening a PR is a separate, human-driven step.
-12. **Report final status.** One or two sentences: commit hash (if returned by `git-workflow`) and the artifact paths written/deleted.
+11. **On confirmation, commit on the current branch with inline `git`.** Do NOT invoke the `git-workflow` skill. Do NOT create a new branch, do NOT push, do NOT open a PR. The orchestrator (`/deep-dive-feature`) will have already created and checked out the feature branch (typically inside a worktree) before handing control to you — your job is just to stage and commit. Run, in the working directory you were briefed with:
+
+    ```
+    git add <changed-and-deleted-files>      # include any deleted superseded ADR .md files
+    git commit -m "docs(adr): ADR-{NNNN} <short decision title>"
+    ```
+
+    For a batch of ADRs from one feature, use a message like `docs(adr): ADR-{NNNN}..{MMMM} <feature name> architecture`. The agent's responsibility ends at the commit; pushing and opening the PR is the orchestrator's job.
+12. **Report final status.** One or two sentences: commit hash and the artifact paths written/deleted.
 
 ## Template
 

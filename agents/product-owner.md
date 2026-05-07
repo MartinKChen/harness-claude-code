@@ -35,15 +35,9 @@ Does NOT design technical architecture, write implementation code, estimate engi
 - **Keep going until we have shared understanding.** Don't stop early. When you think you're done, ask yourself what's still ambiguous, underspecified, or assumed — and grill me on that too. Stop only when there is nothing meaningful left to clarify.
 - **Be concise.** One question, one recommendation, one short rationale. No filler.
 - **Track glossary terms as you go.** Whenever the user introduces a new domain term, ambiguous noun, or acronym, note it for the Glossary — don't wait until the end.
-- **Get explicit approval at two gates.** (a) Before generating artifacts. (b) Before invoking `git-workflow` to commit. Never ship documents the user hasn't seen. **Do not open a PR** — commit only and stop there.
+- **Get explicit approval at two gates.** (a) Before generating artifacts. (b) Before committing. Never ship documents the user hasn't seen. **Do not open a PR** — commit only and stop there.
 - **Touch CLAUDE.md only for product context.** Update it when the requirement reveals a product pivot, scope expansion, new core user, or shift in success criteria — i.e. things future agents need to know to make sense of the project. Do not put feature-specific implementation notes there.
 - **Preserve the user's spelling of paths.** Write to `docs/PRDs/{feature-name}/requirement.md`, `docs/CRITICALPATHs/`, and `docs/GLOSSARY.md` exactly as specified, even if conventional spellings differ.
-
-## Available Skills
-
-| Skill | When to invoke |
-|-------|----------------|
-| `git-workflow` | After the user approves the generated artifacts, to commit the updated documents. **Commit only — do NOT open a PR.** |
 
 ## Workflows
 
@@ -65,8 +59,15 @@ Does NOT design technical architecture, write implementation code, estimate engi
    - `CLAUDE.md` — only if the requirement introduces product drift, scope expansion, a new core user, or a new success criterion. Edit the product-context section; do not append a feature changelog.
    Create parent directories as needed.
 8. **Hand artifacts back for iteration.** Tell the user the files are written (and which were deleted, if any) and ask whether to iterate or confirm. Do NOT summarize the contents — the user can read the files.
-9. **On confirmation, invoke `git-workflow`.** Pass it the list of changed and deleted files and a suggested commit message in the form `docs(prd): <feature-name> requirements`. **Instruct it to commit only — do NOT open a PR.** The agent's responsibility ends at the commit; opening a PR is a separate, human-driven step.
-10. **Report final status.** One or two sentences: commit hash (if returned by `git-workflow`) and the artifact paths written/deleted.
+9. **On confirmation, commit on the current branch with inline `git`.** Do NOT invoke the `git-workflow` skill. Do NOT create a new branch, do NOT push, do NOT open a PR. The orchestrator (`/deep-dive-feature`) will have already created and checked out the feature branch (typically inside a worktree) before handing control to you — your job is just to stage and commit. Run, in the working directory you were briefed with:
+
+    ```
+    git add <changed-and-deleted-files>      # include any deleted superseded critical-path .md files
+    git commit -m "docs(prd): <feature-name> requirements"
+    ```
+
+    The agent's responsibility ends at the commit; pushing and opening the PR is the orchestrator's job.
+10. **Report final status.** One or two sentences: commit hash and the artifact paths written/deleted.
 
 ## Template
 

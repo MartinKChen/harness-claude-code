@@ -17,35 +17,38 @@ Activate this skill whenever the user:
 - References `docs/PRDs/<feature-name>/requirement.md` or `docs/PRDs/<feature-name>/implement-detail.md` as the source for ticket creation.
 - Asks to "break this down into vertical slices" or "slice this work into tracer bullets".
 
-Do NOT activate when the user is asking for a single one-off issue with no decomposition needed (just use `gh issue create` via `git-workflow`), when they want to update an existing issue, or when they are asking for a roadmap/PRD instead of issues.
-
-## Sub-skill routing
-
-| Sub-skill | When to route to it |
-|-----------|---------------------|
-| `git-workflow` | All `gh` invocations (issue create, milestone assignment, sub-issue / parent linking, blocker linking) — defer to it for the canonical command shape, label conventions, and any auth / repo-detection concerns. |
+Do NOT activate when the user is asking for a single one-off issue with no decomposition needed, when they want to update an existing issue, or when they are asking for a roadmap/PRD instead of issues.
 
 ## Workflow
 
 ### 1. Verify feature lock-in (when `<feature-name>` is provided)
 
-When the user supplies a `<feature-name>`, the feature must be **locked in** before any issues are created. Lock-in is signaled by a **merged** PR titled `feature lockin` on the milestone whose title matches `<feature-name>` (this is the PR produced by `/deep-dive-feature`, see `commands/deep-dive-feature.md`).
+When the user supplies a `<feature-name>`, the feature must be **locked in** before any issues are created. Lock-in has two markers, both produced by `/deep-dive-feature` (see `commands/deep-dive-feature.md`):
 
-Check it via `gh` (defer to `git-workflow` for the canonical command shape):
+1. A GitHub **milestone** whose title matches `<feature-name>`.
+2. A **merged PR labeled `feature-lockin`** on that milestone. (PR title is human-readable — do **not** match by title.)
+
+Check both via `gh`:
 
 ```bash
+# 1. Milestone exists?
+gh api repos/:owner/:repo/milestones \
+  --jq ".[] | select(.title == \"<feature-name>\") | {number, title, state}"
+
+# 2. Lock-in PR merged on that milestone?
 gh pr list \
-  --search 'feature lockin in:title' \
+  --label "feature-lockin" \
   --milestone "<feature-name>" \
   --state all \
   --json number,title,state,mergedAt,url
 ```
 
-Decide based on the result:
+Decide based on the combined result:
 
-- **No PR returned** → the feature has not been locked in. **STOP.** Do not slice, do not draft, do not create issues. Surface the situation to the user and ask how they want to proceed (e.g. run `/deep-dive-feature <feature-name>` first, or correct the feature name).
-- **PR exists but `mergedAt` is null** (open or closed-without-merge) → lock-in is still in review or was rejected. **STOP.** Surface the PR URL and ask the user how to proceed (e.g. wait for / drive the PR to merge, or pick a different feature).
-- **PR exists and is merged** → proceed to Step 2.
+- **Milestone missing** → the feature has not been initialized. **STOP.** Surface to the user and ask how to proceed (e.g. run `/deep-dive-feature <feature-name>` first, or correct the feature name).
+- **Milestone exists but no `feature-lockin` PR** → the lock-in PR was never opened. **STOP.** Surface to the user.
+- **Lock-in PR exists but `mergedAt` is null** (open or closed-without-merge) → still in review or rejected. **STOP.** Surface the PR URL and ask the user how to proceed.
+- **Milestone exists AND lock-in PR is merged** → proceed to Step 2.
 
 Skip this step when the user supplied a free-form requirement instead of a `<feature-name>` — there is no milestone to check.
 
@@ -103,7 +106,7 @@ For each task, decide:
 
 ### 4. Quiz the user
 
-Present the full breakdown as a numbered list of slices, with each slice's tasks shown beneath it. For each slice show: **Title**, **Has UI?**, **Blocked by**, **User stories covered**. For each task show: **Type**, **Delivery (one-line summary)**, **Blocked by**.
+Present the full breakdown using [`templates/slice-task-breakdown.md`](templates/slice-task-breakdown.md) as the format reference: a numbered list of slices, with each slice's tasks shown beneath it. For each slice show: **Title**, **Has UI?**, **Blocked by**, **User stories covered**. For each task show: **Type**, **Delivery (one-line summary)**, **Blocked by**.
 
 Then ask the user explicitly:
 
@@ -117,37 +120,89 @@ Iterate. Re-present the updated breakdown each round. Do not move on until the u
 
 ### 5. Create the issues
 
-Once approved, create issues in this order. Defer to the `git-workflow` skill for the canonical `gh` invocations and label conventions throughout.
+Once approved, create issues in this order using the inline `gh` commands shown — do **not** delegate to the `git-workflow` skill. Throughout, keep a running mapping `<local task ID> → #<real issue number>` so dependency references can be translated as we go (e.g. `1.e2e → #142`, `1.be.1 → #143`, `2 → #150`).
 
-#### 5a. Create one parent issue per slice
+**Dependency rule (1-up only).** When the breakdown has a chain `s1 → s2 → s3`, only mark `s3` `Blocked by s2` and `s2` `Blocked by s1`. Do **not** also mark `s3` `Blocked by s1` — transitive blockers are inferred by GitHub. Same rule applies to task chains within a slice (`t3.1 → t3.2 → t3.3`: only `t3.3 Blocked by t3.2` and `t3.2 Blocked by t3.1`). The E2E-first rule is independent of this and still applies: every `backend` / `frontend` task on a UI slice lists the slice's `e2e` task as a blocker (and that `e2e` link counts as the task's 1-up blocker — additional same-type predecessors stack only when the chain truly requires it).
 
-Use `gh issue create` with `--milestone "<feature-name>"` (only when a `<feature-name>` was provided; for free-form sources, omit the milestone flag) and `--label "status:draft" --label "level:slice"`. Body follows the [Parent issue body template](#parent-issue-template).
+#### 5a. Create slice issues (parent issues)
 
-- Title uses glossary vocabulary.
-- The **Acceptance criteria** section is included **only when the slice has UI**, and only covers E2E behavior validatable from the UI. Use EARS notation, with non-trivial criteria expanded into 1+ Gherkin scenarios. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
-- For backend-only / database-only slices (no UI), **omit the Acceptance criteria section entirely** from the parent issue — those criteria live on the typed task sub-issues instead.
+For each slice, in dependency order (slices with no blockers first, then slices whose blockers are already created):
 
-#### 5b. Create task sub-issues per parent issue
+```bash
+gh issue create \
+  --title "<slice title using glossary vocabulary>" \
+  --body-file <slice-body.md> \
+  --milestone "<feature-name>" \
+  --label "level:slice" \
+  --label "kind:feature" \
+  --label "status:ready-to-review"
+```
 
-For each parent issue, create one task issue per task with `--milestone "<feature-name>"` (when applicable) and `--label "status:draft" --label "level:task" --label "type:<type>"` where `<type>` is the task's type (`e2e` | `backend` | `frontend`). The type label replaces the in-body `## Type` section, so the templates below omit that section. Body follows the type-appropriate template:
+Notes:
+- **Body** follows [`templates/parent-issue-body.md`](templates/parent-issue-body.md). The **Acceptance criteria** section is included **only when the slice has UI** (E2E-validatable behavior, EARS + Gherkin); omit it entirely for backend-only / database-only slices — those criteria live on the typed task sub-issues.
+- **Milestone** is omitted only when the user supplied a free-form requirement instead of a `<feature-name>`.
+- **`kind`** is `kind:feature` here (this skill produces the feature path); for the bug/enhancement fast-track described in the flow spec, the human creates a single issue manually with `kind:bug` or `kind:enhancement`.
+- After creation, record the mapping `<slice#> → #<real issue number>`.
+- **Wire 1-up `Blocked by` immediately**, before moving to the next slice. If this slice's breakdown lists an upstream slice as its blocker, run:
 
-- `e2e` → [E2E task body template](#e2e-task-template)
-- `backend` → [Backend task body template](#backend-task-template)
-- `frontend` → [Frontend task body template](#frontend-task-template)
+  ```bash
+  gh issue edit <this-slice-#> --add-blocked-by-issue <upstream-slice-#>
+  ```
 
-#### 5c. Post-creation passes
+  If your `gh` version lacks `--add-blocked-by-issue`, use the GraphQL fallback:
 
-Blocker references and parent links can only be filled in once every issue has a real number, so do these as a second pass. As issues are created in 5a/5b, keep a mapping table of `<task ID> → #<real issue number>` (e.g. `1.e2e → #142`, `1.be.1 → #143`, `1.be.2 → #144`, `1.fe.1 → #145`). Use that mapping to translate every `Blocked by` reference from the breakdown's task IDs into real issue numbers before editing.
+  ```bash
+  gh api graphql -f query='
+    mutation($issue: ID!, $blocker: ID!) {
+      addIssueDependency(input: {issueId: $issue, blockingIssueId: $blocker}) {
+        issue { number }
+      }
+    }
+  ' -f issue=<this-slice-node-id> -f blocker=<upstream-slice-node-id>
+  ```
 
-1. **Update slice blockers.** Walk parent issues and edit each to link its blockers (e.g. `Blocked by #123`).
-2. **Update task blockers.** Walk task sub-issues and edit each to link blockers among siblings, translating task IDs (`1.be.1`, etc.) into real issue numbers via the mapping. Verify the E2E-first rule: every `backend` / `frontend` sub-issue on a slice with an `e2e` task MUST list that `e2e` task's issue number as a blocker.
-3. **Link tasks as sub-issues.** Set each task's parent to its corresponding slice's parent issue using GitHub's sub-issue mechanism via `gh` (route via `git-workflow`).
+  Only the **immediate** upstream — never transitive ancestors.
 
-#### 5d. Promote issues from draft to ready
+#### 5b. Create task issues (sub-issues) per slice
 
-Once 5a–5c have completed cleanly (every parent + task issue has its blockers wired up and every task is linked to its parent), walk every issue created in this run and replace the `status:draft` label with `status:ready` (e.g. `gh issue edit <n> --remove-label "status:draft" --add-label "status:ready"`). This applies to both parent (slice) issues and task sub-issues. Do not promote partially — if any blocker / parent-link edit failed in 5c, fix it first, then promote.
+For each slice's tasks, in dependency order within the slice (E2E task first when present, then unblocked tasks, etc.):
 
-Report the created parent issue + task sub-issue numbers/URLs back to the user as a final summary, grouped by slice.
+```bash
+gh issue create \
+  --title "<task title>" \
+  --body-file <task-body.md> \
+  --milestone "<feature-name>" \
+  --label "level:task" \
+  --label "type:<e2e|backend|frontend>" \
+  --label "status:ready-to-review"
+```
+
+Body follows the type-appropriate template ([`templates/e2e-task-body.md`](templates/e2e-task-body.md) / [`templates/backend-task-body.md`](templates/backend-task-body.md) / [`templates/frontend-task-body.md`](templates/frontend-task-body.md)). Type is carried by the `type:*` label — do not duplicate inside the body.
+
+After creation:
+
+1. **Link the task to its parent slice as a sub-issue.** GitHub's sub-issue API requires the parent's and child's numeric **node IDs** (not issue numbers):
+
+   ```bash
+   parent_id=$(gh api repos/:owner/:repo/issues/<slice-#> --jq .node_id)
+   child_id=$(gh api repos/:owner/:repo/issues/<task-#>  --jq .node_id)
+   gh api graphql -f query='
+     mutation($parent: ID!, $child: ID!) {
+       addSubIssue(input: {issueId: $parent, subIssueId: $child}) { issue { number } }
+     }
+   ' -f parent=$parent_id -f child=$child_id
+   ```
+
+2. **Wire 1-up `Blocked by` immediately**, using the same `gh issue edit --add-blocked-by-issue` (or GraphQL fallback) shown in 5a. For tasks, the immediate blocker(s) are:
+   - The slice's `e2e` task (E2E-first rule), if the task is `backend` or `frontend` and the slice has an `e2e` task.
+   - The immediate predecessor in any same-type chain (e.g. for `t3.1 → t3.2 → t3.3`, mark `t3.3 Blocked by t3.2` only — never also `t3.3 Blocked by t3.1`).
+   - A sibling `backend` task ID when a `frontend` task needs that backend in place.
+
+   Translate every local task ID (`1.be.1`, etc.) into a real issue number via the mapping before issuing the API call. Skip transitive ancestors.
+
+#### 5c. Final summary
+
+Report the created parent issue + task sub-issue numbers/URLs back to the user, grouped by slice. Issues are already in `status:ready-to-review` — the human is expected to review and (per the flow spec) flip them to `status:ready-to-implement` to release them to the loops.
 
 ## Pattern
 
@@ -184,7 +239,8 @@ Good — vertical tracer bullets, each merge leaves the product working:
 - **Milestone-grouped.** When a `<feature-name>` is supplied, every parent issue and task sub-issue created MUST be set to `--milestone "<feature-name>"`.
 - **Use the project's vocabulary.** Issue titles and descriptions must use terms from the project's domain glossary (if present). Respect ADRs in any area you touch.
 - **Quiz before locking.** Never create issues until the user explicitly approves the slice + task breakdown.
-- **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>[.<index>]` (`e2e` / `be` / `fe`). IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers in step 5c.
+- **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>[.<index>]` (`e2e` / `be` / `fe`). IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers as each issue is created in step 5.
+- **1-up `Blocked by` only.** For chains `s1 → s2 → s3` (or `t3.1 → t3.2 → t3.3`), record only the immediate predecessor as the blocker. Never include transitive ancestors — GitHub infers them.
 - **E2E-first rule.** When a slice has an `e2e` task, every `backend` and `frontend` task on that slice MUST list the `e2e` task as a blocker. E2E test scaffolding lands before implementation; implementation tasks become unblocked once the failing tests exist.
 - **Acceptance criteria on the parent issue cover E2E/UI only.** Include the AC section on the parent issue **only when the slice has UI**, and scope it to behavior a user can validate from the UI. Backend/data-model behavior lives in the corresponding task's done criteria.
 - **EARS + Gherkin for behavioral criteria.** Wherever EARS notation is used (parent-issue AC for UI slices, backend-task done criteria, frontend-task done criteria), non-trivial criteria add 1+ Gherkin scenarios with `Given` / `When` / `Then` steps. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) MUST appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
@@ -202,170 +258,12 @@ Good — vertical tracer bullets, each merge leaves the product working:
 
 ## Templates
 
-### Slice + task breakdown (presented to user during step 4)
+Templates are stored as separate files under `templates/` so they can be edited and `cat`-loaded as `--body-file` payloads without round-tripping through the SKILL.md prose. Read the relevant file before drafting each artifact; copy it to a scratch file, fill in the `<…>` placeholders, then pass it to `gh issue create --body-file <scratch>`.
 
-```markdown
-## Proposed breakdown for <feature-name>
-
-1. **<Slice title>**
-   - Has UI?: <yes | no>
-   - Blocked by: <none | slice #N>
-   - User stories covered: <story id(s) or "—">
-   - Tasks:
-     - `1.e2e` — `e2e` — <one-line delivery summary>. Blocked by: none
-     - `1.be.1` — `backend` — <one-line delivery summary>. Blocked by: `1.e2e`
-     - `1.be.2` — `backend` — <one-line delivery summary>. Blocked by: `1.e2e`, `1.be.1`
-     - `1.fe.1` — `frontend` — <one-line delivery summary>. Blocked by: `1.e2e`, `1.be.1`
-
-2. **<Slice title>**
-   - Has UI?: ...
-   - Blocked by: ...
-   - User stories covered: ...
-   - Tasks:
-     - `2.be.1` — `backend` — ... Blocked by: ...
-     - ...
-
-(…)
-
-Notes the reader should verify before approving:
-- Every `backend` and `frontend` task on a UI slice MUST list that slice's `e2e` task in `Blocked by` (E2E-first rule).
-- Task IDs are local to this breakdown; they are translated into real GitHub issue numbers after creation.
-
-Does the slice granularity feel right? Are slice-level and task-level dependencies correct? Are the tasks per slice complete and correctly typed? Reply with explicit approval ("approved" / "ship it") to lock.
-```
-
-### Parent issue template
-
-Used in step 5a. The **Acceptance criteria** block is included only when the slice has UI; omit it entirely for backend-only / database-only slices.
-
-````markdown
-## Context
-<1–3 sentence summary tying this slice to the source requirement / PRD. Use glossary vocabulary.>
-
-## User stories covered
-- <story id / quoted line> — <short paraphrase>
-<!-- omit this section entirely if the source has no user stories -->
-
-## Scope
-**In scope**
-- <bullet>
-- <bullet>
-
-**Out of scope**
-- <bullet>
-
-<!-- INCLUDE the Acceptance criteria section ONLY when the slice has UI. -->
-<!-- Scope: behavior a user can validate from the UI (E2E). -->
-## Acceptance criteria (EARS)
-- AC1 — The `<system>` SHALL `<response>`.
-- AC2 — WHEN `<trigger>`, the `<system>` SHALL `<response>`.
-- AC3 — IF `<condition>`, THEN the `<system>` SHALL `<response>`.
-
-### Scenarios (Gherkin)
-```gherkin
-Scenario: <name tied to AC2>
-  Given <fact>
-  And <fact>
-  When <trigger>
-  Then the <system> MUST <response>
-  And it SHOULD <secondary response>
-```
-
-## Dependencies
-- Blocked by: #<issue> <!-- filled in during the post-creation slice-blocker pass -->
-
-## Notes
-<Any relevant ADRs, glossary terms, feature-flag names, or rollout caveats.>
-````
-
-### E2E task template
-
-Used in step 5b for tasks of type `e2e`. The task's type is carried by the `type:e2e` label set in step 5b — do not duplicate it in the body.
-
-```markdown
-## Delivery
-E2E test cases to write (each maps to an AC / Gherkin scenario on the parent issue):
-- <test case 1>
-- <test case 2>
-- <test case 3>
-
-## Done criteria
-We have written E2E test cases that cover every scenario in the parent issue's acceptance criteria.
-
-## Dependencies
-- Blocked by: #<task> <!-- filled in during the post-creation task-blocker pass -->
-```
-
-### Backend task template
-
-Used in step 5b for tasks of type `backend`. The task's type is carried by the `type:backend` label set in step 5b — do not duplicate it in the body. When the task changes a data model, the **Migration scenarios** block is mandatory.
-
-````markdown
-## Delivery
-What is being created or modified:
-- API endpoint: `POST /<resource>` — <purpose>
-- Data model: `<Entity>` — <columns / relations added or changed>
-- Utility: `<fn>` — <purpose>
-
-## Done criteria (EARS)
-- AC1 — The `<service>` SHALL `<response>`.
-- AC2 — WHEN `<trigger>`, the `<service>` SHALL `<response>`.
-- AC3 — IF `<condition>`, THEN the `<service>` SHALL `<response>`.
-
-### Scenarios (Gherkin)
-```gherkin
-Scenario: <name tied to AC2>
-  Given <fact about request / state>
-  When <trigger>
-  Then the <service> MUST <response>
-  And it SHOULD <secondary response>
-```
-
-<!-- INCLUDE this Migration scenarios block ONLY when this task changes a data model. -->
-### Migration scenarios (Gherkin)
-```gherkin
-Scenario: upgrade migration applies cleanly
-  Given the database is at the previous schema version
-  When the upgrade migration runs
-  Then the schema MUST match the new version
-  And existing rows MUST NOT be lost or corrupted
-
-Scenario: downgrade migration reverts cleanly
-  Given the database is at the new schema version
-  When the downgrade migration runs
-  Then the schema MUST match the previous version
-  And rollback-relevant data MUST NOT be lost
-```
-
-## Dependencies
-- Blocked by: #<task> <!-- filled in during the post-creation task-blocker pass -->
-````
-
-### Frontend task template
-
-Used in step 5b for tasks of type `frontend`. The task's type is carried by the `type:frontend` label set in step 5b — do not duplicate it in the body.
-
-````markdown
-## Delivery
-What is being created or modified:
-- Page: `<path/to/page>` — <purpose>
-- Component: `<ComponentName>` — <purpose>
-- Hook: `use<Thing>` — <purpose>
-
-## Done criteria (EARS)
-- AC1 — The `<component>` SHALL `<response>`.
-- AC2 — WHEN `<user action>`, the `<component>` SHALL `<response>`.
-- AC3 — IF `<condition>`, THEN the `<component>` SHALL `<response>`.
-
-### Scenarios (Gherkin)
-```gherkin
-Scenario: <name tied to AC2>
-  Given <fact about UI state>
-  When <user action>
-  Then the <component> MUST <response>
-  And it SHOULD <secondary response>
-```
-
-## Dependencies
-- Blocked by: #<task> <!-- filled in during the post-creation task-blocker pass -->
-````
+| Template file | Used in | Purpose |
+|---------------|---------|---------|
+| [`templates/slice-task-breakdown.md`](templates/slice-task-breakdown.md) | step 4 | Quiz format presented to the user for explicit approval of the slice + task breakdown. |
+| [`templates/parent-issue-body.md`](templates/parent-issue-body.md) | step 5a | Body for each slice (parent) issue. Include the Acceptance criteria section only when the slice has UI. |
+| [`templates/e2e-task-body.md`](templates/e2e-task-body.md) | step 5b | Body for each `e2e` task sub-issue. Type is carried by the `type:e2e` label, not the body. |
+| [`templates/backend-task-body.md`](templates/backend-task-body.md) | step 5b | Body for each `backend` task sub-issue. Migration scenarios block is mandatory when the task changes a data model. |
+| [`templates/frontend-task-body.md`](templates/frontend-task-body.md) | step 5b | Body for each `frontend` task sub-issue. |
