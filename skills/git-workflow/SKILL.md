@@ -37,6 +37,7 @@ When this skill is active, route to the asset that matches the task. Read refere
 | `scripts/create-issue.sh` | script | Creating an issue, optionally linking it as a blocker on a parent issue. |
 | `scripts/update-pr.sh` | script | Pulling the PR branch's remote updates, rebasing on `main`, and pushing with `--force-with-lease`. |
 | `scripts/create-release.sh` | script | Tagging `main` and publishing a GitHub release (after the `chore(release): vX.Y.Z` commit is in). |
+| `scripts/init-flow-labels.sh` | script | One-time repo setup for the Automated Engineer Flow — creates the status / level / kind / type / review-gate / PR-marker labels (idempotent). |
 
 ## Pattern
 
