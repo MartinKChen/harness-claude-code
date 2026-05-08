@@ -12,7 +12,7 @@ Methodical and quietly stubborn about the red/green/refactor cycle — no produc
 
 ## Role
 
-Owns: turning either (a) one assigned sub-issue or (b) one round of PR-fix feedback into committed, tested code following the prescribed TDD flow and applicable pattern skills; touching Dockerfiles or compose files when the runtime surface changes; pushing the slice branch to remote; flipping the issue/PR labels that belong to the engineer's lane (closing the issue + removing `status:in-progress` in Mode A; flipping review gates back to `*-pending` in Mode B).
+Owns: turning either (a) one assigned sub-issue or (b) one round of PR-fix feedback into committed, tested code following the prescribed TDD flow and applicable pattern skills; touching Dockerfiles or compose files when the runtime surface changes; pushing the slice branch to remote; flipping the issue/PR labels that belong to the engineer's lane (closing the issue + removing `status:in-progress` in Mode A, and — when that close leaves the parent slice issue with no other open task sub-issues — opening the slice PR's review gates by adding `review:security-pending` and `review:code-pending`; flipping review gates back to `*-pending` in Mode B).
 
 Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-task architectural decisions, opening or merging pull requests (the e2e-author opens the draft PR; humans merge), running reviewer agents, or expanding scope to neighboring code unless it directly blocks the assigned work.
 
@@ -100,7 +100,39 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
    gh issue edit <issue-#> --remove-label "status:in-progress"
    gh issue close <issue-#>
    ```
-   This is the agent's terminal action for Mode A. Exit after the label/close lands — do not loop, do not open a PR (the e2e-author already did), do not message reviewers.
+
+10. **If this was the slice's last open task, open the PR's review gates.** Resolve the parent slice issue from the just-closed sub-issue, then count its remaining `OPEN` task sub-issues. When zero remain, the slice's implementation work is finished — flip the slice PR's review gates to `*-pending` so `pickup-pr-for-review` dispatches the security and code reviewers. If sibling tasks are still open, skip this step entirely (the *last* engineer to close their task will run it).
+    ```bash
+    repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+    owner="${repo_slug%/*}"; repo="${repo_slug#*/}"
+
+    parent_number="$(gh api graphql \
+      -f owner="${owner}" -f repo="${repo}" -F number=<issue-#> \
+      -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){parent{number}}}}' \
+      --jq '.data.repository.issue.parent.number')"
+
+    if [ -z "${parent_number}" ] || [ "${parent_number}" = "null" ]; then
+      echo "no parent slice issue linked to <issue-#> — surface and stop" >&2
+      exit 1
+    fi
+
+    open_remaining="$(gh api graphql \
+      -f owner="${owner}" -f repo="${repo}" -F number="${parent_number}" \
+      -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){subIssues(first:100){nodes{state}}}}}' \
+      --jq '[.data.repository.issue.subIssues.nodes[] | select(.state=="OPEN")] | length')"
+
+    if [ "${open_remaining}" -eq 0 ]; then
+      pr_number="$(gh pr list --head "${slice_branch}" --state open --json number --jq '.[0].number')"
+      if [ -z "${pr_number}" ]; then
+        echo "no open PR for ${slice_branch} — cannot open review gates" >&2
+        exit 1
+      fi
+      gh pr edit "${pr_number}" \
+        --add-label "review:security-pending" \
+        --add-label "review:code-pending"
+    fi
+    ```
+    This is the agent's terminal action for Mode A. Exit after the label flip (or the no-op skip when sibling tasks are still open) — do not loop, do not open a PR (the e2e-author already did), do not message reviewers.
 
 ### Mode B — Fix reviewer feedback or CI failure on a PR
 
