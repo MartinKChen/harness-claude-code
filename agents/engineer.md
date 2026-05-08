@@ -62,9 +62,22 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
    ```
    Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, or carries no `type:<type>` label. Do not invent acceptance criteria.
 
-2. **Materialize the slice branch in a worktree.** The slice branch was attached to this issue at creation time by `create-issues` (via `gh issue develop --create`). Resolve it, then check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
+2. **Materialize the slice branch in a worktree.** The slice branch was attached to the **parent slice issue** at creation time by `create-issues` (via `gh issue develop --create`), not to each task sub-issue. Resolve the parent first, then list its linked branches; finally check the branch out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
    ```bash
-   slice_branch="$(gh issue develop --list <issue-#> | head -1 | awk '{print $1}')"
+   repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+   owner="${repo_slug%/*}"; repo="${repo_slug#*/}"
+
+   parent_number="$(gh api graphql \
+     -f owner="${owner}" -f repo="${repo}" -F number=<issue-#> \
+     -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){parent{number}}}}' \
+     --jq '.data.repository.issue.parent.number')"
+
+   if [ -z "${parent_number}" ] || [ "${parent_number}" = "null" ]; then
+     echo "sub-issue has no parent slice issue — surface and stop" >&2
+     exit 1
+   fi
+
+   slice_branch="$(gh issue develop --list "${parent_number}" | head -1 | awk '{print $1}')"
    repo_name="$(basename "$(git rev-parse --show-toplevel)")"
    worktree_path="/tmp/git-worktree/${repo_name}/${slice_branch}"
 
@@ -82,7 +95,7 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
      cd "$worktree_path"
    fi
    ```
-   If `gh issue develop --list` returns nothing, halt — the issue was not slice-branched by `create-issues` and there is no branch to implement against.
+   If `${slice_branch}` is empty, halt — the parent slice issue was not slice-branched by `create-issues` and there is no branch to implement against.
 
 3. **Load always-on security context.** Invoke `security-patterns` to anchor security constraints before any code is written. Carry them through every red/green/refactor step.
 

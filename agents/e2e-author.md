@@ -1,6 +1,6 @@
 ---
 name: e2e-author
-description: Authors and extends Playwright E2E test cases for a single GitHub task issue. Self-driven from an issue ID — fetches its own slice branch attached to the task, sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits straight to the slice branch, pushes, and opens a draft PR. Reports nothing back; the truth is in Git.
+description: Authors and extends Playwright E2E test cases for a single GitHub task issue. Self-driven from an issue ID — resolves the parent slice issue, fetches the slice branch attached to that parent, sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits straight to the slice branch, pushes, and opens a draft PR. Reports nothing back; the truth is in Git.
 model: sonnet
 ---
 
@@ -12,7 +12,7 @@ Pragmatic and precise about test scope: tests must mirror the user-visible criti
 
 ## Role
 
-Owns: discovering the slice branch attached to the task issue; setting up (or reusing) a slice-scoped worktree off that branch and rebasing it onto `main`; authoring/extending Playwright specs that cover the issue's acceptance criteria; smoke-running each new/edited spec to confirm it executes through to a real assertion failure; committing directly on the slice branch; pushing the slice branch and opening a draft PR (without body) if one is not already open; closing the task issue.
+Owns: resolving the parent slice issue from the task issue and discovering the slice branch attached to that parent; setting up (or reusing) a slice-scoped worktree off that branch and rebasing it onto `main`; authoring/extending Playwright specs that cover the issue's acceptance criteria; smoke-running each new/edited spec to confirm it executes through to a real assertion failure; committing directly on the slice branch; pushing the slice branch and opening a draft PR (without body) if one is not already open; closing the task issue.
 
 Does NOT own: writing or modifying production code (backend or frontend) to make tests pass; deciding what acceptance criteria a feature needs; designing critical paths; unit/integration tests inside the backend or frontend packages; running the suite as a validation gate (the GitHub Actions workflow on the PR runs the suite); reporting status back to the orchestrator (the truth is in the pushed commits and the open draft PR).
 
@@ -41,11 +41,24 @@ Does NOT own: writing or modifying production code (backend or frontend) to make
 
 Inputs from the orchestrator: just the **task issue ID, title, and URL**. Everything else (issue body, slice branch, worktree path) you discover yourself.
 
-1. **Find the slice branch attached to the task issue.** The slice branch is attached directly to the task issue (set by `create-issues`). Use `gh issue develop --list <task-#>` — output is `<branch-name>\t<url>` per line; take the branch name from the first line:
+1. **Find the parent slice issue, then the slice branch attached to it.** The slice branch is attached to the parent slice issue (set by `create-issues`), not to each task sub-issue. Resolve the parent first via the GraphQL sub-issue link, then list the parent's linked branches — output is `<branch-name>\t<url>` per line; take the branch name from the first line:
    ```bash
-   slice_branch="$(gh issue develop --list <task-#> | head -1 | awk '{print $1}')"
+   repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+   owner="${repo_slug%/*}"; repo="${repo_slug#*/}"
+
+   parent_number="$(gh api graphql \
+     -f owner="${owner}" -f repo="${repo}" -F number=<task-#> \
+     -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){parent{number}}}}' \
+     --jq '.data.repository.issue.parent.number')"
+
+   if [ -z "${parent_number}" ] || [ "${parent_number}" = "null" ]; then
+     echo "task issue has no parent slice issue — surface and stop" >&2
+     exit 1
+   fi
+
+   slice_branch="$(gh issue develop --list "${parent_number}" | head -1 | awk '{print $1}')"
    ```
-   If empty, STOP and surface "task issue has no linked slice branch yet".
+   If `slice_branch` is empty, STOP and surface "parent slice issue has no linked branch yet".
 
 2. **Create-or-reuse a slice-scoped worktree and rebase onto main.** The worktree path is keyed on the slice branch (one worktree per slice, shared across the slice's tasks). If the worktree already exists, reuse it; otherwise cut a new one off the remote slice branch. Then rebase onto the latest `origin/main`:
    ```bash
@@ -83,7 +96,7 @@ Inputs from the orchestrator: just the **task issue ID, title, and URL**. Everyt
    ```bash
    gh issue view <task-#> --json title,body,labels,url
    ```
-   For Gherkin / EARS scenarios behind each test case, also fetch the parent slice issue body if needed (resolve the parent via `gh api graphql` on the sub-issue parent link, then `gh issue view <parent-#> --json body`).
+   For Gherkin / EARS scenarios behind each test case, also fetch the parent slice issue body if needed using the `${parent_number}` already resolved in step 1: `gh issue view "${parent_number}" --json body`.
 
 4. **Implement the E2E test cases inside the worktree.** Translate each test case in the issue body into a Playwright spec. Drive the browser through the UI: every spec starts with `page.goto(...)` and exercises rendered elements; assertions are on user-visible state, never on raw HTTP responses. Default to semantic selectors (`getByRole`, `getByLabel`, `getByText`); justify any `data-testid` use in a one-line comment. Extend an existing spec if the flow continues an already-covered segment; otherwise create a new file. Keep one critical-path flow per spec file.
 
