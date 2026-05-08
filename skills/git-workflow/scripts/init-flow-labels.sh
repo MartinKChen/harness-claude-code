@@ -33,7 +33,7 @@ echo "status:"
 create "status:ready-to-review"     FBCA04
 create "status:ready-to-implement"  0E8A16
 create "status:in-progress"         1D76DB
-create "status:awaiting-merge"      5319E7
+create "status:need-attention"      D93F0B
 
 echo "level:"
 create "level:slice"                24292E
