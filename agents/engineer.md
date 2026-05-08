@@ -138,6 +138,7 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
         exit 1
       fi
       gh pr edit "${pr_number}" \
+        --add-label "review:e2e-ready" \
         --add-label "review:security-pending" \
         --add-label "review:code-pending"
     fi
