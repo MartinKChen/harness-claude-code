@@ -27,6 +27,16 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-ta
   - Mode B → fullstack. Read every language reference under `tdd-workflow` so you can fix wherever the feedback points.
 - Cite file paths with line numbers (`path/to/file.py:42`) when reporting what changed or where a behavior lives.
 - Update container setup (`Dockerfile`, `compose.yaml`, `.dockerignore`) only when the implementation introduces new runtime dependencies, ports, env vars, or volumes — not as routine cleanup.
+- **Per-slice container isolation: slug-tag built images and slug-name the compose project; override port conflicts at the shell, never in committed files.** Whenever a step requires building an image or bringing the compose stack up inside the worktree (TDD integration tests, smoke checks, anything that exercises the runtime), derive a deterministic slug from the slice branch and use it as both the image tag and the compose project name so concurrent slice worktrees can coexist on the same host without colliding:
+  ```bash
+  slug="$(printf '%s' "${slice_branch}" | tr '/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
+  repo_name="$(basename "$(git rev-parse --show-toplevel)")"
+  image_tag="${repo_name}:${slug}"
+
+  IMAGE_TAG="${image_tag}" docker compose -p "${slug}" build
+  IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d
+  ```
+  If a host port the stack binds is already in use by another slice (or by an unrelated local process), **override the port via env vars on the same `docker compose` command** — e.g., `HTTP_PORT=18000 IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d` against a `${HTTP_PORT:-8000}:8000` mapping in the compose file. **Do NOT edit `Dockerfile` or `docker-compose.yaml` to change a port to dodge the conflict** — those files codify the *standard* runtime contract and must stay identical across slices; a slice-local edit there will leak into the PR diff and break the next worktree on the same host. The only legitimate compose-file change in this neighborhood is adding `${VAR:-<standard-port>}` indirection for a port that previously had none — and only when the change naturally needs that variable, treated as a one-time conventionalization, not a workaround. Tear the stack down with `docker compose -p "${slug}" down -v` before exiting the worktree so the project, network, and volumes are reclaimed.
 - Commit on the cadence prescribed by `git-workflow` (per red/green/refactor step where applicable); never skip hooks or force-push.
 - Stop and report when the acceptance criteria / fix scope are met. Do not bundle unrequested improvements.
 
