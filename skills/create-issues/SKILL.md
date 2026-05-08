@@ -223,7 +223,16 @@ After creation:
    ' -f parent=$parent_id -f child=$child_id
    ```
 
-2. **Wire 1-up `Blocked by` immediately**, using the same GraphQL `addBlockedBy` mutation shown in 5a. Per the sequential rule, every task except the first in its slice has exactly one same-slice blocker — the immediately preceding task in the slice's order (`e2e` → `be.1` → `be.2` → … → `fe.1` → `fe.2` → …). Translate every local task ID (`1.be.1`, etc.) into a real issue number via the mapping before issuing the API call.
+2. **Attach the slice's development branch to the task issue.** The slice branch created in 5a (`feature/<slice#>-<intent>`) is the single integration target for every task in the slice — task work commits onto it, not onto per-task branches. Linking it on the task issue surfaces that target in the GitHub UI ("Development" sidebar) and tooling. Use `gh issue develop` with the **existing** branch name, which links rather than creates:
+
+   ```bash
+   # ${branch} is the same feature/<slice#>-<intent> created in 5a for this slice.
+   gh issue develop "<task-#>" --branch-repo "${repo_slug}" --name "${branch}"
+   ```
+
+   Every task sub-issue under the slice gets the same branch attached. If `gh issue develop` reports that a branch by that name already exists (it will — 5a just created it), that's the intended path: it links the existing branch to the task issue and exits cleanly.
+
+3. **Wire 1-up `Blocked by` immediately**, using the same GraphQL `addBlockedBy` mutation shown in 5a. Per the sequential rule, every task except the first in its slice has exactly one same-slice blocker — the immediately preceding task in the slice's order (`e2e` → `be.1` → `be.2` → … → `fe.1` → `fe.2` → …). Translate every local task ID (`1.be.1`, etc.) into a real issue number via the mapping before issuing the API call.
 
    Cross-slice task blockers are allowed when truly required, but again only the immediate predecessor — never transitive ancestors.
 
@@ -271,6 +280,7 @@ Good — vertical tracer bullets, each merge leaves the product working. Tasks w
 - **1-up `Blocked by` only.** For chains `s1 → s2 → s3` (or `1.e2e → 1.be.1 → 1.be.2`), record only the immediate predecessor as the blocker. Never include transitive ancestors — GitHub infers them.
 - **Sequential tasks within a slice.** Tasks within a slice are implemented one at a time, in a single chain. Order: `e2e` (when present) → `backend` tasks in index order → `frontend` tasks in index order. Each task lists exactly the immediately preceding task in that chain as its same-slice blocker (or none, for the first task).
 - **Slice branch is created at issue-creation time.** Step 5a opens the slice issue and immediately creates its `feature/<slice#>-<intent>` branch via `gh issue develop`. The slice is born ready for downstream task work — there is no separate "pickup slice" loop that materializes branches afterwards.
+- **Task sub-issues share the slice branch.** Every task sub-issue created in 5b has the slice's `feature/<slice#>-<intent>` branch (from 5a) linked to it via `gh issue develop --name`. There is no per-task branch — all task work for a slice integrates onto the single slice branch, and the GitHub "Development" link on each task surfaces that shared target.
 - **Branch intent name is hand-picked, not auto-slugged.** The `<intent>` segment is a short kebab-case noun-phrase (≤40 chars) that conveys what the slice does, chosen during step 5a. Do NOT mechanically slugify the issue title — titles are written for humans scanning a list, branch names need to read well in isolation.
 - **Acceptance criteria on the parent issue cover E2E/UI only.** Include the AC section on the parent issue **only when the slice has UI**, and scope it to behavior a user can validate from the UI. Backend/data-model behavior lives in the corresponding task's done criteria.
 - **EARS + Gherkin for behavioral criteria.** Wherever EARS notation is used (parent-issue AC for UI slices, backend-task done criteria, frontend-task done criteria), non-trivial criteria add 1+ Gherkin scenarios with `Given` / `When` / `Then` steps. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) MUST appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
