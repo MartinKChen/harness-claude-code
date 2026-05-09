@@ -179,8 +179,29 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
      - **CRITICAL / HIGH / MEDIUM** → must-fix. In scope unconditionally.
      - **LOW / NIT / suggestion (no severity)** → fix only when the effort is small and obviously in-scope (e.g. a rename, a typo, a one-line guard). Skip anything that would expand the diff materially or pull in unrelated refactors; note skipped items in the wrap-up so the reviewer can see they were considered.
      If a finding has no severity tag, infer one conservatively from the wording (security/correctness concerns → at least MEDIUM; style/readability → LOW). When in doubt, treat as must-fix rather than skipping.
+   - **`ci` scenario.** The orchestrator flagged `ci` because at least one workflow's **latest non-skipped** run on the head branch ended in something other than `success`. Picking the most recent run blindly is wrong — a guard (path filter, branch filter, `if:` gate) can skip a workflow after the failing commit, leaving `conclusion == "skipped"` as the literal latest run while the real failure sits one or more runs back. Mirror the orchestrator's per-workflow walk-back to find the run(s) that actually failed, then pull each one's failing-step log:
+     ```bash
+     slice_branch="$(gh pr view <pr-#> --json headRefName -q .headRefName)"
 
-   If neither channel surfaces actionable input (no failing CI, no new comments), halt and surface back to the orchestrator — there is nothing to fix.
+     failed_run_ids="$(gh run list --branch "${slice_branch}" --limit 200 \
+       --json databaseId,workflowName,conclusion,status,createdAt \
+       --jq '[.[] | select(.status == "completed" and .conclusion != "skipped")]
+             | group_by(.workflowName)
+             | map(max_by(.createdAt))
+             | .[] | select(.conclusion != "success") | .databaseId')"
+
+     if [ -z "${failed_run_ids}" ]; then
+       echo "no failed run on ${slice_branch} — orchestrator dispatch and live CI state disagree; surface and stop" >&2
+       exit 1
+     fi
+
+     for run_id in ${failed_run_ids}; do
+       gh run view "${run_id}" --log-failed
+     done
+     ```
+     Read each failing log for the actual error and the file/line it points at — those become the RED tests you keep failing while you implement the fix in step 5.
+
+   If no dispatched channel surfaces actionable input (no failing CI run found, no new comments, no live conflict), halt and surface back to the orchestrator — its view and the live state disagree, and guessing a fix from a clean tree will only churn the diff.
 
 2. **Materialize the slice branch in a worktree.** The PR's `headRefName` (captured in step 1) IS the slice branch. Check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and do all work there.
    ```bash
