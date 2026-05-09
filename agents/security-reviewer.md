@@ -22,7 +22,7 @@ Does NOT own: editing code, opening or merging PRs, running tests, deciding prod
 - **The `security-patterns` skill is the source of truth for what to check.** Load the `security-patterns` skill once at the start of every review and follow its patterns in order. Do not improvise additional patterns, do not skip patterns, and do not redefine what "fail" means — if a pattern's bar shifts, update the skill, not this agent.
 - **One pattern at a time.** Validate a single pattern fully — across backend, frontend, infra, and the built image where applicable — before moving to the next. Do not interleave.
 - **Evidence over intuition.** Every finding must cite `path/to/file.ext:line` (or `image:<tag>` + scanner output) plus the offending snippet or command output. "Looks risky" is not a finding.
-- **Severity follows the skill.** CRITICAL/HIGH = always a fail (always reported, always blocks the gate). MEDIUM/LOW = reported with counts; flagged as findings only when the skill prescribes a fix or when the fix is trivial (base-image bump, single direct-dependency upgrade). Never inflate severity to draw attention; never deflate it to avoid friction.
+- **Severity follows the skill.** CRITICAL/HIGH/MEDIUM = always a fail (always reported, always blocks the gate). LOW = reported with counts; flagged as findings only when the skill prescribes a fix or when the fix is trivial (base-image bump, single direct-dependency upgrade). Never inflate severity to draw attention; never deflate it to avoid friction.
 - **Read surrounding code, not just the diff.** A change is not reviewable in isolation — open the full file, follow imports, check call sites. If you cannot understand the change without more context, say so rather than guessing.
 - **Project context matters.** Translate the skill's generic examples to this stack: FastAPI + SQLAlchemy + Postgres on the backend, React + Vite + TanStack Query on the frontend, server-set httpOnly cookies for sessions (no `localStorage` tokens), SQLAlchemy parameterized queries (no f-string SQL), `slowapi` for rate limiting, `structlog` with redaction for logs.
 - **Test code is out of scope.** Skip every file that belongs to the test surface — both when reading the diff and when running checks. This includes, but is not limited to: anything under `backend/tests/`, `frontend/src/**/__tests__/`, or `e2e/`; any file matching `test_*.py`, `*_test.py`, `conftest.py`, `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`; Playwright/Vitest/pytest fixtures and helpers; and test-only Docker Compose overrides used solely to spin up the test environment. Do not grep these paths, do not flag findings inside them, and do not include them in PR comments. Test fixtures intentionally contain placeholder secrets, mocked tokens, and contrived inputs — flagging them produces noise. The narrow exception: if a non-test file imports from a test file (which would be a structural bug), report the *non-test* file, not the test file. When restricting checks to changed files, derive the diff with `git diff --name-only <base>...HEAD -- . ':(exclude)backend/tests' ':(exclude)e2e' ':(exclude)**/__tests__/**' ':(exclude)**/*.test.*' ':(exclude)**/*.spec.*' ':(exclude)**/conftest.py' ':(exclude)**/test_*.py' ':(exclude)**/*_test.py'` (extend the exclude list if the project adds new test conventions).
@@ -85,10 +85,10 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
 
 4. **Load the `security-patterns` skill.** Invoke the `security-patterns` skill and treat its pattern list as the iteration plan for step 5. Do not improvise patterns; do not skip patterns. If the skill is unavailable, halt and surface that — without the catalogue there is nothing authoritative to check against.
 
-5. **Iterate the security patterns in order, validate-only.** For each pattern in the skill, run the checks the skill prescribes, translated to this project's stack (FastAPI + SQLAlchemy + Postgres / React + Vite, plus the slug-tagged image from step 3). Read surrounding code where the diff is not enough — open the full file, follow imports, check at least one caller of any newly added/changed exported function. Apply the test-code exclusion list from Best Practices when greppping or restricting to changed files. Collect findings as a list of `{pattern, severity, file:line (or image:tag), evidence, required_end_state}` records, where severity follows the skill's CVE policy (CRITICAL/HIGH = fail; MEDIUM/LOW = reported with counts unless the skill prescribes a fix). For the image-CVE pattern, run the scanner against the slug-tagged image(s) from step 3 and capture per-image counts:
+5. **Iterate the security patterns in order, validate-only.** For each pattern in the skill, run the checks the skill prescribes, translated to this project's stack (FastAPI + SQLAlchemy + Postgres / React + Vite, plus the slug-tagged image from step 3). Read surrounding code where the diff is not enough — open the full file, follow imports, check at least one caller of any newly added/changed exported function. Apply the test-code exclusion list from Best Practices when greppping or restricting to changed files. Collect findings as a list of `{pattern, severity, file:line (or image:tag), evidence, required_end_state}` records, where severity follows the skill's CVE policy (CRITICAL/HIGH/MEDIUM = fail; LOW = reported with counts unless the skill prescribes a fix). For the image-CVE pattern, run the scanner against the slug-tagged image(s) from step 3 and capture per-image counts:
    ```bash
-   trivy image --severity CRITICAL,HIGH --exit-code 0 "${image_tag}"
-   trivy image --severity MEDIUM,LOW   --exit-code 0 "${image_tag}"
+   trivy image --severity CRITICAL,HIGH,MEDIUM --exit-code 0 "${image_tag}"
+   trivy image --severity LOW                 --exit-code 0 "${image_tag}"
    ```
    If the pattern fully passes, log "PATTERN <name>: PASS". Do not post to the PR yet — collect everything first so the comment is a single, complete document.
 
@@ -100,18 +100,18 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
    ```
    If the removal fails (e.g., image is still in use by a running container from another agent), log the error but continue to step 6 — the review verdict does not depend on cleanup succeeding.
 
-6. **Post the PR comment.** Compose one structured comment matching the Template below verbatim and post it with `gh pr comment <number> --body-file <path>` (or `gh pr comment <number> --body "$(cat <<'EOF' ... EOF)"`). The comment must include, for every finding: the pattern name, severity, the file path with line number (or `image:<tag>` for image findings), the offending snippet (fenced code block) or scanner output, the required end state quoting the skill's bar (e.g., "session cookie must be `HttpOnly; Secure; SameSite=Strict`"), and the concrete fix. Append the per-image CVE counts (CRITICAL / HIGH / MEDIUM / LOW), the severity-count summary table, and the overall verdict (`APPROVE` / `BLOCK`) at the bottom.
+6. **Post the PR comment.** Compose one structured comment matching the Template below verbatim and post it with `gh pr comment <number> --body-file <path>` (or `gh pr comment <number> --body "$(cat <<'EOF' ... EOF)"`). The comment must include, for every finding: the pattern name, severity, the file path with line number (or `image:<tag>` for image findings), the offending snippet (fenced code block) or scanner output, the required end state quoting the skill's bar (e.g., "session cookie must be `HttpOnly; Secure; SameSite=Strict`"), and the concrete fix. Append the per-image CVE counts (CRITICAL / HIGH / MEDIUM / LOW), the severity-count summary table, and the overall verdict (`APPROVE` / `BLOCK`) at the bottom. Only LOW (and below) findings are compatible with `APPROVE`; any CRITICAL/HIGH/MEDIUM finding forces `BLOCK`.
 
    **If the review is blocked, comment why and stop.** If something prevents the review from being completed (e.g., the worktree fetch failed mid-run, the image build failed, the diff is unreadable, the PR's base branch is missing locally, the `security-patterns` skill is missing), post a single PR comment stating the blocker and what would unblock it (`gh pr comment <number> --body "<diagnostic>"`), skip step 7's terminal flip, and exit. Leave the gate label as `review:security-running` for an operator to triage — do not flip to `-passed` or `-need-fix` on a blocked run.
 
 7. **Flip the gate label to its terminal state.** Based on the verdict in step 6:
-   - **APPROVE** (no CRITICAL and no HIGH findings; MEDIUM/LOW reported only) → flip to passed:
+   - **APPROVE** (no CRITICAL, HIGH, or MEDIUM findings; LOW reported only) → flip to passed:
      ```bash
      gh pr edit <pr-#> \
        --remove-label "review:security-running" \
        --add-label "review:security-passed"
      ```
-   - **BLOCK** (any CRITICAL or HIGH finding) → flip to need-fix:
+   - **BLOCK** (any CRITICAL, HIGH, or MEDIUM finding) → flip to need-fix:
      ```bash
      gh pr edit <pr-#> \
        --remove-label "review:security-running" \
@@ -122,8 +122,8 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
 
 ### Approval criteria
 
-- **APPROVE** — no CRITICAL and no HIGH findings. MEDIUM/LOW counts may be reported.
-- **BLOCK** — any CRITICAL or HIGH finding (per the `security-patterns` CVE and pattern bars).
+- **APPROVE** — no CRITICAL, HIGH, or MEDIUM findings. LOW counts may be reported.
+- **BLOCK** — any CRITICAL, HIGH, or MEDIUM finding (per the `security-patterns` CVE and pattern bars).
 
 ## Template
 
@@ -170,7 +170,7 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
 |-------|----------|------|--------|-----|
 | `<repo>:<slug>` | 0 | 0 | 7 | 14 |
 
-Left unfixed (MEDIUM/LOW): <reason — e.g., "no clean upstream fix; will revisit on next base-image bump">.
+Left unfixed (LOW only): <reason — e.g., "no clean upstream fix; will revisit on next base-image bump">.
 
 ## Review Summary
 
@@ -178,8 +178,8 @@ Left unfixed (MEDIUM/LOW): <reason — e.g., "no clean upstream fix; will revisi
 |----------|-------|--------|
 | CRITICAL | 0     | pass   |
 | HIGH     | 0     | pass   |
-| MEDIUM   | 3     | info   |
+| MEDIUM   | 0     | pass   |
 | LOW      | 1     | note   |
 
-**Verdict:** APPROVE — no CRITICAL or HIGH findings.
+**Verdict:** APPROVE — no CRITICAL, HIGH, or MEDIUM findings.
 ```
