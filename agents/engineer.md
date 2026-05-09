@@ -109,7 +109,7 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
    - For each **API resource** the change exposes or consumes, read `docs/PRDs/<feature-name>/api-contracts/<entity>.md`.
    Read these files one at a time, by name. Do NOT `ls` the directory and bulk-read every entity. If the issue is pure plumbing (no persistence, no API surface), skip this step entirely. If a referenced entity file is missing, halt and surface it rather than guessing.
 
-6. **Drive implementation via TDD.** Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit through `git-workflow` at the prescribed RED / GREEN / REFACTOR cadence — commits land directly on `${slice_branch}` inside the worktree.
+6. **Drive implementation via TDD.** Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit through `git-workflow` at the prescribed RED / GREEN / REFACTOR cadence — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since the agent itself closes the issue in step 9) so each commit is traceable back to the source issue. This requirement is Mode A only; Mode B fixes are tracked via the PR, not the issue.**
 
 7. **Verify against acceptance criteria.** Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 6 with a fresh RED — do not declare done.
 
