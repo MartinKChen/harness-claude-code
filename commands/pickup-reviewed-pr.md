@@ -1,5 +1,5 @@
 ---
-description: Find draft PRs that have completed every review gate (code + security in terminal state, e2e-ready label present), promote and squash-merge the clean ones, revert any with conflicts back to draft, and dispatch a one-shot `engineer` per remaining PR with the list of fix scenarios it must handle (`conflict`, `review`, `ci`).
+description: Find draft PRs that have completed every review gate (code + security + ci in terminal state), promote and squash-merge the clean ones, revert any with conflicts back to draft, and dispatch a one-shot `engineer` per remaining PR with the list of fix scenarios it must handle (`conflict`, `review`, `ci`).
 argument-hint: "[optional: max number of PRs to process this run; default: all eligible]"
 ---
 
@@ -28,7 +28,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 A draft PR is merge-ready when **all three** review gates are green:
 - carries `review:code-passed`,
 - carries `review:security-passed`,
-- carries `review:e2e-ready` AND every PR check has rolled up to `SUCCESS`.
+- carries `review:ci-passed`.
 
 Pull the candidate set in one call:
 
@@ -37,20 +37,10 @@ gh pr list \
   --draft \
   --label "review:code-passed" \
   --label "review:security-passed" \
-  --label "review:e2e-ready" \
+  --label "review:ci-passed" \
   --json number,title,headRefName,url,labels \
   --limit 200
 ```
-
-For each candidate, fetch the rolled-up check status and discard any PR whose checks are not all `SUCCESS`:
-
-```bash
-gh pr view <pr-#> \
-  --json statusCheckRollup \
-  --jq '[.statusCheckRollup[] | (.conclusion // .status)] | all(. == "SUCCESS")'
-```
-
-If the JQ returns `false`, drop the PR from the merge phase (it will re-appear in step 4 with the `ci` scenario flagged). If it returns `true`, keep it.
 
 ### 3. Promote → wait for mergeability → merge or revert
 
@@ -97,19 +87,9 @@ Never `--force` a merge; never push directly to `main`; never override branch pr
 
 A draft PR enters the dispatch set when it has finished a full review cycle but is **not** merge-ready — i.e., at least one gate ended in `-need-fix`, or the e2e check failed, or it just reverted in 3.4. The filter is **AND** across the three gates, with **OR** within each gate (terminal state of that gate):
 
-- carries `review:e2e-ready`, AND
+- carries `review:ci-passed` OR `review:ci-need-fix`, AND
 - carries `review:code-passed` OR `review:code-need-fix`, AND
 - carries `review:security-passed` OR `review:security-need-fix`.
-
-Pull all draft PRs that carry `review:e2e-ready`, then filter by the code + security predicates on the orchestrator side using each PR's `labels` array:
-
-```bash
-gh pr list \
-  --draft \
-  --label "review:e2e-ready" \
-  --json number,title,headRefName,url,labels \
-  --limit 200
-```
 
 Subtract `merged_set` (those PRs left `open=draft` state when they merged) — `merged_set` is empty here in practice because squash-merge closes the PR, but be defensive. Union with `conflicted_set` (the conflict-reverted PRs are already in draft state and will appear in this list naturally; the explicit union just makes the intent obvious).
 
@@ -121,7 +101,7 @@ For each PR in the dispatch set, determine the fix scenarios — 1 to 3 of:
 |------------|----------------------------------------------------------------------|
 | `conflict` | PR is in `conflicted_set` (just reverted from MERGEABLE check fail). |
 | `review`   | PR carries `review:code-need-fix` or `review:security-need-fix`.     |
-| `ci`       | PR's `statusCheckRollup` contains a non-`SUCCESS` conclusion.        |
+| `ci`       | PR's last-non-skipped Actions conclusion (per workflow on the head branch — same JQ as step 2) is anything other than `success` for at least one workflow. Latest-run-was-`skipped` does NOT trigger `ci` on its own; we walk back past skipped runs first. |
 
 If a PR matches **no** scenario (e.g. all gates passed and CI is green but it didn't make merge-ready in step 2 for an unforeseen reason), skip it with `skipped PR #<n> — no fix scenario detected` and leave its labels alone. Do not dispatch — there's nothing for the engineer to do.
 
@@ -129,18 +109,15 @@ For each PR with at least one scenario, strip every `review:*` label in one atom
 
 ```bash
 gh pr edit <pr-#> \
-  --remove-label "review:e2e-ready" \
-  --remove-label "review:code-pending" \
-  --remove-label "review:code-running" \
+  --remove-label "review:ci-passed" \
+  --remove-label "review:ci-passed" \
   --remove-label "review:code-passed" \
   --remove-label "review:code-need-fix" \
-  --remove-label "review:security-pending" \
-  --remove-label "review:security-running" \
   --remove-label "review:security-passed" \
   --remove-label "review:security-need-fix"
 ```
 
-The strip MUST happen **before** the `Agent` dispatch in step 6. If the dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll the strip back by re-adding the labels you snapshotted from the PR's pre-strip `labels` array. Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and will add `review:e2e-ready` as its terminal action.
+The strip MUST happen **before** the `Agent` dispatch in step 6. If the dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll the strip back by re-adding the labels you snapshotted from the PR's pre-strip `labels` array. Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and will add labels as its terminal action.
 
 ### 6. Dispatch one `engineer` per dispatch-set PR
 
@@ -182,10 +159,10 @@ End with one sentence: `Merged <M>; dispatched <D>; skipped <S>; <Z> remaining e
 
 - **Squash-merge with branch deletion.** Slice work is committed at TDD cadence; squash-on-merge keeps `main` linear and one-commit-per-slice, and `--delete-branch` reclaims the slice branch on the remote.
 - **Sequential merges.** The merge phase processes PRs one at a time. The dispatch phase parallelizes (multiple `Agent` calls in the same response), but `gh pr merge` calls do not.
-- **Strip every `review:*` label before dispatching the engineer.** The engineer's terminal action in Mode B is to add `review:e2e-ready`; leaving stale review-gate labels on a PR being fixed would let `pickup-pr-for-review` race in and re-dispatch a reviewer against unfinished work.
+- **Strip every `review:*` label before dispatching the engineer.** The engineer's terminal action in Mode B is to add labels; leaving stale review-gate labels on a PR being fixed would let `pickup-pr-for-review` race in and re-dispatch a reviewer against unfinished work.
 - **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1-3 of `conflict` / `review` / `ci`). Independent PRs go out as parallel `Agent` calls in the same response.
-- **Roll back the strip only on synchronous dispatch failure.** Once the agent is running, ownership transfers — the agent adds `review:e2e-ready` on success. Do NOT speculatively un-strip.
-- **Conflict revert leaves all review labels intact.** `gh pr ready --undo` only flips draft state; the PR's `review:code-passed` / `review:security-passed` / `review:e2e-ready` labels persist, which is exactly why step 4 re-finds it and step 5 strips them before handing to the engineer.
+- **Roll back the strip only on synchronous dispatch failure.** Once the agent is running, ownership transfers — the agent adds labels on success. Do NOT speculatively un-strip.
+- **Conflict revert leaves all review labels intact.** `gh pr ready --undo` only flips draft state; the PR's `review:code-passed` / `review:security-passed` / `review:ci-passed` labels persist, which is exactly why step 4 re-finds it and step 5 strips them before handing to the engineer.
 - **`UNKNOWN` mergeability is benign.** If GitHub hasn't computed mergeability after ~30 s, revert to draft and let a later fire re-try. Do not block the rest of the run on a single stuck PR.
 - **No PR-state changes beyond the documented label/state flips.** This command does not comment on PRs, request reviewers, change merge settings, or touch labels outside the `review:*` family. Anything else is the engineer's lane.
 - **Skip, don't fail, on benign outcomes.** "No fix scenario", "mergeability UNKNOWN", "lock race", "cap reached" are all expected — log them and continue, never abort the whole run.
