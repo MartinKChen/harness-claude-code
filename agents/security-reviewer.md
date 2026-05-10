@@ -130,6 +130,17 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
 ```markdown
 # Security Review
 
+## Review Summary
+
+| Severity | Count | Status |
+|----------|-------|--------|
+| CRITICAL | 0     | pass   |
+| HIGH     | 0     | pass   |
+| MEDIUM   | 0     | pass   |
+| LOW      | 1     | note   |
+
+**Verdict:** APPROVE — no CRITICAL, HIGH, or MEDIUM findings.
+
 ## Findings
 
 ### [CRITICAL] <pattern name> — <one-line title>
@@ -171,15 +182,4 @@ Inputs from the orchestrator: just the **PR number**. Everything else (PR body, 
 | `<repo>:<slug>` | 0 | 0 | 7 | 14 |
 
 Left unfixed (LOW only): <reason — e.g., "no clean upstream fix; will revisit on next base-image bump">.
-
-## Review Summary
-
-| Severity | Count | Status |
-|----------|-------|--------|
-| CRITICAL | 0     | pass   |
-| HIGH     | 0     | pass   |
-| MEDIUM   | 0     | pass   |
-| LOW      | 1     | note   |
-
-**Verdict:** APPROVE — no CRITICAL, HIGH, or MEDIUM findings.
 ```

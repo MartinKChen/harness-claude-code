@@ -270,6 +270,17 @@ Cost-awareness check:
 ```markdown
 # Code Review
 
+## Review Summary
+
+| Severity | Count | Status |
+|----------|-------|--------|
+| CRITICAL | 0     | pass   |
+| HIGH     | 0     | pass   |
+| MEDIUM   | 0     | pass   |
+| LOW      | 1     | note   |
+
+**Verdict:** APPROVE — no CRITICAL, HIGH, or MEDIUM findings.
+
 ## Findings
 
 ### [CRITICAL] <one-line title>
@@ -305,15 +316,4 @@ Cost-awareness check:
 **File:** `path/to/file.ext:12`
 **Issue:** <…>
 **Fix:** <…>
-
-## Review Summary
-
-| Severity | Count | Status |
-|----------|-------|--------|
-| CRITICAL | 0     | pass   |
-| HIGH     | 0     | pass   |
-| MEDIUM   | 0     | pass   |
-| LOW      | 1     | note   |
-
-**Verdict:** APPROVE — no CRITICAL, HIGH, or MEDIUM findings.
 ```
