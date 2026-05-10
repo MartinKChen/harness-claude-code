@@ -28,7 +28,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 A draft PR is merge-ready when **all three** review gates are green:
 - carries `review:code-passed`,
 - carries `review:security-passed`,
-- carries `review:ci-passed`.
+- carries `review:e2e-passed`.
 
 Pull the candidate set in one call:
 
@@ -37,7 +37,7 @@ gh pr list \
   --draft \
   --label "review:code-passed" \
   --label "review:security-passed" \
-  --label "review:ci-passed" \
+  --label "review:e2e-passed" \
   --json number,title,headRefName,url,labels \
   --limit 200
 ```
@@ -87,7 +87,7 @@ Never `--force` a merge; never push directly to `main`; never override branch pr
 
 A draft PR enters the dispatch set when it has finished a full review cycle but is **not** merge-ready — i.e., at least one gate ended in `-need-fix`, or the e2e check failed, or it just reverted in 3.4. The filter is **AND** across the three gates, with **OR** within each gate (terminal state of that gate):
 
-- carries `review:ci-passed` OR `review:ci-need-fix`, AND
+- carries `review:e2e-passed` OR `review:e2e-need-fix`, AND
 - carries `review:code-passed` OR `review:code-need-fix`, AND
 - carries `review:security-passed` OR `review:security-need-fix`.
 
@@ -109,8 +109,8 @@ For each PR with at least one scenario, strip every `review:*` label in one atom
 
 ```bash
 gh pr edit <pr-#> \
-  --remove-label "review:ci-passed" \
-  --remove-label "review:ci-passed" \
+  --remove-label "review:e2e-passed" \
+  --remove-label "review:e2e-passed" \
   --remove-label "review:code-passed" \
   --remove-label "review:code-need-fix" \
   --remove-label "review:security-passed" \
@@ -162,7 +162,7 @@ End with one sentence: `Merged <M>; dispatched <D>; skipped <S>; <Z> remaining e
 - **Strip every `review:*` label before dispatching the engineer.** The engineer's terminal action in Mode B is to add labels; leaving stale review-gate labels on a PR being fixed would let `pickup-pr-for-review` race in and re-dispatch a reviewer against unfinished work.
 - **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1-3 of `conflict` / `review` / `ci`). Independent PRs go out as parallel `Agent` calls in the same response.
 - **Roll back the strip only on synchronous dispatch failure.** Once the agent is running, ownership transfers — the agent adds labels on success. Do NOT speculatively un-strip.
-- **Conflict revert leaves all review labels intact.** `gh pr ready --undo` only flips draft state; the PR's `review:code-passed` / `review:security-passed` / `review:ci-passed` labels persist, which is exactly why step 4 re-finds it and step 5 strips them before handing to the engineer.
+- **Conflict revert leaves all review labels intact.** `gh pr ready --undo` only flips draft state; the PR's `review:code-passed` / `review:security-passed` / `review:e2e-passed` labels persist, which is exactly why step 4 re-finds it and step 5 strips them before handing to the engineer.
 - **`UNKNOWN` mergeability is benign.** If GitHub hasn't computed mergeability after ~30 s, revert to draft and let a later fire re-try. Do not block the rest of the run on a single stuck PR.
 - **No PR-state changes beyond the documented label/state flips.** This command does not comment on PRs, request reviewers, change merge settings, or touch labels outside the `review:*` family. Anything else is the engineer's lane.
 - **Skip, don't fail, on benign outcomes.** "No fix scenario", "mergeability UNKNOWN", "lock race", "cap reached" are all expected — log them and continue, never abort the whole run.

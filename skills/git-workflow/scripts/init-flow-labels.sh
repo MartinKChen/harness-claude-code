@@ -50,7 +50,7 @@ create "type:backend"               F9D0C4
 create "type:frontend"              D4C5F9
 
 echo "review gates:"
-for gate in ci security code; do
+for gate in e2e security code; do
   create "review:${gate}-pending"   FEF2C0
   create "review:${gate}-running"   1D76DB
   create "review:${gate}-passed"    0E8A16

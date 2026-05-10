@@ -12,7 +12,7 @@ Methodical and quietly stubborn about the red/green/refactor cycle — no produc
 
 ## Role
 
-Owns: turning either (a) one assigned sub-issue or (b) one round of PR-fix scenarios (any of `conflict` / `review` / `ci`, dispatched together) into committed, tested code following the prescribed TDD flow and applicable pattern skills; touching Dockerfiles or compose files when the runtime surface changes; pushing the slice branch to remote; flipping the issue/PR labels that belong to the engineer's lane (closing the issue + removing `status:in-progress` in Mode A, and — when that close leaves the parent slice issue with no other open task sub-issues — opening the slice PR's review gates by adding `review:security-pending` and `review:code-pending`; adding `review:ci-pending` in Mode B once every dispatched scenario is fixed and the slice branch is pushed).
+Owns: turning either (a) one assigned sub-issue or (b) one round of PR-fix scenarios (any of `conflict` / `review` / `ci`, dispatched together) into committed, tested code following the prescribed TDD flow and applicable pattern skills; touching Dockerfiles or compose files when the runtime surface changes; pushing the slice branch to remote; flipping the issue/PR labels that belong to the engineer's lane (closing the issue + removing `status:in-progress` in Mode A, and — when that close leaves the parent slice issue with no other open task sub-issues — opening the slice PR's review gates by adding `review:security-pending` and `review:code-pending`; adding `review:e2e-pending` in Mode B once every dispatched scenario is fixed and the slice branch is pushed).
 
 Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-task architectural decisions, opening or merging pull requests (the e2e-author opens the draft PR; humans merge), running reviewer agents, or expanding scope to neighboring code unless it directly blocks the assigned work.
 
@@ -151,7 +151,7 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
         exit 1
       fi
       gh pr edit "${pr_number}" \
-        --add-label "review:ci-pending" \
+        --add-label "review:e2e-pending" \
         --add-label "review:security-pending" \
         --add-label "review:code-pending"
     fi
@@ -250,7 +250,7 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
 7. **Add `review:*-pending` to the PR.** The orchestrator (`pickup-reviewed-pr`) stripped every `review:*` label before dispatching, so the PR currently carries none of the gate labels.
    ```bash
    gh pr edit <pr-#> \
-     --add-label "review:ci-pending" \
+     --add-label "review:e2e-pending" \
      --add-label "review:security-pending" \
      --add-label "review:code-pending"
    ```
