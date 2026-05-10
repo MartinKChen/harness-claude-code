@@ -48,7 +48,9 @@ CMD ["nginx", "-g", "daemon off;"]
 - **Three stages minimum**: `base`, `build`, `final`. Add more (e.g. `deps`, `test`) only when they earn their place.
 - **CSR/SPA frontends still get a `final` stage**: copy the built static files (e.g. `dist/`, `build/`) into a minimal server image (nginx, caddy, distroless). Never ship the build toolchain.
 - **Pinned tags, never `:latest`**: use immutable tags like `node:20.11.1-alpine`, `python:3.12.4-slim`, `nginx:1.27.0-alpine`. Prefer digest pinning (`@sha256:…`) for production base images.
+- **Vet base images with `docker scout` before pinning**: run `docker scout cves <image>:<tag>` (or `docker scout quickview`) on every candidate base image. Reject any image that has CVEs at severity `MEDIUM` or above without an available fix. If a vulnerability is flagged but a fixed version exists, switch to that fixed tag/digest instead of accepting the risk. Re-run scout when bumping the base image.
 - **Run as non-root**: create a dedicated user/group in `final` and end with `USER <name>`. Root in containers is a foot-gun.
+- **No virtual environments inside images**: the container itself is the isolation boundary, so language-level venvs add layers, indirection, and PATH gymnastics for zero gain. Install Python deps directly into the system site-packages (e.g. `uv pip install --system -r requirements.txt`, `pip install --no-cache-dir -r requirements.txt`); do not create a `.venv` or use `uv venv` inside a Dockerfile. Same rule for any other ecosystem's per-project virtualenv tooling.
 - **`.dockerignore` is mandatory**: exclude `.git`, `node_modules`, `.env*`, `dist/`, `build/`, `coverage/`, `*.log`, IDE folders. Keeps the build context small and prevents secrets from leaking into the image.
 - **Layer ordering**: copy dependency manifests and install deps *before* copying source, so dep layers cache across source edits.
 
