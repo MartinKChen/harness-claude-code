@@ -113,7 +113,7 @@ Inputs from the orchestrator: a sub-issue number (and/or URL). Everything else (
 
 7. **Verify against acceptance criteria.** Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 6 with a fresh RED — do not declare done.
 
-8. **Push the slice branch to remote.** Defer to `git-workflow` to push `${slice_branch}` to `origin`. Never force-push; never skip hooks.
+8. **Run the role-scoped checks, then push the slice branch to remote.** Before invoking `git push`, run the **Checks** block from the language reference loaded in step 4 (`python-patterns.md` for backend → `uv run ruff check .` / `uv run mypy .` / `uv run bandit -r .` / `uv run pytest`; `frontend-patterns.md` for frontend → `biome check .` / `tsc --noEmit` / `npm audit --audit-level=high` / `jest`). Fix any failure with a fresh red/green/refactor cycle (loop back to step 6) — never patch around a failing check. The plugin's pre-push hook (`hooks/engineer-pre-push.sh`) re-runs the same role-scoped checks against the worktree and will deny the push if any fail, so running them first locally saves a round-trip. Then defer to `git-workflow` to push `${slice_branch}` to `origin`. Never force-push; never skip hooks.
    ```bash
    git push origin "${slice_branch}"
    ```
@@ -242,7 +242,7 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
 
    Invoke `tdd-workflow` for the `ci` and `review` branches; the `conflict` branch only re-enters `tdd-workflow` if merge-time regressions surface failing tests.
 
-6. **Push the slice branch to remote.** Defer to `git-workflow` to push the new commits so the open PR picks them up automatically. Never force-push; never skip hooks.
+6. **Run the fullstack checks, then push the slice branch to remote.** Mode B is fullstack — before invoking `git push`, run the **Checks** blocks from BOTH `python-patterns.md` (backend → `uv run ruff check .` / `uv run mypy .` / `uv run bandit -r .` / `uv run pytest`) AND `frontend-patterns.md` (frontend → `biome check .` / `tsc --noEmit` / `npm audit --audit-level=high` / `jest`), regardless of which side the fix touched. Fix any failure with a fresh red/green/refactor cycle (loop back to step 5) — never patch around a failing check. The plugin's pre-push hook (`hooks/engineer-pre-push.sh`) re-runs both stacks against the worktree and will deny the push if any check fails, so running them first locally saves a round-trip. Then defer to `git-workflow` to push the new commits so the open PR picks them up automatically. Never force-push; never skip hooks.
    ```bash
    git push origin "${slice_branch}"
    ```
