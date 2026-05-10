@@ -153,7 +153,7 @@ run_backend_checks() {
   pushd "${backend_dir}" >/dev/null
 
   run_step "backend:lint"     uv run ruff check .
-  run_step "backend:format"   run black --check .
+  run_step "backend:format"   uv run black --check .
   run_step "backend:type"     uv run mypy .
   run_step "backend:security" uv run bandit -r .
   run_step "backend:test"     uv run pytest
@@ -171,7 +171,7 @@ run_frontend_checks() {
 
   run_step "frontend:lint"     npx --no-install biome check .
   run_step "frontend:type"     npx --no-install tsc --noEmit
-  run_step "frontend:security" npm audit --audit-level=high
+  run_step "frontend:security" npm audit
   run_step "frontend:test"     npx --no-install jest
 
   popd >/dev/null
