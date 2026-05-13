@@ -6,21 +6,20 @@
 #   1. the command contains `git push`, AND
 #   2. the cwd is an engineer worktree under `/tmp/git-worktree/`.
 #
-# When it fires, it determines mode + role and runs the matching checks:
-#
-#   Mode A — single-role engineer (issue dispatch).
-#     Detected when there is no open PR for the slice branch.
-#     Role from the most recent `Refs #<n>` trailer's `type:*` label:
-#       type:backend  → backend  → backend checks only
-#       type:frontend → frontend → frontend checks only
-#
-#   Mode B — fullstack engineer (PR dispatch).
-#     Detected when there is an open PR for the slice branch.
-#     Runs both backend AND frontend checks.
+# When it fires, it runs the **fullstack** check set — backend AND frontend —
+# regardless of which mode (A/B/C) the engineer is in. The engineer is
+# fullstack by spec: even a Mode A task that nominally touches one side may
+# cross the boundary, and the hook is the last gate before the slice branch
+# leaves the worktree. Each stack's checks are guarded on the directory
+# actually existing in this worktree, so a backend-only or frontend-only
+# project still runs cleanly.
 #
 # Checks (matching skills/tdd-workflow/references/{python,frontend}-patterns.md):
-#   backend:  uv run ruff check . / uv run mypy . / uv run bandit -r . / uv run pytest
-#   frontend: biome check . / tsc --noEmit / npm audit --audit-level=high / jest
+#   backend:   uv run ruff check . / uv run black --check . / uv run mypy . /
+#              uv run bandit -r . / uv run pytest
+#   frontend:  biome check . / tsc --noEmit / npm audit / jest
+#   security:  gitleaks (secrets) / trivy fs (CVE + IaC) / semgrep (SAST)
+#              — each scanner is skipped gracefully if not installed.
 #
 # When checks fail, the hook emits a PreToolUse JSON deny on stdout — the
 # `permissionDecisionReason` field is surfaced back to Claude (the engineer
@@ -82,50 +81,10 @@ if [ -z "${slice_branch}" ] || [ "${slice_branch}" = "HEAD" ]; then
   deny "engineer-pre-push: could not resolve slice branch in '$cwd' (detached HEAD?)"
 fi
 
-# --- mode + role detection ---------------------------------------------------
-
-run_backend=false
-run_frontend=false
-mode_label=""
-
-pr_number="$(gh pr list --head "$slice_branch" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
-
-if [ -n "${pr_number}" ]; then
-  mode_label="Mode B (PR #${pr_number}, fullstack)"
-  run_backend=true
-  run_frontend=true
-else
-  issue_number="$(git -C "$cwd" log -50 --format='%B' \
-    | grep -oE 'Refs #[0-9]+' \
-    | head -1 \
-    | grep -oE '[0-9]+' || true)"
-
-  if [ -z "${issue_number}" ]; then
-    deny "engineer-pre-push: Mode A but no 'Refs #<n>' trailer in last 50 commits — cannot determine role" \
-         "The engineer agent must include 'Refs #<sub-issue-#>' in every Mode A commit (see agents/engineer.md, Mode A step 6). Add the trailer, amend or recommit, then retry the push."
-  fi
-
-  type_label="$(gh issue view "${issue_number}" --json labels --jq '.labels[].name | select(startswith("type:"))' 2>/dev/null | head -1 || true)"
-
-  case "${type_label}" in
-    type:backend)
-      mode_label="Mode A (issue #${issue_number}, backend)"
-      run_backend=true
-      ;;
-    type:frontend)
-      mode_label="Mode A (issue #${issue_number}, frontend)"
-      run_frontend=true
-      ;;
-    "")
-      deny "engineer-pre-push: issue #${issue_number} has no 'type:*' label — cannot determine role"
-      ;;
-    *)
-      deny "engineer-pre-push: issue #${issue_number} has unrecognized type label '${type_label}' (expected 'type:backend' or 'type:frontend')"
-      ;;
-  esac
-fi
-
-note "${mode_label} — running pre-push checks for branch '${slice_branch}'"
+# Fullstack always — each stack's runner is internally gated on the matching
+# directory existing under the worktree, so a backend-only or frontend-only
+# project still runs cleanly.
+note "running fullstack pre-push checks for branch '${slice_branch}'"
 
 # --- per-stack runners -------------------------------------------------------
 
@@ -170,6 +129,7 @@ run_frontend_checks() {
   pushd "${frontend_dir}" >/dev/null
 
   run_step "frontend:lint"     npx --no-install biome check .
+  run_step "frontend:format"   npx --no-install biome check .
   run_step "frontend:type"     npx --no-install tsc --noEmit
   run_step "frontend:security" npm audit
   run_step "frontend:test"     npx --no-install jest
@@ -177,18 +137,49 @@ run_frontend_checks() {
   popd >/dev/null
 }
 
-if $run_backend; then
-  run_backend_checks
-fi
-if $run_frontend; then
-  run_frontend_checks
-fi
+run_security_scans() {
+  # Cross-language static security scans. Each scanner runs only when its
+  # binary is present on PATH — missing scanners are a silent skip, so the
+  # repo can opt in by installing the tool without code changes here.
+
+  if command -v gitleaks >/dev/null 2>&1; then
+    run_step "security:gitleaks" gitleaks detect --source "$cwd" --no-banner --redact
+  else
+    note "security:gitleaks — binary not on PATH, skipping"
+  fi
+
+  if command -v trivy >/dev/null 2>&1; then
+    run_step "security:trivy-fs" trivy fs \
+      --severity HIGH,CRITICAL \
+      --skip-dirs node_modules \
+      --skip-dirs .venv \
+      --skip-dirs .git \
+      --exit-code 1 \
+      "$cwd"
+  else
+    note "security:trivy-fs — binary not on PATH, skipping"
+  fi
+
+  if command -v semgrep >/dev/null 2>&1; then
+    run_step "security:semgrep" semgrep scan \
+      --config auto \
+      --severity ERROR \
+      --error \
+      "$cwd"
+  else
+    note "security:semgrep — binary not on PATH, skipping"
+  fi
+}
+
+run_backend_checks
+run_frontend_checks
+run_security_scans
 
 # --- verdict -----------------------------------------------------------------
 
 if [ "${#failures[@]}" -gt 0 ]; then
   reason="engineer-pre-push: blocking git push for ${slice_branch} — ${#failures[@]} check(s) failed: ${failures[*]}"
-  context="Mode: ${mode_label}. Failed checks: ${failures[*]}. Fix every failure before pushing again — re-run the failing command(s) locally to see full output, commit the fix, then retry the push.${fail_logs}"
+  context="Failed checks: ${failures[*]}. Fix every failure before pushing again — re-run the failing command(s) locally to see full output, commit the fix, then retry the push.${fail_logs}"
   deny "$reason" "$context"
 fi
 

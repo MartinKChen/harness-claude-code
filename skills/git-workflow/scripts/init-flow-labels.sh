@@ -33,6 +33,7 @@ echo "status:"
 create "status:ready-to-review"     FBCA04
 create "status:ready-to-implement"  0E8A16
 create "status:in-progress"         1D76DB
+create "status:fix-in-progress"     5319E7
 create "status:need-attention"      D93F0B
 
 echo "level:"
@@ -50,7 +51,7 @@ create "type:backend"               F9D0C4
 create "type:frontend"              D4C5F9
 
 echo "review gates:"
-for gate in e2e security code; do
+for gate in security code; do
   create "review:${gate}-pending"   FEF2C0
   create "review:${gate}-running"   1D76DB
   create "review:${gate}-passed"    0E8A16
