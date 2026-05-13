@@ -81,6 +81,8 @@ A RED is **not** valid if the failure is caused by:
 - Missing dependencies, fixture setup the test never reaches, or a regression elsewhere.
 - A typo in the test itself (mistyped matcher, wrong assertion target).
 
+These invalid-RED causes must still be **fixed before the loop proceeds** — they are not blockers you defer, they are prerequisites you resolve. In particular, if the test legitimately needs a new dependency (a testing library, an assertion helper, a fake-adapter package, a runtime dep the production code under test requires), add it now via the project's package manager and lockfile, then re-run the test. A missing dependency is never a reason to fake the import, stub the function, or skip the test — install it and continue. The same applies to dependency bumps required to unblock the test: bump, lock, and proceed. Treat these as part of preparing the ground for a valid RED, not as RED themselves.
+
 A test that was written but never compiled or executed is not a RED — it is a draft. Before the matching GREEN commit, you must have either (a) run the test and watched it fail, or (b) attempted to build/typecheck and observed the compile failure pointing at the intended missing symbol. Production code does not move until one of those two is true.
 
 ### Reading the acceptance criteria
