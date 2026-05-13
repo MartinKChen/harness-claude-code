@@ -217,7 +217,7 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
    ```bash
    gh pr edit <pr-#> --remove-label "status:fix-in-progress"
    ```
-   This is the agent's terminal action for Mode B. Do **not** flip the PR back to ready-for-review (it stays draft until `close-pr` promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
+   This is the agent's terminal action for Mode B. Do **not** flip the PR back to ready-to-review (it stays draft until `close-pr` promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
 
 ### Mode C — Fix review feedback on a task
 

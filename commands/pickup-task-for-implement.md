@@ -1,11 +1,11 @@
 ---
-description: Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:ready-for-implement` task with zero open `Blocked by` dependencies. Lock each task with a label flip (`status:ready-for-implement` → `status:in-progress`); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. Slice promotion is owned by the sibling command `pickup-slice-for-implement`.
+description: Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open `Blocked by` dependencies. Lock each task with a label flip (`status:ready-to-implement` → `status:in-progress`); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. Slice promotion is owned by the sibling command `pickup-slice-for-implement`.
 argument-hint: "[optional: max number of tasks to pick up this run; default: all eligible]"
 ---
 
 # pickup-task-for-implement
 
-Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The command never touches slice issues — slice promotion (`status:ready-for-implement` → `status:in-progress` on the slice + appending `status:ready-for-implement` to its task sub-issues) is the job of `pickup-slice-for-implement`.
+Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The command never touches slice issues — slice promotion (`status:ready-to-implement` → `status:in-progress` on the slice + appending `status:ready-to-implement` to its task sub-issues) is the job of `pickup-slice-for-implement`.
 
 The command never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
 
@@ -31,7 +31,7 @@ List open task issues that are ready to implement and tagged as features:
 gh issue list \
   --state open \
   --label "level:task" \
-  --label "status:ready-for-implement" \
+  --label "status:ready-to-implement" \
   --label "kind:feature" \
   --json number,title,labels,url \
   --limit 200
@@ -65,7 +65,7 @@ Flip both labels in one atomic `gh` call so the lock is visible immediately:
 
 ```bash
 gh issue edit "${task_number}" \
-  --remove-label "status:ready-for-implement" \
+  --remove-label "status:ready-to-implement" \
   --add-label "status:in-progress"
 ```
 
@@ -76,7 +76,7 @@ The lock MUST happen **before** the sub-agent dispatch in step 5. If the dispatc
 ```bash
 gh issue edit "${task_number}" \
   --remove-label "status:in-progress" \
-  --add-label "status:ready-for-implement"
+  --add-label "status:ready-to-implement"
 ```
 
 so the next fire can retry. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it adds `review:*-pending` labels and exits, leaving `status:in-progress` for `close-task-issue` to clear once reviews pass).
@@ -121,7 +121,7 @@ End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining 
 
 ## Iron rules
 
-- **Tasks only — no slice promotion.** Slice issues are promoted by `pickup-slice-for-implement`, which is what populates `status:ready-for-implement` on the task sub-issues this command consumes. Do NOT touch slice issues here.
+- **Tasks only — no slice promotion.** Slice issues are promoted by `pickup-slice-for-implement`, which is what populates `status:ready-to-implement` on the task sub-issues this command consumes. Do NOT touch slice issues here.
 - **Lock before dispatch.** The label flip in step 4 happens before the `Agent` call in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
 - **Roll back the lock only on synchronous dispatch failure.** Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the task, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
 - **`type:*` label decides the agent type, never the body.** `create-issues` puts type info on the label only; do not parse type out of the sub-issue body.

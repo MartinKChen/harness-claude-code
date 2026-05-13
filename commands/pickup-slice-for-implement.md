@@ -1,11 +1,11 @@
 ---
-description: Promote ready-to-implement slice issues to in-progress, then append `status:ready-for-implement` to every `kind:feature` task sub-issue underneath, so `pickup-task-for-implement` can pick them up. Skips slices that still have open `Blocked by` dependencies.
+description: Promote ready-to-implement slice issues to in-progress, then append `status:ready-to-implement` to every `kind:feature` task sub-issue underneath, so `pickup-task-for-implement` can pick them up. Skips slices that still have open `Blocked by` dependencies.
 argument-hint: "[optional: max number of slices to promote this run; default: all eligible]"
 ---
 
 # pickup-slice-for-implement
 
-Slice issues created by `create-issues` are born with their dev branch already linked and `status:ready-for-implement` on the slice — but their task sub-issues are *not* yet ready (they ship without `status:ready-for-implement`, so `pickup-task-for-implement` cannot see them). This command is the gatekeeper: for every slice that is `level:slice` + `kind:feature` + `status:ready-for-implement` with zero open blockers, flip the slice to `status:in-progress` and append `status:ready-for-implement` to its `level:task` + `kind:feature` sub-issues.
+Slice issues created by `create-issues` are born with their dev branch already linked and `status:ready-to-implement` on the slice — but their task sub-issues are *not* yet ready (they ship without `status:ready-to-implement`, so `pickup-task-for-implement` cannot see them). This command is the gatekeeper: for every slice that is `level:slice` + `kind:feature` + `status:ready-to-implement` with zero open blockers, flip the slice to `status:in-progress` and append `status:ready-to-implement` to its `level:task` + `kind:feature` sub-issues.
 
 The command never checks out, edits, or pushes to any branch. It mutates **only** GitHub labels.
 
@@ -30,7 +30,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 gh issue list \
   --state open \
   --label "level:slice" \
-  --label "status:ready-for-implement" \
+  --label "status:ready-to-implement" \
   --label "kind:feature" \
   --json number,title,url \
   --limit 200
@@ -69,11 +69,11 @@ When unblocked, do both flips:
 
    ```bash
    gh issue edit "${slice_number}" \
-     --remove-label "status:ready-for-implement" \
+     --remove-label "status:ready-to-implement" \
      --add-label "status:in-progress"
    ```
 
-2. **Extract qualifying task sub-issue numbers and append `status:ready-for-implement` to each.** From the same GraphQL response, every sub-issue carrying both `level:task` and `kind:feature` qualifies:
+2. **Extract qualifying task sub-issue numbers and append `status:ready-to-implement` to each.** From the same GraphQL response, every sub-issue carrying both `level:task` and `kind:feature` qualifies:
 
    ```bash
    # $slice_response holds the GraphQL JSON returned in step 3.
@@ -85,11 +85,11 @@ When unblocked, do both flips:
    ')"
 
    for task_number in $task_numbers; do
-     gh issue edit "${task_number}" --add-label "status:ready-for-implement"
+     gh issue edit "${task_number}" --add-label "status:ready-to-implement"
    done
    ```
 
-   If a sub-issue already has `status:ready-for-implement`, the call is a no-op — treat it as benign. Any other failure: surface verbatim and stop processing further slices for this run.
+   If a sub-issue already has `status:ready-to-implement`, the call is a no-op — treat it as benign. Any other failure: surface verbatim and stop processing further slices for this run.
 
 ### 5. Honor the cap and report
 
@@ -108,6 +108,6 @@ End with a single sentence: `Promoted <S> slice(s); skipped <Y>; <Z> remaining e
 - **One responsibility: slice promotion.** This command does not dispatch agents, does not touch task `type:*` labels, does not check out branches, and does not open or close anything. It flips two labels per slice and exits.
 - **Blocker count uses `issueDependenciesSummary.blockedBy`.** Only **open** blockers count. Do not parse "Blocked by" text out of issue bodies; the GraphQL field is authoritative.
 - **`kind:feature` only.** Bugs / enhancements are out of scope.
-- **Slice flip and sub-issue flip are *not* atomic across GitHub's API.** If the slice flip succeeds but a sub-issue flip fails, the slice ends up `status:in-progress` with some sub-issues still missing `status:ready-for-implement`. Surface the failure and stop — a re-run will idempotently top-up the missing sub-issue labels (the slice itself is already promoted, so its own flip becomes a no-op).
+- **Slice flip and sub-issue flip are *not* atomic across GitHub's API.** If the slice flip succeeds but a sub-issue flip fails, the slice ends up `status:in-progress` with some sub-issues still missing `status:ready-to-implement`. Surface the failure and stop — a re-run will idempotently top-up the missing sub-issue labels (the slice itself is already promoted, so its own flip becomes a no-op).
 - **Idempotent re-runs.** Re-running this command on a slice already at `status:in-progress` is a benign no-op (the slice falls out of step 2's filter).
 - **Skip, don't fail, on benign outcomes.** "Blocked", "cap reached", "label already present" are all expected.

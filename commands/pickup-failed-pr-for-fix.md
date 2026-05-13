@@ -159,7 +159,7 @@ End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
-- **Drafts only.** Ready-for-review PRs are not in scope for this command. The slice PR is opened as a draft by `e2e-author` and stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
+- **Drafts only.** ready-to-review PRs are not in scope for this command. The slice PR is opened as a draft by `e2e-author` and stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
 - **No review handling, no merging.** This command does not touch `review:*` labels (those live on task issues now) and does not call `gh pr merge` (that's `close-pr`'s job).
 - **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `Agent` call in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
 - **Roll back the lock only on synchronous dispatch failure.** Once the agent is running, ownership transfers.
