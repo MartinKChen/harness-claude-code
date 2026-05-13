@@ -47,7 +47,7 @@ Other skills still apply (route to them as you would any skill, not as files und
 
 ### Outside-in TDD loop
 
-0. **(Optional, outside-in) Write the acceptance test first.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit via `git-workflow` as `test(<feature>): add failing acceptance test for <behavior>`. This is the goalpost.
+0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit via `git-workflow` as `test(<feature>): add failing acceptance test for <behavior>`. This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
 
 1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface (lean on `design-deep-module`). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
 
@@ -84,6 +84,51 @@ A RED is **not** valid if the failure is caused by:
 These invalid-RED causes must still be **fixed before the loop proceeds** — they are not blockers you defer, they are prerequisites you resolve. In particular, if the test legitimately needs a new dependency (a testing library, an assertion helper, a fake-adapter package, a runtime dep the production code under test requires), add it now via the project's package manager and lockfile, then re-run the test. A missing dependency is never a reason to fake the import, stub the function, or skip the test — install it and continue. The same applies to dependency bumps required to unblock the test: bump, lock, and proceed. Treat these as part of preparing the ground for a valid RED, not as RED themselves.
 
 A test that was written but never compiled or executed is not a RED — it is a draft. Before the matching GREEN commit, you must have either (a) run the test and watched it fail, or (b) attempted to build/typecheck and observed the compile failure pointing at the intended missing symbol. Production code does not move until one of those two is true.
+
+### What counts as scaffold vs. production code
+
+This distinction is the single most important guard against writing code before a RED exists. It applies equally to backend and frontend work.
+
+**Scaffold** — has no behaviour; nothing to test; may be created before step 0:
+
+*Both layers*
+- Empty package directories.
+- Manifest files: `pyproject.toml`, `package.json`, `uv.lock`, `package-lock.json`.
+- Test-runner config: `pytest.ini`, `vitest.config.ts`, `jest.config.ts`, `playwright.config.ts`.
+- Linter / formatter config: `ruff.toml`, `.eslintrc`, `biome.json`, `tsconfig.json`.
+- `Dockerfile`, `compose.yaml`, `.dockerignore` (when they introduce no new runtime logic).
+- `.env.example` files with placeholder values.
+
+*Backend*
+- Empty `__init__.py` files with no imports or exports.
+- Framework entry-point **stub**: a file whose entire body is `app = FastAPI()` — no routes, no middleware, no exception handlers, no logic.
+
+*Frontend*
+- Empty `index.ts` / `index.tsx` barrel files with no exports.
+- `main.tsx` whose entire body mounts `<App />` into the DOM — no components, no providers, no logic beyond the mount call.
+- `tailwind.config.ts` / `postcss.config.js` with only token/plugin declarations and no custom logic.
+- Route-file skeletons that export an empty or `null`-returning component and nothing else.
+
+**Production code** — has behaviour; must be driven by a failing test before it is written:
+
+*Backend*
+- Any `.py` file containing a function body, method implementation, or class with attributes.
+- ORM models with column definitions (`mapped_column`, `Column`).
+- Service functions, middleware, dependency injection helpers.
+- Pydantic schema / validation classes with field definitions.
+- Alembic migration files that contain `op.create_table`, `op.add_column`, or equivalent DDL.
+- Route handlers — any `@router.get` / `@router.post` / etc. decorator with a function body.
+
+*Frontend*
+- Any React component that renders real JSX (more than a stub `return null`).
+- Custom hooks (`useX`) with logic in their body.
+- `lib/api/*.ts` functions that call `fetch` or wrap an HTTP client.
+- Context providers, reducers, or state management logic.
+- Form validation schemas (`zod`, `yup`).
+- Utility / helper functions with logic in their body.
+- TanStack Query query/mutation definitions.
+
+**The rule is absolute:** if a file you are about to create or edit contains any production code as defined above, a failing test that demands that code must already exist in `git log`. If it does not, stop, write the test first, confirm the RED, commit it, then write the production code.
 
 ### Reading the acceptance criteria
 
@@ -131,6 +176,8 @@ If you catch yourself reaching for any of these, stop. Each is the loop trying t
 | "While I'm refactoring, let me also add this small behavior." | Refactor is under green only. New behavior is a new RED. Bundling them means a red suite mid-refactor with no clean revert point. |
 | "The acceptance test goes green if I poke the module's internals from it." | Then it has stopped being an acceptance test. The acceptance test asserts user-observable behavior; if it reaches inside the module, back it out. |
 | "I explored first and the code already works — let me write tests around it and commit." | The exploration code has no RED behind it. Delete it, write the failing test, reimplement from the test. The exploration was the spike; the commit history is the deliverable. |
+| "I am scaffolding the module structure, so writing the service / model / router file is part of scaffold." | Scaffold is empty files and manifests only. A file with a function body, a class with attributes, or a route handler is production code regardless of what you call it. Delete the logic, write the failing test, reimplement. |
+| "The architecture is clear from the docs — I can sketch all the modules before writing tests." | Clarity about what to build does not change the order: test, then code. Sketching all modules up front produces untested code whose only proof is that it compiles. Write one test, make it pass, repeat. |
 | "The issue's acceptance criteria are obvious, I don't need to read them carefully." | The acceptance test *is* the criteria, in code. If you guess the criteria you'll write the wrong goalpost and every module test underneath inherits the error. |
 | "TDD is slowing me down on this slice — I'll catch up by skipping the inner loop." | The inner loop is what makes the acceptance test trustable. Skip it and the acceptance going green proves only that *something* runs end-to-end, not that the modules under it are correct. |
 
@@ -138,7 +185,8 @@ If you catch yourself reaching for any of these, stop. Each is the loop trying t
 
 These are non-negotiable. They are what makes the discipline a discipline.
 
-- **Acceptance test first, and it must fail.** Before any production code, write one failing acceptance/integration test in user-observable terms. Watch it fail for the *right* reason. Leave it red while you build inward.
+- **No production code without a preceding RED commit.** Before writing any function body, class, route handler, ORM model, or migration, a failing test that demands that code must already exist in `git log`. No exceptions. If you are about to type production code and you cannot point to the RED commit that demands it, stop and write the test first.
+- **Acceptance test first, and it must fail.** Before any production code, write one failing acceptance/integration test in user-observable terms. Watch it fail for the *right* reason. Leave it red while you build inward. This is never optional when a GitHub issue with Gherkin scenarios exists.
 - **One behavior per RED.** Every RED commit introduces exactly one failing test for one behavior. Never bundle behaviors into a single test, and never bundle tests across modules into a single RED.
 - **Fake adapters at seams while driving modules.** When a module crosses a seam (store, HTTP client, clock, queue), use a fake adapter for the module's tests. Real adapters are verified separately by contract tests, not by the module's own tests.
 - **Real adapters earn their own contract tests.** A real adapter is verified against a real instance, with tests proving it satisfies the interface the fake satisfied. No real adapter ships without contract tests.
