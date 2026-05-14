@@ -123,11 +123,14 @@ Spawn each candidate with the `Agent` tool, passing:
 - `subagent_type` — per the table above
 - `mode` — `auto`
 - `name` — the chosen agent name (e.g. `engineer-fix-42`)
+- `run_in_background` — `true` (mandatory; see below)
 - `prompt` — minimal; only the **task issue number, title, URL, the need-fix gate list, and the orchestrator `taskId`**
 
-Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row shows the assignment.
+`run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the sub-agent fully terminates, which (a) serializes candidates that were supposed to fan out in parallel and (b) lets the sub-agent's own terminal `TaskUpdate({ status: "completed" })` land before the orchestrator's `TaskUpdate({ owner })` — at which point the owner assignment races a finalized task and the harness UI never shows who owned the row.
 
-Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. `TaskCreate` calls in step 4a may be batched the same way.
+Immediately follow the `Agent` call — in the **same batched response** — with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment before the backgrounded sub-agent makes meaningful progress. Never split the `Agent` and `TaskUpdate(owner)` calls across turns.
+
+Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. `TaskCreate` calls in step 4a may be batched the same way.
 
 If the `Agent` dispatch fails synchronously, roll back BOTH the lock (per step 3) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the agent is running, ownership transfers.
 
@@ -172,6 +175,7 @@ End with: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 - **Lock before dispatch.** The label flip in step 3 happens before the `TaskCreate` + `Agent` calls in step 4.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 3) and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers — the engineer / e2e-author handles its own terminal state (push + re-add `review:*-pending` + mark tracking task `completed`).
+- **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel candidates, and races the orchestrator's owner assignment against the sub-agent's own terminal task update.
 - **`type:*` label decides the agent type, never the body.**
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns one issue; independent candidates fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same message.
 - **`kind:feature` only.**

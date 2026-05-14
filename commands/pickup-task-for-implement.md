@@ -116,11 +116,14 @@ Spawn the candidate with the `Agent` tool, passing:
 - `subagent_type` — per the table above
 - `mode` — `auto`
 - `name` — the chosen agent name (e.g. `engineer-implement-42`)
+- `run_in_background` — `true` (mandatory; see below)
 - `prompt` — minimal; only the **task issue number, title, URL, and the orchestrator `taskId`**
 
-Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row shows the assignment.
+`run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the sub-agent fully terminates, which (a) serializes candidates that were supposed to fan out in parallel and (b) lets the sub-agent's own terminal `TaskUpdate({ status: "completed" })` land before the orchestrator's `TaskUpdate({ owner })` — at which point the owner assignment races a finalized task and the harness UI never shows who owned the row.
 
-Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire.
+Immediately follow the `Agent` call — in the **same batched response** — with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment before the backgrounded sub-agent makes meaningful progress. Never split the `Agent` and `TaskUpdate(owner)` calls across turns.
+
+Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire.
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `pickup-task-for-review` / `close-task-issue` clear the GitHub-side labels once reviews pass).
 
@@ -153,6 +156,7 @@ End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining 
 - **Lock before dispatch.** The label flip in step 4 happens before the `TaskCreate` + `Agent` calls in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
+- **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel candidates, and races the orchestrator's owner assignment against the sub-agent's own terminal task update.
 - **`type:*` label decides the agent type, never the body.** `create-issues` puts type info on the label only; do not parse type out of the sub-issue body.
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns exactly one issue — never batch multiple issues into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls (and parallel `TaskUpdate` owner-assignments) in the same message.
 - **`kind:feature` only.** This command does not handle `kind:bug` or `kind:enhancement` fast-track tasks. Add those as separate commands when the fast-track flow is wired up — do NOT silently widen the label filter.

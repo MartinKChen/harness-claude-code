@@ -147,11 +147,14 @@ Spawn each PR with the `Agent` tool, passing:
 - `subagent_type` — `engineer`
 - `mode` — `auto`
 - `name` — the chosen agent name (e.g. `engineer-pr-128`)
+- `run_in_background` — `true` (mandatory; see below)
 - `prompt` — minimal; only the **PR number, scenarios list, and the orchestrator `taskId`**
 
-Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment.
+`run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the engineer fully terminates, which (a) serializes PRs that were supposed to fan out in parallel and (b) lets the engineer's own terminal `TaskUpdate({ status: "completed" })` land before the orchestrator's `TaskUpdate({ owner })` — at which point the owner assignment races a finalized task and the harness UI never shows who owned the row.
 
-Independent PRs fan out in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. `TaskCreate` calls in step 5a may be batched the same way per fire.
+Immediately follow the `Agent` call — in the **same batched response** — with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment before the backgrounded engineer makes meaningful progress. Never split the `Agent` and `TaskUpdate(owner)` calls across turns.
+
+Independent PRs fan out in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. `TaskCreate` calls in step 5a may be batched the same way per fire.
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Once the engineer is running, ownership transfers — it owns the terminal `status:fix-in-progress` removal and the tracking task's `completed` flip.
 
@@ -192,6 +195,7 @@ End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 - **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `TaskCreate` + `Agent` calls in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
 - **One orchestrator tracking task per dispatched engineer.** Every dispatched PR gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across PRs and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, remove `status:fix-in-progress` from the PR and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers (engineer removes the lock label and flips the tracking task to `completed`).
+- **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel PRs, and races the orchestrator's owner assignment against the engineer's own terminal task update.
 - **Lock only when both signals are terminal.** Mergeability and the workflow-check rollup must both be in a settled state before the lock + dispatch fires. `UNKNOWN` mergeability or any `IN_PROGRESS` / `QUEUED` / `PENDING` workflow check is benign — skip the PR and let a later fire re-classify once everything has landed.
 - **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1–2 of `conflict` / `ci`). Independent PRs fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same response.
 - **Skip clean PRs.** If a PR has green CI and is mergeable, leave it alone — `close-pr` owns merging.
