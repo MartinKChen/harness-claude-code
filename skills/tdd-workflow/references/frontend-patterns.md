@@ -561,16 +561,16 @@ Run all tooling from the project root. The first set is read-only checks; the se
 ### Checks
 
 ```bash
-tsc --noEmit                               # Type checking
-biome check .                              # Fast linting
-biome check .                              # Format check
-npm audit                                  # Security scan
-jest --coverage                            # Test coverage
+tsc --noEmit     # Type checking
+biome check .    # Lint
+biome check .    # Format check (same command — biome covers both)
+npm audit        # Security scan
+jest             # Tests
 ```
 
 - Run all five before declaring a task complete.
-- Replace `jest` with `vitest --coverage` on Vite projects.
-- A clean `tsc` and `biome` run is required; coverage thresholds (if any) come from `package.json` / `jest.config`.
+- Replace `jest` with `vitest` on Vite projects.
+- A clean `tsc` and `biome` run is required; coverage thresholds (if any) are configured in `package.json` / `jest.config` (`coverageThreshold`) and enforced by `jest` automatically — don't pass `--coverage` on the CLI.
 
 ### Auto-fix
 

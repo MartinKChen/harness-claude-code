@@ -15,7 +15,7 @@
 # project still runs cleanly.
 #
 # Checks (matching skills/tdd-workflow/references/{python,frontend}-patterns.md):
-#   backend:   uv run ruff check . / uv run black --check . / uv run mypy . /
+#   backend:   uv run ruff check . / uv run ruff format --check . / uv run mypy . /
 #              uv run bandit -r . / uv run pytest
 #   frontend:  biome check . / tsc --noEmit / npm audit / jest
 #   security:  gitleaks (secrets) / trivy fs (CVE + IaC) / semgrep (SAST)
@@ -112,7 +112,7 @@ run_backend_checks() {
   pushd "${backend_dir}" >/dev/null
 
   run_step "backend:lint"     uv run ruff check .
-  run_step "backend:format"   uv run black --check .
+  run_step "backend:format"   uv run ruff format --check .
   run_step "backend:type"     uv run mypy .
   run_step "backend:security" uv run bandit -r .
   run_step "backend:test"     uv run pytest

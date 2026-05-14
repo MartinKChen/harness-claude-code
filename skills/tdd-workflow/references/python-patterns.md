@@ -38,12 +38,12 @@ uv run python -m mypackage    # run the package
 ### PEP 8 conventions
 
 - 4-space indentation, no tabs.
-- Lines ≤ 88 chars (black default).
+- Lines ≤ 88 chars (ruff default).
 - `snake_case` for functions, methods, variables, modules.
 - `PascalCase` for classes.
 - `SCREAMING_SNAKE_CASE` for module-level constants.
 - Two blank lines between top-level defs; one between methods.
-- Imports grouped: stdlib → third-party → local; sorted by `isort`.
+- Imports grouped: stdlib → third-party → local; sorted by `ruff` (the `I` rules).
 - One statement per line; no semicolons.
 
 ### Type annotations on all signatures
@@ -207,7 +207,7 @@ backend/
 - `src/` layout is required (avoids accidental imports from CWD).
 - `api/` holds route/handler modules; `models/` holds dataclasses, ORM models, and DTOs; `utils/` holds cross-cutting helpers.
 - Tests mirror the package tree under `tests/`. Shared fixtures live in `tests/conftest.py`.
-- One `pyproject.toml` per service — declare deps, tool configs (`[tool.ruff]`, `[tool.black]`, `[tool.mypy]`, `[tool.pytest.ini_options]`) here.
+- One `pyproject.toml` per service — declare deps, tool configs (`[tool.ruff]`, `[tool.ruff.format]`, `[tool.mypy]`, `[tool.pytest.ini_options]`) here.
 
 ## Command
 
@@ -216,23 +216,21 @@ Run all tooling via `uv run` so it picks up the project environment. The first s
 ### Checks
 
 ```bash
-uv run mypy .                                     # Type checking
-uv run ruff check .                               # Fast linting
-uv run black --check .                            # Format check
-uv run bandit -r .                                # Static security analysis
-uv run pytest --cov=app --cov-report=term-missing # Test coverage
+uv run mypy .                  # Type checking
+uv run ruff check .            # Fast linting
+uv run ruff format --check .   # Format check
+uv run bandit -r .             # Static security analysis
+uv run pytest                  # Tests
 ```
 
 - Run all five before declaring a task complete.
-- Replace `--cov=app` with the actual top-level package name from `src/`.
-- A clean `mypy` and `ruff` run is required; coverage thresholds (if any) come from `pyproject.toml`.
+- A clean `mypy` and `ruff` run is required; coverage thresholds (if any) are configured in `pyproject.toml` (`[tool.pytest.ini_options]` / `[tool.coverage.*]`) and enforced by `pytest` automatically — don't pass `--cov` flags on the CLI.
 
 ### Auto-fix
 
 ```bash
-uv run black .             # Auto-format
-uv run ruff check --fix .  # Auto-fix lint issues
-uv run isort .             # Auto-sort imports
+uv run ruff format .       # Auto-format
+uv run ruff check --fix .  # Auto-fix lint issues (includes import sorting)
 ```
 
 - Run auto-fix before re-running checks; don't hand-fix what the formatters will fix.
