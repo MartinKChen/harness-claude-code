@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Always-fullstack engineer with three modes. Mode A — implements one assigned task issue (`type:backend` or `type:frontend`, never `type:e2e`) via strict TDD; pushes and adds `review:code-pending` + `review:security-pending` to the task. Mode B — fixes one open draft PR for `conflict` and/or `ci` scenarios dispatched by `pickup-failed-pr-for-fix`; pushes and removes `status:fix-in-progress` from the PR. Mode C — fixes one task issue per reviewer findings dispatched by `pickup-reviewed-task-for-fix`; pushes and flips the task's `review:*-passed` / `review:*-need-fix` back to `review:*-pending`. Operates inside `/tmp/git-worktree/<repo>/<slice-branch>` in every mode and applies the full fullstack pattern set upfront.
+description: Always-fullstack engineer with three modes. Mode A — implements one assigned task issue (`type:backend` or `type:frontend`, never `type:e2e`) via strict TDD; pushes and adds `review:code-pending` + `review:security-pending` to the task. Mode B — fixes one open draft PR for `conflict` and/or `ci` scenarios dispatched by `pickup-failed-pr-for-fix`; pushes and removes `status:fix-in-progress` from the PR. Mode C — fixes one task issue per reviewer findings dispatched by `pickup-reviewed-task-for-fix`; scopes findings to the task issue body plus the reviewer comment(s) created **after the slice branch's last commit** so previously-addressed rounds aren't re-processed; pushes and flips the task's `review:*-passed` / `review:*-need-fix` back to `review:*-pending`. Operates inside `/tmp/git-worktree/<repo>/<slice-branch>` in every mode and applies the full fullstack pattern set upfront.
 model: sonnet
 ---
 
@@ -226,23 +226,11 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
 
 Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator (`pickup-reviewed-task-for-fix`) has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) the agent discovers itself.
 
-1. **Fetch the task issue and the gate-specific reviewer comment(s).** Pull the task body and labels once:
+1. **Fetch the task body, resolve the slice branch's last commit, and pull only the reviewer comments newer than that commit.** Read the task body in full once — it is the contract the fix must still satisfy, independent of round number:
    ```bash
-   gh issue view <task-#> --json number,title,body,labels,url,comments
+   gh issue view <task-#> --json number,title,body,labels,milestone,url
    ```
-   For each gate in the dispatch's list, locate the most recent reviewer comment on the task whose body starts with the matching header (`# Code Review` for the `code` gate, `# Security Review` for the `security` gate):
-   ```bash
-   # Per gate (example for `code`).
-   gh issue view <task-#> --json comments \
-     --jq '.comments | reverse | map(select(.body | startswith("# Code Review"))) | .[0]'
-   ```
-   If a dispatched gate has no matching reviewer comment on the task, halt and surface "fix dispatched for gate `<gate>` but no `# <Gate> Review` comment on the task" — guessing a fix from a blank tree only churns the diff.
-
-   Triage every finding in the comments by severity:
-   - **CRITICAL / HIGH / MEDIUM** → must-fix. In scope unconditionally.
-   - **LOW / NIT / suggestion (no severity)** → fix only when the effort is small and obviously in-scope. Skip anything that would expand the diff materially or pull in unrelated refactors; note skipped items in your commit message body so the reviewer can see they were considered.
-
-2. **Materialize the slice branch in a worktree.** Resolve the parent slice issue, then list its linked branch (same shape as Mode A step 2):
+   Resolve the parent slice issue and its linked branch so the slice's most recent commit can be located (`${parent_number}` and `${slice_branch}` are reused by step 2's worktree setup — do not re-resolve them there):
    ```bash
    repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
    owner="${repo_slug%/*}"; repo="${repo_slug#*/}"
@@ -252,7 +240,43 @@ Inputs from the orchestrator: a task issue number **and** the list of reviewer g
      -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){parent{number}}}}' \
      --jq '.data.repository.issue.parent.number')"
 
+   if [ -z "${parent_number}" ] || [ "${parent_number}" = "null" ]; then
+     echo "task has no parent slice issue — surface and stop" >&2
+     exit 1
+   fi
+
    slice_branch="$(gh issue develop --list "${parent_number}" | head -1 | awk '{print $1}')"
+   if [ -z "${slice_branch}" ]; then
+     echo "parent slice issue has no linked branch — surface and stop" >&2
+     exit 1
+   fi
+
+   last_commit_iso="$(gh api "repos/${owner}/${repo}/branches/${slice_branch}" \
+     --jq '.commit.commit.committer.date')"
+   if [ -z "${last_commit_iso}" ] || [ "${last_commit_iso}" = "null" ]; then
+     echo "could not read last-commit timestamp on ${slice_branch} — surface and stop" >&2
+     exit 1
+   fi
+   ```
+   For each gate in the dispatch's list, pull only the most recent reviewer comment **created strictly after `${last_commit_iso}`** whose body starts with the matching header (`# Code Review` for the `code` gate, `# Security Review` for the `security` gate):
+   ```bash
+   # Per gate (example for `code`).
+   gh issue view <task-#> --json comments \
+     --jq --arg cutoff "${last_commit_iso}" \
+          '.comments
+           | map(select(.createdAt > $cutoff))
+           | reverse
+           | map(select(.body | startswith("# Code Review")))
+           | .[0]'
+   ```
+   Comments created **at or before** `${last_commit_iso}` are previous review rounds — the findings they raised are already addressed by the commits on the slice branch, and re-reading them would re-do completed work. If a dispatched gate has no matching reviewer comment newer than `${last_commit_iso}`, halt and surface "fix dispatched for gate `<gate>` but no `# <Gate> Review` comment newer than the slice's last commit (`${last_commit_iso}`) on the task" — the orchestrator and the live state disagree, and guessing a fix from a blank tree only churns the diff.
+
+   Triage every finding in the in-scope reviewer comment(s) by severity:
+   - **CRITICAL / HIGH / MEDIUM** → must-fix. In scope unconditionally.
+   - **LOW / NIT / suggestion (no severity)** → fix only when the effort is small and obviously in-scope. Skip anything that would expand the diff materially or pull in unrelated refactors; note skipped items in your commit message body so the reviewer can see they were considered.
+
+2. **Materialize the slice branch in a worktree.** Reuse the `${slice_branch}` already resolved in step 1; check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
+   ```bash
    repo_name="$(basename "$(git rev-parse --show-toplevel)")"
    worktree_path="/tmp/git-worktree/${repo_name}/${slice_branch}"
 
