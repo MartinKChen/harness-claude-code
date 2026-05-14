@@ -1,37 +1,22 @@
 #!/usr/bin/env bash
 # PostToolUse hook for Edit / Write / MultiEdit / NotebookEdit. Runs
-# language-appropriate, file-scoped format/lint checks on the edited file and
-# surfaces failures as additionalContext so the agent sees them immediately
-# without waiting for the pre-push gate.
+# language-appropriate auto-fixers on the edited file so trivial format/lint
+# issues are corrected in place without round-tripping through the agent.
 #
-# Full project-wide test runs (pytest / jest) stay on the pre-push hook —
-# this hook is meant to be edit-fast. But format, lint, AND type checks all
-# fire here so a broken type stays a broken type for as little time as
-# possible. The trade-off is that `mypy` and `tsc --noEmit` are
-# project-scoped, not file-scoped, so each edit pays a small whole-project
-# tax — worth it because the type error is visible immediately rather than
-# at pre-push.
+# Diagnostic-only checks (mypy, tsc --noEmit, ruff/biome in check-only mode)
+# stay on the pre-push gate — this hook only runs commands that can mutate
+# the file to a passing state.
 #
 # Currently wired:
-#   *.py             → ruff format --check  (format)
-#                    → ruff check           (lint)
-#                    → mypy                 (type — project-scoped)
-#   *.ts / *.tsx     → biome check          (format + lint)
-#                    → tsc --noEmit         (type — project-scoped)
-#   *.js / *.jsx     → biome check          (format + lint)
+#   *.py             → ruff format           (auto-format)
+#                    → ruff check --fix      (auto-fix lints)
+#   *.ts / *.tsx     → biome check --write   (auto-fix format + lint)
+#   *.js / *.jsx     → biome check --write   (auto-fix format + lint)
 #
 # Only fires inside engineer worktrees (`/tmp/git-worktree/...`); silent
 # everywhere else.
 
 set -uo pipefail
-
-note() { printf '[post-edit-checks] %s\n' "$*" >&2; }
-
-emit() {
-  local context="$1"
-  jq -nc --arg context "$context" \
-    '{ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $context } }'
-}
 
 input="$(cat)"
 
@@ -52,26 +37,16 @@ case "$file_path" in
 esac
 
 ext="${file_path##*.}"
-results=""
 
-run_check() {
-  local label="$1"; shift
-  local out
-  if out="$( "$@" 2>&1 )"; then
-    : # silent pass — don't flood context on every successful edit
-  else
-    results+=$'\n['"${label}"'] FAIL\n'"${out}"$'\n'
-  fi
-}
+run_fix() { "$@" >/dev/null 2>&1 || true; }
 
 case "$ext" in
   py)
     backend_dir="$(printf '%s' "$file_path" | sed -nE 's|^(.*/backend)/.*|\1|p')"
     if [ -n "$backend_dir" ]; then
       pushd "$backend_dir" >/dev/null
-      run_check "ruff-format" uv run ruff format --check "$file_path"
-      run_check "ruff-check"  uv run ruff check        "$file_path"
-      run_check "mypy"        uv run mypy              "$file_path"
+      run_fix uv run ruff format       "$file_path"
+      run_fix uv run ruff check --fix  "$file_path"
       popd >/dev/null
     fi
     ;;
@@ -79,18 +54,10 @@ case "$ext" in
     frontend_dir="$(printf '%s' "$file_path" | sed -nE 's|^(.*/frontend)/.*|\1|p')"
     if [ -n "$frontend_dir" ]; then
       pushd "$frontend_dir" >/dev/null
-      run_check "biome-check" npx --no-install biome check "$file_path"
-      run_check "tsc-noemit"  npx --no-install tsc --noEmit
+      run_fix npx --no-install biome check --write "$file_path"
       popd >/dev/null
     fi
     ;;
-  *)
-    exit 0
-    ;;
 esac
-
-if [ -n "$results" ]; then
-  emit "post-edit checks on ${file_path}:${results}"
-fi
 
 exit 0
