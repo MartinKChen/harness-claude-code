@@ -122,16 +122,44 @@ gh pr edit <n> --remove-label "status:fix-in-progress"
 
 Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and removes `status:fix-in-progress` as part of its terminal push.
 
-### 5. Dispatch one `engineer` per PR
+### 5. Create an orchestrator tracking task, then dispatch one `engineer` per PR
 
-Spawn each PR with the `Agent` tool, `subagent_type=engineer`, `mode=auto`. Independent PRs go out in parallel as multiple `Agent` calls in the **same** response.
+Each dispatched engineer gets a unique addressable name and a matching orchestrator-side `Task` (via `TaskCreate`) so the user can see fix progress in the harness task list.
 
-The dispatch prompt is deliberately minimal — pass only the **PR number** and the **scenarios list**. The agent fetches the rest itself (PR body, head ref, base ref, failing run logs, conflicting paths) via `gh` and `git`.
+Pick a unique agent name of the form `engineer-pr-<pr-#>` (e.g. `engineer-pr-128`). The same string is used as the `Agent`'s `name` field AND the tracking task's `owner` so spinner, task row, and spawned agent line up.
+
+**5a. Create the orchestrator tracking task**
+
+Call `TaskCreate` with:
+
+- `subject`: `Fix PR #<pr-#>: <pr-title>`
+- `description`: one short paragraph — the PR URL, the comma-list of scenarios (`conflict` and/or `ci`), and a one-liner saying the engineer owns the lifecycle until it pushes and removes `status:fix-in-progress` from the PR.
+- `activeForm`: `Fixing PR #<pr-#>`
+
+Capture the returned `taskId`.
+
+If `TaskCreate` fails synchronously, roll back the lock (per step 4) and log `skipped PR #<n> — TaskCreate failed: <error>`.
+
+**5b. Dispatch the engineer and assign the tracking task**
+
+Spawn each PR with the `Agent` tool, passing:
+
+- `subagent_type` — `engineer`
+- `mode` — `auto`
+- `name` — the chosen agent name (e.g. `engineer-pr-128`)
+- `prompt` — minimal; only the **PR number, scenarios list, and the orchestrator `taskId`**
+
+Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment.
+
+Independent PRs fan out in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. `TaskCreate` calls in step 5a may be batched the same way per fire.
+
+If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Once the engineer is running, ownership transfers — it owns the terminal `status:fix-in-progress` removal and the tracking task's `completed` flip.
 
 Skeleton:
 
 ```
 Fix PR #<pr-#> in Mode B.
+Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and removed `status:fix-in-progress` from the PR.
 
 Scenarios to address (handle every one listed):
 - conflict
@@ -161,9 +189,10 @@ End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 - **Drafts only.** ready-to-review PRs are not in scope for this command. The slice PR is opened as a draft by `e2e-author` and stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
 - **No review handling, no merging.** This command does not touch `review:*` labels (those live on task issues now) and does not call `gh pr merge` (that's `close-pr`'s job).
-- **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `Agent` call in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
-- **Roll back the lock only on synchronous dispatch failure.** Once the agent is running, ownership transfers.
+- **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `TaskCreate` + `Agent` calls in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
+- **One orchestrator tracking task per dispatched engineer.** Every dispatched PR gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across PRs and never spawn an `Agent` without a paired tracking task.
+- **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, remove `status:fix-in-progress` from the PR and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers (engineer removes the lock label and flips the tracking task to `completed`).
 - **Lock only when both signals are terminal.** Mergeability and the workflow-check rollup must both be in a settled state before the lock + dispatch fires. `UNKNOWN` mergeability or any `IN_PROGRESS` / `QUEUED` / `PENDING` workflow check is benign — skip the PR and let a later fire re-classify once everything has landed.
-- **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1–2 of `conflict` / `ci`). Independent PRs go out as parallel `Agent` calls in the same response.
+- **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1–2 of `conflict` / `ci`). Independent PRs fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same response.
 - **Skip clean PRs.** If a PR has green CI and is mergeable, leave it alone — `close-pr` owns merging.
-- **Skip, don't fail, on benign outcomes.** "Nothing to fix", "mergeability UNKNOWN", "lock race", "cap reached" are all expected — log and continue.
+- **Skip, don't fail, on benign outcomes.** "Nothing to fix", "mergeability UNKNOWN", "lock race", "cap reached", "TaskCreate failed" are all expected — log and continue.

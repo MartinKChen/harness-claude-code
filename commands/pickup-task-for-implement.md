@@ -81,7 +81,9 @@ gh issue edit "${task_number}" \
 
 so the next fire can retry. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it adds `review:*-pending` labels and exits, leaving `status:in-progress` for `close-task-issue` to clear once reviews pass).
 
-### 5. Dispatch the right one-shot sub-agent
+### 5. Create an orchestrator tracking task, then dispatch the right one-shot sub-agent
+
+Each dispatched sub-agent gets a unique addressable name and a matching orchestrator-side `Task` (via `TaskCreate`) so the user can see progress in the harness task list. Terminology: the **GitHub task issue** is the unit of work tracked on GitHub; the **orchestrator tracking task** is the in-conversation `Task` row visible to the user.
 
 Read the candidate's `type:*` label (exactly one of `type:e2e`, `type:backend`, `type:frontend` — `create-issues` enforces this). Map to the dispatch table:
 
@@ -93,15 +95,41 @@ Read the candidate's `type:*` label (exactly one of `type:e2e`, `type:backend`, 
 
 If the candidate carries no `type:*` label or carries more than one, that's a `create-issues` invariant violation — roll back the lock (per step 4) and log `skipped #<n> — malformed type label(s): <list>`. Do NOT guess.
 
-Spawn each task with the `Agent` tool, `mode=auto`. Each spawn is a single `Agent` call; independent tasks within the same fire are dispatched in parallel as multiple `Agent` calls in the same message.
+Pick a unique agent name of the form `<subagent_type>-implement-<task-#>` (e.g. `engineer-implement-42`, `e2e-author-implement-15`). This same string is used as the `Agent`'s `name` field AND as the orchestrator task's `owner` so the user can correlate spinner, task row, and spawned agent.
 
-The spawn prompt is deliberately minimal — pass only the **task issue number, title, and URL**. The dispatched agent fetches everything else it needs (body, labels, parent issue, parent branch, worktree path, role hints) from `gh` itself.
+**5a. Create the orchestrator tracking task**
+
+Call `TaskCreate` with:
+
+- `subject`: `Implement #<task-#>: <task-title>`
+- `description`: one short paragraph — the URL, the chosen `subagent_type`, and a one-liner saying the dispatched agent owns its lifecycle until it pushes and adds `review:*-pending`.
+- `activeForm`: `Implementing #<task-#>`
+
+Capture the returned `taskId`.
+
+If `TaskCreate` itself fails synchronously, roll back the lock (per step 4) and log `skipped #<n> — TaskCreate failed: <error>`.
+
+**5b. Dispatch the sub-agent and assign the tracking task**
+
+Spawn the candidate with the `Agent` tool, passing:
+
+- `subagent_type` — per the table above
+- `mode` — `auto`
+- `name` — the chosen agent name (e.g. `engineer-implement-42`)
+- `prompt` — minimal; only the **task issue number, title, URL, and the orchestrator `taskId`**
+
+Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row shows the assignment.
+
+Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire.
+
+If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `pickup-task-for-review` / `close-task-issue` clear the GitHub-side labels once reviews pass).
 
 Skeleton for the dispatch prompt:
 
 ```
 Implement GitHub task issue #<task-#> ("<task-title>").
 URL: <task-url>
+Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and added the `review:*-pending` labels on the GitHub task.
 
 Fetch any further context you need (body, labels, parent slice issue, parent branch, etc.) yourself via `gh` — you have the issue ID.
 ```
@@ -122,10 +150,11 @@ End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining 
 ## Iron rules
 
 - **Tasks only — no slice promotion.** Slice issues are promoted by `pickup-slice-for-implement`, which is what populates `status:ready-to-implement` on the task sub-issues this command consumes. Do NOT touch slice issues here.
-- **Lock before dispatch.** The label flip in step 4 happens before the `Agent` call in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
-- **Roll back the lock only on synchronous dispatch failure.** Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the task, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
+- **Lock before dispatch.** The label flip in step 4 happens before the `TaskCreate` + `Agent` calls in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
+- **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
+- **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
 - **`type:*` label decides the agent type, never the body.** `create-issues` puts type info on the label only; do not parse type out of the sub-issue body.
-- **One task per dispatched sub-agent.** Each `Agent` call owns exactly one task — never batch multiple tasks into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls in the same message.
+- **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns exactly one issue — never batch multiple issues into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls (and parallel `TaskUpdate` owner-assignments) in the same message.
 - **`kind:feature` only.** This command does not handle `kind:bug` or `kind:enhancement` fast-track tasks. Add those as separate commands when the fast-track flow is wired up — do NOT silently widen the label filter.
-- **No worktree creation, no pre-fetched context, no role/mode in the dispatch.** The dispatched sub-agent does its own discovery off the issue ID and owns its full lifecycle.
-- **Skip, don't fail, on benign outcomes.** "Blocked", "malformed labels", "lock race", "cap reached" are all expected — log them and continue, never abort the whole run.
+- **No worktree creation, no pre-fetched context, no role/mode in the dispatch.** The dispatched sub-agent does its own discovery off the issue ID and owns its full lifecycle (including its own tracking-task status transitions).
+- **Skip, don't fail, on benign outcomes.** "Blocked", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — log them and continue, never abort the whole run.

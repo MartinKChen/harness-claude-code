@@ -88,7 +88,9 @@ The lock works because both downstream queries are negative on the stripped stat
 - `pickup-reviewed-task-for-fix` (this command) requires at least one `review:*-need-fix` label, so the stripped task no longer matches its filter.
 - `pickup-task-for-review` requires at least one `review:*-pending` label, so the stripped task doesn't get picked up for review either — until the engineer's terminal flip adds `review:*-pending` back.
 
-### 4. Dispatch the matching sub-agent
+### 4. Create an orchestrator tracking task, then dispatch the matching sub-agent
+
+Each dispatched sub-agent gets a unique addressable name and a matching orchestrator-side `Task` (via `TaskCreate`) so the user can see fix progress in the harness task list. Terminology: the **GitHub task issue** is the unit of work on GitHub; the **orchestrator tracking task** is the in-conversation `Task` row.
 
 Read the task's `type:*` label (exactly one of `type:e2e`, `type:backend`, `type:frontend`). Map:
 
@@ -100,15 +102,43 @@ Read the task's `type:*` label (exactly one of `type:e2e`, `type:backend`, `type
 
 If the task has zero or more than one `type:*` label, roll back the lock (per step 3) and log `skipped #<n> — malformed type label(s): <list>`.
 
-Spawn each task with the `Agent` tool, `mode=auto`. Independent tasks within the same fire are dispatched in parallel as multiple `Agent` calls in the same message.
+Pick a unique agent name of the form `<subagent_type>-fix-<task-#>` (e.g. `engineer-fix-42`, `e2e-author-fix-15`). This same string is used as the `Agent`'s `name` field AND the tracking task's `owner` so the user can correlate spinner, task row, and spawned agent.
 
-The spawn prompt passes the **task issue number, title, URL, and the original need-fix gates** (the subset of the snapshot whose labels were `review:{code,security}-need-fix`, NOT the `*-passed` ones — `code` and/or `security`). The dispatched agent reads the reviewer's findings comment on the task and fixes accordingly; the need-fix gates tell it which reviewer comment(s) to read.
+**4a. Create the orchestrator tracking task**
+
+Call `TaskCreate` with:
+
+- `subject`: `Fix review findings on #<task-#>: <task-title>`
+- `description`: one short paragraph — URL, chosen `subagent_type`, comma-list of need-fix gates (`code` and/or `security`), and a one-liner saying the agent owns the lifecycle until it pushes and re-adds `review:*-pending` on the GitHub task.
+- `activeForm`: `Fixing review feedback on #<task-#>`
+
+Capture the returned `taskId`.
+
+If `TaskCreate` fails synchronously, roll back the lock (per step 3) and log `skipped #<n> — TaskCreate failed: <error>`.
+
+**4b. Dispatch the sub-agent and assign the tracking task**
+
+Spawn each candidate with the `Agent` tool, passing:
+
+- `subagent_type` — per the table above
+- `mode` — `auto`
+- `name` — the chosen agent name (e.g. `engineer-fix-42`)
+- `prompt` — minimal; only the **task issue number, title, URL, the need-fix gate list, and the orchestrator `taskId`**
+
+Immediately follow with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row shows the assignment.
+
+Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate` calls together in one batched response. `TaskCreate` calls in step 4a may be batched the same way.
+
+If the `Agent` dispatch fails synchronously, roll back BOTH the lock (per step 3) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the agent is running, ownership transfers.
+
+The spawn prompt passes the **task issue number, title, URL, the original need-fix gates** (the subset of the snapshot whose labels were `review:{code,security}-need-fix`, NOT the `*-passed` ones — `code` and/or `security`), and the orchestrator `taskId`. The dispatched agent reads the reviewer's findings comment on the GitHub task and fixes accordingly; the need-fix gates tell it which reviewer comment(s) to read.
 
 Skeleton:
 
 ```
 Fix the review feedback on GitHub task issue #<task-#> ("<task-title>").
 URL: <task-url>
+Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and re-added the `review:*-pending` labels on the GitHub task.
 
 Reviewer gates that reported `need-fix` (read the matching reviewer comment on the issue):
 - code
@@ -139,10 +169,11 @@ End with: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 - **Strip both `need-fix` and `passed`.** A fix can invalidate a previously-passed gate; both must re-review once the engineer's terminal flip adds the pending labels back. Never selectively leave a `*-passed` label in place when locking.
 - **Skip when a review cycle is in flight.** `review:*-pending` or `review:*-running` on the task means a reviewer is mid-pass; dispatching a fix now would race the reviewer's read of the slice branch. Wait for the cycle to land (terminate at `*-passed` or `*-need-fix`).
 - **No e2e gate.** The `review:e2e-*` label family has been retired. E2e signal flows through the slice PR's GitHub Actions workflow check; this command does not touch it.
-- **Lock before dispatch.** The label flip in step 3 happens before the `Agent` call in step 4.
-- **Roll back the lock only on synchronous dispatch failure.** Once the agent is running, ownership transfers — the engineer / e2e-author handles its own terminal state.
+- **Lock before dispatch.** The label flip in step 3 happens before the `TaskCreate` + `Agent` calls in step 4.
+- **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
+- **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 3) and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers — the engineer / e2e-author handles its own terminal state (push + re-add `review:*-pending` + mark tracking task `completed`).
 - **`type:*` label decides the agent type, never the body.**
-- **One task per dispatched sub-agent.**
+- **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns one issue; independent candidates fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same message.
 - **`kind:feature` only.**
 - **No worktree creation, no pre-fetched context.** The dispatched sub-agent does its own discovery off the issue ID.
-- **Skip, don't fail, on benign outcomes.** "Review in flight", "malformed labels", "lock race", "cap reached" are all expected — log and continue.
+- **Skip, don't fail, on benign outcomes.** "Review in flight", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — log and continue.
