@@ -9,9 +9,15 @@
 #
 # Currently wired:
 #   *.py             → ruff format           (auto-format)
-#                    → ruff check --fix      (auto-fix lints)
-#   *.ts / *.tsx     → biome check --write   (auto-fix format + lint)
-#   *.js / *.jsx     → biome check --write   (auto-fix format + lint)
+#   *.ts / *.tsx     → biome format --write  (auto-format)
+#   *.js / *.jsx     → biome format --write  (auto-format)
+#
+# Lint auto-fixers (`ruff check --fix`, `biome check --write`,
+# `biome lint --write`) are intentionally NOT wired here: their
+# unused-import / unused-variable rules race with multi-step edits where the
+# agent adds an import first and the code that uses it second — the fixer
+# strips the import between the two Edit calls, and the agent loops or gives
+# up. Lint auto-fixes belong on the pre-push gate, not the per-edit hook.
 #
 # Only fires inside engineer worktrees (`/tmp/git-worktree/...`); silent
 # everywhere else.
@@ -45,8 +51,7 @@ case "$ext" in
     backend_dir="$(printf '%s' "$file_path" | sed -nE 's|^(.*/backend)/.*|\1|p')"
     if [ -n "$backend_dir" ]; then
       pushd "$backend_dir" >/dev/null
-      run_fix uv run ruff format       "$file_path"
-      run_fix uv run ruff check --fix  "$file_path"
+      run_fix uv run ruff format "$file_path"
       popd >/dev/null
     fi
     ;;
@@ -54,7 +59,7 @@ case "$ext" in
     frontend_dir="$(printf '%s' "$file_path" | sed -nE 's|^(.*/frontend)/.*|\1|p')"
     if [ -n "$frontend_dir" ]; then
       pushd "$frontend_dir" >/dev/null
-      run_fix npx --no-install biome check --write "$file_path"
+      run_fix npx --no-install biome format --write "$file_path"
       popd >/dev/null
     fi
     ;;
