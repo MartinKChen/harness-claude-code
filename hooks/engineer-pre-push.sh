@@ -14,7 +14,12 @@
 # actually existing in this worktree, so a backend-only or frontend-only
 # project still runs cleanly.
 #
-# Checks (matching skills/tdd-workflow/references/{python,frontend}-patterns.md):
+# Checks (matching skills/tdd-workflow/references/{python,frontend,docker}-patterns.md):
+#   container: every deployable surface (backend/, frontend/, or a root-level
+#              single-package layout) must have a Dockerfile + .dockerignore,
+#              plus a top-level compose.yaml / docker-compose.yaml. Push is
+#              denied with an explicit list of missing files if any are absent
+#              — first slice that touches the surface owns creating them.
 #   backend:   uv run ruff check . / uv run ruff format --check . / uv run mypy . /
 #              uv run bandit -r . / uv run pytest
 #   frontend:  biome check . / tsc --noEmit / npm audit / jest
@@ -171,6 +176,72 @@ run_security_scans() {
   fi
 }
 
+run_container_presence_checks() {
+  # Unconditional presence gate for container artifacts. The engineer agent's
+  # spec (Mode A step 6 / step 8, Mode B & C step 5) requires every deployable
+  # application surface to have a Dockerfile and a .dockerignore, plus a
+  # top-level compose file if any deployable surface exists. The "task did not
+  # change the runtime surface" loophole does NOT exempt a slice from this —
+  # the first slice that touches the surface owns creating these files, and
+  # every downstream slice inherits them.
+  #
+  # Detection rules:
+  #   - `backend/`     → requires `backend/Dockerfile` AND `backend/.dockerignore`.
+  #   - `frontend/`    → requires `frontend/Dockerfile` AND `frontend/.dockerignore`.
+  #   - Neither, but a root-level `pyproject.toml` or `package.json` exists
+  #     (single-package layout)            → requires `Dockerfile` AND `.dockerignore`
+  #                                          at the worktree root.
+  #
+  # If any deployable surface is found, a top-level `compose.yaml` or
+  # `docker-compose.yaml` (`.yml` variants also accepted) is required at the
+  # worktree root to wire the services.
+  #
+  # Missing files are reported individually so the engineer sees the full list
+  # at once instead of one-by-one.
+
+  local missing=()
+  local surface_found=0
+
+  if [ -d "$cwd/backend" ]; then
+    surface_found=1
+    [ -f "$cwd/backend/Dockerfile"     ] || missing+=("backend/Dockerfile")
+    [ -f "$cwd/backend/.dockerignore"  ] || missing+=("backend/.dockerignore")
+  fi
+
+  if [ -d "$cwd/frontend" ]; then
+    surface_found=1
+    [ -f "$cwd/frontend/Dockerfile"    ] || missing+=("frontend/Dockerfile")
+    [ -f "$cwd/frontend/.dockerignore" ] || missing+=("frontend/.dockerignore")
+  fi
+
+  if [ "$surface_found" -eq 0 ] && { [ -f "$cwd/pyproject.toml" ] || [ -f "$cwd/package.json" ]; }; then
+    surface_found=1
+    [ -f "$cwd/Dockerfile"    ] || missing+=("Dockerfile")
+    [ -f "$cwd/.dockerignore" ] || missing+=(".dockerignore")
+  fi
+
+  if [ "$surface_found" -eq 1 ]; then
+    if [ ! -f "$cwd/compose.yaml" ] && [ ! -f "$cwd/compose.yml" ] \
+       && [ ! -f "$cwd/docker-compose.yaml" ] && [ ! -f "$cwd/docker-compose.yml" ]; then
+      missing+=("compose.yaml (or docker-compose.yaml) at worktree root")
+    fi
+  fi
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    note "container presence check FAILED — missing: ${missing[*]}"
+    local list=""
+    for m in "${missing[@]}"; do list+=$'\n  - '"${m}"; done
+    deny \
+      "engineer-pre-push: blocking git push for ${slice_branch} — missing required container artifacts: ${missing[*]}" \
+      "Every deployable surface in the worktree must ship with a Dockerfile + .dockerignore, plus a top-level compose file. See agents/engineer.md (Best Practices → 'Container setup is a pre-push gate') and skills/tdd-workflow/references/docker-patterns.md for the multi-stage / pinned / non-root template. Missing now:${list}
+
+Scaffold the missing files (multi-stage, pinned tags, non-root user, secrets via env, no .venv inside images), commit via git-workflow as chore(scaffold): <what>, and retry the push."
+  fi
+
+  note "container presence check OK"
+}
+
+run_container_presence_checks
 run_backend_checks
 run_frontend_checks
 run_security_scans
