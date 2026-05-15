@@ -5,21 +5,22 @@ sub-issue. The task's type is carried by the `type:backend` label set on
 
 ATOMIC: one `backend` task delivers **exactly one** of:
 - a single API endpoint, OR
-- a single data-model entity change (one table / model class), OR
 - a single utility function/module.
 
-Do NOT bundle. "Endpoint + its model" is two tasks ordered via `Blocked by`,
-not one. If the Delivery section needs the word "and" between two of those
-units, split the task.
+Data-model + migration changes are NOT their own task. When the endpoint
+(or utility) introduces a new model or modifies an existing one, the schema
+change rides along in this same task — note it in the Delivery section
+and INCLUDE the Migration scenarios block. A second endpoint that uses
+the same model lives in its own task and `Blocked by` the task that
+introduced the model.
 
-When the task changes a data model, the **Migration scenarios** block is
-mandatory; otherwise omit it entirely.
+Do NOT bundle two endpoints or two utilities. If the Delivery section
+needs the word "and" between two endpoints or two utilities, split the task.
 -->
 
 ## Delivery
-The **single** unit being created or modified — pick exactly one of the lines below and delete the others:
-- API endpoint: `POST /<resource>` — <purpose>
-- Data model: `<Entity>` — <columns / relations added or changed>
+The **single** unit being created or modified — pick exactly one of the lines below and delete the other:
+- API endpoint: `POST /<resource>` — <purpose>. *If this endpoint introduces or changes a data model, note it here: e.g. "introduces `<Entity>` model with columns `<...>`".*
 - Utility: `<fn>` — <purpose>
 
 ## Done criteria (EARS)
@@ -36,7 +37,7 @@ Scenario: <name tied to AC2>
   And it SHOULD <secondary response>
 ```
 
-<!-- INCLUDE this Migration scenarios block ONLY when this task changes a data model. -->
+<!-- INCLUDE this Migration scenarios block ONLY when this task introduces or changes a data model alongside its endpoint/utility. -->
 ### Migration scenarios (Gherkin)
 ```gherkin
 Scenario: upgrade migration applies cleanly

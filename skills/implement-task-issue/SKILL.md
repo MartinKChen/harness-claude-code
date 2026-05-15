@@ -58,6 +58,13 @@ List open task issues that are ready to implement and tagged as features.
 bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
+The script returns candidates already sorted by the deterministic pick-order tiebreaker, so the caller iterates top-to-bottom without further ordering work:
+
+1. `type:e2e` before `type:backend` before `type:frontend` (default outside-in flavor).
+2. Lowest GitHub issue number first.
+
+This matters because `create-issues` now writes a within-slice DAG (e2e tasks remain sequential among themselves; `be.1` and `fe.1` are each blocked by the last `e2e`; further edges only on real upstream needs). The moment a slice's last `e2e` closes, multiple `backend`/`frontend` tasks can become eligible simultaneously — the tiebreaker decides which one this fire dispatches first, while the others stay eligible for the next fire.
+
 If the result is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. For each candidate, query open-blocker count
