@@ -66,7 +66,7 @@ slice_response="$(bash scripts/inspect-subissues.sh <slice-#>)"
 Local decision on the response JSON:
 
 - `open_subissues = subIssues.nodes | map(select(.state == "OPEN")) | length`
-- `open_subissues > 0` → log `skipped slice #<n> — <count> open sub-issue(s)` and continue.
+- `open_subissues > 0` → track as skipped (<count> open sub-issues) and continue.
 - `open_subissues == 0` → keep the slice. Record the list of **task sub-issue numbers** (every sub-issue whose labels include both `level:task` and `kind:feature`) for use in step 5.
 
 ### 4. Resolve the slice branch and skip if a PR is already open
@@ -76,7 +76,7 @@ The slice branch is attached to the slice issue (set by `create-issues` via `gh 
 ```bash
 slice_branch="$(bash scripts/resolve-branch.sh "${slice_number}")"
 if [ -z "${slice_branch}" ]; then
-  echo "skipped slice #${slice_number} — no linked branch"
+  # internally count as skipped (no linked branch); do not print per-slice
   continue
 fi
 ```
@@ -86,7 +86,7 @@ This skill is idempotent. If a PR (draft or ready) already exists for the slice 
 ```bash
 existing_pr="$(bash scripts/find-existing-pr.sh "${slice_branch}")"
 if [ -n "${existing_pr}" ]; then
-  echo "skipped slice #${slice_number} — PR #${existing_pr} already exists"
+  # internally count as skipped (PR already exists); do not print per-slice
   continue
 fi
 ```
@@ -136,12 +136,12 @@ bash scripts/open-draft-pr.sh \
   ${slice_milestone_title:+--milestone "${slice_milestone_title}"}
 ```
 
-If the slice has no milestone (`.milestone` is `null` in step 2's JSON), omit `--milestone` and log it in the per-slice summary — don't fabricate a milestone or stop the run.
+If the slice has no milestone (`.milestone` is `null` in step 2's JSON), omit `--milestone` and continue — don't fabricate a milestone or stop the run.
 
 If `open-draft-pr.sh` fails:
 
-- **Lock race / duplicate PR (`422` "A pull request already exists")** → benign; log `skipped slice #<n> — PR raced into existence` and continue (a concurrent fire opened it).
-- **Missing milestone (`gh` rejects an unknown milestone name)** → re-run the create without `--milestone` and log `opened PR #<n> — slice milestone "<name>" not found, opened without milestone`; do not abort the run.
+- **Lock race / duplicate PR (`422` "A pull request already exists")** → benign; track as skipped (PR raced into existence) and continue (a concurrent fire opened it).
+- **Missing milestone (`gh` rejects an unknown milestone name)** → re-run the create without `--milestone` and continue (count the slice as opened); do not abort the run.
 - **Anything else** → surface verbatim and stop processing further candidates for this run.
 
 Clean up the temp body file once the create returns:
@@ -154,17 +154,9 @@ rm -f "${body_file}"
 
 If the user passed a positive integer N, stop opening new PRs once N have been opened in this run. Already-skipped slices do **not** count toward N.
 
-Print a one-line-per-slice summary:
+Track opened / skipped counts internally per slice; do **not** print per-slice decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `opened     slice #<n> "<title>" → PR #<pr-#> (milestone: <name>, tasks: <K>)`
-- `opened     slice #<n> "<title>" → PR #<pr-#> (no milestone, tasks: <K>)`
-- `skipped    slice #<n> "<title>" — <count> open sub-issue(s)`
-- `skipped    slice #<n> "<title>" — no linked branch`
-- `skipped    slice #<n> "<title>" — PR #<pr-#> already exists`
-- `skipped    slice #<n> "<title>" — PR raced into existence`
-- `skipped    slice #<n> "<title>" — cap reached (opened N this run)`
-
-End with one sentence: `Opened <X>; skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
+`Opened <X>; skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
 
 ## Iron rules
 
@@ -173,7 +165,7 @@ End with one sentence: `Opened <X>; skipped <Y>; <Z> remaining eligible.` (`Z` i
 - **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body.** `close-pr` reads `closingIssuesReferences[0]` to find the slice issue it strips `status:in-progress` from. Putting a task ahead of the slice would point `close-pr` at the wrong issue.
 - **Use `Closes` for every linked issue, not `Refs`.** All task sub-issues are already closed when this skill fires, so the closing keyword is a no-op at merge time but is what populates the PR's Linked Issues / Development sidebar. Keep the linkage discoverable in the UI.
 - **Body template comes from the `git-workflow` skill — soft reference only.** Resolve the template by invoking `git-workflow` and using its PR-body template; never hard-code a filesystem path (this is a plugin, and the installed location of another skill's assets is environment-dependent). Do not duplicate the template inline. The template's trailing `Closes #<issue-number>` placeholder is replaced wholesale by the rendered linked-issues block in step 5.
-- **Milestone inherits from the slice issue.** If the slice has no milestone, open the PR without one and log it — never fabricate or pick a milestone heuristically. The slice is the source of truth for which release the work belongs to.
+- **Milestone inherits from the slice issue.** If the slice has no milestone, open the PR without one — never fabricate or pick a milestone heuristically. The slice is the source of truth for which release the work belongs to.
 - **`kind:feature` only.** Bugs / enhancements are out of scope; if a fast-track flow is added later, give it its own skill rather than widening the label filter here.
 - **No branch creation, no commits, no merge.** This skill only opens draft PRs. The slice branch was created by `create-issues`; commits land via the engineer / e2e-author; merge is owned by `close-pr`.
-- **Skip, don't fail, on benign outcomes.** "Open sub-issues remain", "no linked branch", "PR already exists", "PR raced into existence", "milestone not found", "cap reached" are all expected — log and continue, never abort the whole run.
+- **Skip, don't fail, on benign outcomes.** "Open sub-issues remain", "no linked branch", "PR already exists", "PR raced into existence", "milestone not found", "cap reached" are all expected — track internally and continue, never surface per-slice or abort the whole run.

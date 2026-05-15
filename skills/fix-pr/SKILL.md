@@ -94,8 +94,8 @@ checks_json="$(bash scripts/inspect-checks.sh <pr-#>)"
 running="$(printf '%s' "$checks_json" | jq '.running')"
 
 if [ "$running" -gt 0 ]; then
-  echo "skipped PR #<n> — checks still running (${running})"
-  continue   # next PR
+  # internally count as skipped (checks still running); do not print per-PR
+  continue
 fi
 
 failing="$(printf '%s' "$checks_json" | jq -c '.failing')"
@@ -106,7 +106,7 @@ If `failing` is a non-empty JSON array → add `ci` to the scenario set.
 #### 3.3 Scenario decision
 
 - Both signals terminal **and** scenario set non-empty → continue to step 4 (lock + dispatch).
-- Both signals terminal **and** scenario set empty → log `skipped PR #<n> — nothing to fix` and continue. (`close-pr` owns merging clean PRs.)
+- Both signals terminal **and** scenario set empty → track as skipped (nothing to fix) and continue. (`close-pr` owns merging clean PRs.)
 - Either signal mid-flight (mergeability `UNKNOWN` or any workflow still running) → skip with the matching reason; a later fire re-classifies once everything has landed.
 
 ### 4. Lock with `status:fix-in-progress` (only when both signals are terminal)
@@ -145,7 +145,7 @@ Call `TaskCreate` with:
 
 Capture the returned `taskId`.
 
-If `TaskCreate` fails synchronously, roll back the lock (per step 4) and log `skipped PR #<n> — TaskCreate failed: <error>`.
+If `TaskCreate` fails synchronously, roll back the lock (per step 4) and track as skipped (TaskCreate failed).
 
 **5b. Dispatch the engineer and assign the tracking task**
 
@@ -184,16 +184,9 @@ Include only the scenarios that classified for this PR; never list one that didn
 
 If the user passed a positive integer N, stop after N PRs have been dispatched this run. Already-skipped PRs do not count.
 
-Print a one-line-per-PR summary:
+Track dispatched / skipped counts internally per PR; do **not** print per-PR decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `dispatched  PR #<n> "<title>" → engineer (scenarios: <comma-list>)`
-- `skipped     PR #<n> "<title>" — nothing to fix`
-- `skipped     PR #<n> "<title>" — mergeability still UNKNOWN`
-- `skipped     PR #<n> "<title>" — checks still running (<count>)`
-- `skipped     PR #<n> "<title>" — lock race`
-- `skipped     PR #<n> "<title>" — cap reached (dispatched N this run)`
-
-End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
+`Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
@@ -206,4 +199,4 @@ End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 - **Lock only when both signals are terminal.** Mergeability and the workflow-check rollup must both be in a settled state before the lock + dispatch fires. `UNKNOWN` mergeability or any `IN_PROGRESS` / `QUEUED` / `PENDING` workflow check is benign — skip the PR and let a later fire re-classify once everything has landed.
 - **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1–2 of `conflict` / `ci`). Independent PRs fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same response.
 - **Skip clean PRs.** If a PR has green CI and is mergeable, leave it alone — `close-pr` owns merging.
-- **Skip, don't fail, on benign outcomes.** "Nothing to fix", "mergeability UNKNOWN", "lock race", "cap reached", "TaskCreate failed" are all expected — log and continue.
+- **Skip, don't fail, on benign outcomes.** "Nothing to fix", "mergeability UNKNOWN", "lock race", "cap reached", "TaskCreate failed" are all expected — track internally and continue, never surface per-PR.

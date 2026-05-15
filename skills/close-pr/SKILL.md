@@ -83,10 +83,10 @@ status="$(bash scripts/wait-mergeability.sh <pr-#>)"
 
 3.3 **Classify.**
 
-- `mergeable == CONFLICTING` → log `skipped PR #<n> — code conflict` and continue. (`fix-pr` will pick this PR up and dispatch an engineer.)
-- `mergeable == UNKNOWN` past the cap → log `skipped PR #<n> — mergeability still UNKNOWN` and continue.
-- Any check in `statusCheckRollup` with `conclusion != "SUCCESS"` and `conclusion != "SKIPPED"` (or `state == "FAILURE"` for the legacy status-context shape) → log `skipped PR #<n> — failing check(s): <names>` and continue. (`fix-pr` will dispatch an engineer.)
-- Any check still `IN_PROGRESS` / `QUEUED` / `PENDING` → log `skipped PR #<n> — checks still running (<count>)` and continue (a later fire will re-pick).
+- `mergeable == CONFLICTING` → track as skipped (code conflict) and continue. (`fix-pr` will pick this PR up and dispatch an engineer.)
+- `mergeable == UNKNOWN` past the cap → track as skipped (mergeability still UNKNOWN) and continue.
+- Any check in `statusCheckRollup` with `conclusion != "SUCCESS"` and `conclusion != "SKIPPED"` (or `state == "FAILURE"` for the legacy status-context shape) → track as skipped (failing checks) and continue. (`fix-pr` will dispatch an engineer.)
+- Any check still `IN_PROGRESS` / `QUEUED` / `PENDING` → track as skipped (checks still running) and continue (a later fire will re-pick).
 - All checks `SUCCESS`/`SKIPPED` and `mergeable == MERGEABLE` → proceed to step 4.
 
 ### 4. Promote draft → ready, squash-merge, delete the slice branch
@@ -101,7 +101,7 @@ Never `--force` a merge; never push directly to `main`; never override branch pr
 bash scripts/undo-ready.sh <pr-#>
 ```
 
-Log `skipped PR #<n> — merge race`. A later fire will re-pick.
+Track as skipped (merge race) and continue. A later fire will re-pick.
 
 ### 5. Close the linked slice issue
 
@@ -113,7 +113,7 @@ GitHub's squash-merge with a "Closes #<n>" trailer auto-closes the linked issue,
 slice_issue="$(bash scripts/resolve-slice-issue.sh <pr-#>)"
 ```
 
-If empty, log `merged PR #<n> — no linked slice issue (left untouched)` and continue (the merge already succeeded; the slice issue lookup is best-effort).
+If empty, count the PR as merged (no linked slice issue) and continue (the merge already succeeded; the slice issue lookup is best-effort).
 
 5.2 **Strip `status:in-progress` and close.**
 
@@ -127,18 +127,9 @@ Already-removed label / already-closed issue → benign, no-op. Any other failur
 
 If the user passed a positive integer N, stop after N PRs have been merged this run.
 
-One-line-per-PR summary:
+Track merged / skipped counts internally per PR; do **not** print per-PR decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `merged     PR #<n> "<title>" → slice issue #<m> closed`
-- `merged     PR #<n> "<title>" — no linked slice issue`
-- `skipped    PR #<n> "<title>" — code conflict`
-- `skipped    PR #<n> "<title>" — failing check(s): <names>`
-- `skipped    PR #<n> "<title>" — checks still running (<count>)`
-- `skipped    PR #<n> "<title>" — mergeability still UNKNOWN`
-- `skipped    PR #<n> "<title>" — merge race`
-- `skipped    PR #<n> "<title>" — cap reached (merged N this run)`
-
-End with: `Merged <X>; skipped <Y>; <Z> remaining eligible.`
+`Merged <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
@@ -149,4 +140,4 @@ End with: `Merged <X>; skipped <Y>; <Z> remaining eligible.`
 - **Conflict → `fix-pr`.** This skill does not call `gh pr ready --undo` on a conflict — the PR is already draft. Just skip; `fix-pr` owns dispatching an engineer.
 - **No PR-state changes on a skip.** A skipped PR ends the run in the exact state it started (draft, original labels, no comments).
 - **No promotion to ready on a non-mergeable PR.** Only promote when step 3 returns `MERGEABLE` + all-green checks. Roll the promotion back on a merge race per step 4.
-- **Skip, don't fail, on benign outcomes.** Conflicts, failing checks, running checks, unknown mergeability, merge races, and cap-reached are all expected.
+- **Skip, don't fail, on benign outcomes.** Conflicts, failing checks, running checks, unknown mergeability, merge races, and cap-reached are all expected — track internally and continue, never surface per-PR.

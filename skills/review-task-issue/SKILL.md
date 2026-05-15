@@ -65,7 +65,7 @@ For each unique task returned by step 2, derive the set of pending gates from it
 
 Skip a pair (and log the skip reason) when:
 
-- The same gate is already in `review:<gate>-running` on this task — log `skipped #<n> <gate> — already running` (a concurrent fire picked it up).
+- The same gate is already in `review:<gate>-running` on this task — track as skipped (already running) and continue (a concurrent fire picked it up).
 
 ### 4. Flip just the pending gate(s) to running — preserve every other label
 
@@ -117,14 +117,9 @@ Fetch any further context you need (issue body, parent slice issue, slice branch
 
 If the user passed a positive integer N, stop locking + dispatching new pairs once N have been dispatched in this run. Already-skipped pairs do **not** count toward N.
 
-Print a one-line-per-pair summary:
+Track dispatched / skipped counts internally per pair; do **not** print per-pair decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `dispatched  #<n> <gate> "<title>" → <subagent_type>`
-- `skipped     #<n> <gate> "<title>" — already running`
-- `skipped     #<n> <gate> "<title>" — lock race`
-- `skipped     #<n> <gate> "<title>" — cap reached (dispatched N this run)`
-
-End with one sentence: `Dispatched <X> pair(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
+`Dispatched <X> pair(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
 
 ## Iron rules
 
@@ -135,5 +130,5 @@ End with one sentence: `Dispatched <X> pair(s); skipped <Y>; <Z> remaining eligi
 - **One `(task, gate)` per dispatched sub-agent.** Each `Agent` call owns exactly one gate of one task. Independent pairs go out as parallel `Agent` calls in the same response — including both gates of a single task when both were pending.
 - **Background dispatch only.** Every `Agent` call MUST set `run_in_background: true`. Foreground dispatch blocks the turn, serializes parallel `(task, gate)` pairs, and stalls the orchestrator on the first reviewer even when other pairs are already locked and ready to fan out.
 - **Code and security only.** This skill does not handle a `review:e2e-*` family (retired — the slice PR's e2e workflow check is the only e2e signal). Do NOT widen the gate set.
-- **Skip, don't fail, on benign outcomes.** "Already running", "lock race", "cap reached" are all expected — log them and continue.
+- **Skip, don't fail, on benign outcomes.** "Already running", "lock race", "cap reached" are all expected — track internally and continue, never surface per-pair.
 - **No code-changing work.** The dispatched reviewer sub-agent owns code reads, the verdict comment, and the terminal label flip.

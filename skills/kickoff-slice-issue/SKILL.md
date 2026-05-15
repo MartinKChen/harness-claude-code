@@ -65,7 +65,7 @@ If empty, report "nothing to pick up" and stop. When a milestone filter was appl
 slice_response="$(bash scripts/inspect-slice.sh <slice-#>)"
 ```
 
-If `blockedBy > 0`, skip the slice (`skipped slice #<n> — blocked by <count> open issue(s)`) and continue.
+If `blockedBy > 0`, track as skipped (blocked by N open issues) and continue.
 
 ### 4. Promote the slice and unlock its task sub-issues
 
@@ -99,13 +99,9 @@ When unblocked, do both flips:
 
 If the user passed a positive integer N, stop after N slices have been promoted in this run. Already-skipped slices (blocked) do **not** count toward N.
 
-Print a one-line-per-slice summary:
+Track promoted / skipped counts internally per slice; do **not** print per-slice decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `promoted   slice #<n> "<title>" → <K> task(s) unlocked`
-- `skipped    slice #<n> "<title>" — blocked by <count> open issue(s)`
-- `skipped    slice #<n> "<title>" — cap reached (promoted N this run)`
-
-End with a single sentence: `Promoted <S> slice(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
+`Promoted <S> slice(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
 
 ## Iron rules
 
@@ -114,4 +110,4 @@ End with a single sentence: `Promoted <S> slice(s); skipped <Y>; <Z> remaining e
 - **`kind:feature` only.** Bugs / enhancements are out of scope.
 - **Slice flip and sub-issue flip are *not* atomic across GitHub's API.** If the slice flip succeeds but a sub-issue flip fails, the slice ends up `status:in-progress` with some sub-issues still missing `status:ready-to-implement`. Surface the failure and stop — a re-run will idempotently top-up the missing sub-issue labels (the slice itself is already promoted, so its own flip becomes a no-op).
 - **Idempotent re-runs.** Re-running this skill on a slice already at `status:in-progress` is a benign no-op (the slice falls out of step 2's filter).
-- **Skip, don't fail, on benign outcomes.** "Blocked", "cap reached", "label already present" are all expected.
+- **Skip, don't fail, on benign outcomes.** "Blocked", "cap reached", "label already present" are all expected — track internally and continue, never surface per-slice.

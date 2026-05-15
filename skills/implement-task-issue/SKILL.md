@@ -67,7 +67,7 @@ If the result is empty, report "nothing to pick up" and stop. When a milestone f
 blocked_by="$(bash scripts/blocker-count.sh <task-#>)"
 ```
 
-Drop the candidate when `blocked_by > 0` — log `skipped #<n> — blocked by <count> open issue(s)` and continue.
+Drop the candidate when `blocked_by > 0` — track as skipped (blocked by N open issues) and continue.
 
 ### 4. Lock the task with a label flip
 
@@ -99,7 +99,7 @@ Read the candidate's `type:*` label (exactly one of `type:e2e`, `type:backend`, 
 | `type:backend`      | `engineer`      |
 | `type:frontend`     | `engineer`      |
 
-If the candidate carries no `type:*` label or carries more than one, that's a `create-issues` invariant violation — roll back the lock (per step 4) and log `skipped #<n> — malformed type label(s): <list>`. Do NOT guess.
+If the candidate carries no `type:*` label or carries more than one, that's a `create-issues` invariant violation — roll back the lock (per step 4) and track as skipped (malformed type labels). Do NOT guess.
 
 Pick a unique agent name of the form `<subagent_type>-implement-<task-#>` (e.g. `engineer-implement-42`, `e2e-author-implement-15`). This same string is used as the `Agent`'s `name` field AND as the orchestrator task's `owner` so the user can correlate spinner, task row, and spawned agent.
 
@@ -113,7 +113,7 @@ Call `TaskCreate` with:
 
 Capture the returned `taskId`.
 
-If `TaskCreate` itself fails synchronously, roll back the lock (per step 4) and log `skipped #<n> — TaskCreate failed: <error>`.
+If `TaskCreate` itself fails synchronously, roll back the lock (per step 4) and track as skipped (TaskCreate failed).
 
 **5b. Dispatch the sub-agent and assign the tracking task**
 
@@ -147,14 +147,9 @@ Fetch any further context you need (body, labels, parent slice issue, parent bra
 
 If the user passed a positive integer N, stop locking + dispatching new tasks once N have been dispatched in this run. Already-skipped tasks (blocked / malformed) do **not** count toward N.
 
-Print a one-line-per-candidate summary, one of these forms:
+Track dispatched / skipped counts internally per task; do **not** print per-task decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `dispatched  #<n> "<title>" → <subagent_type>`
-- `skipped     #<n> "<title>" — blocked by <count> open issue(s)`
-- `skipped     #<n> "<title>" — malformed type label(s): <list>`
-- `skipped     #<n> "<title>" — cap reached (dispatched N this run)`
-
-End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
+`Dispatched <X> task(s); skipped <Y>; <Z> remaining eligible.` (`Z` is non-zero only if a cap was hit.)
 
 ## Iron rules
 
@@ -167,4 +162,4 @@ End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining 
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns exactly one issue — never batch multiple issues into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls (and parallel `TaskUpdate` owner-assignments) in the same message.
 - **`kind:feature` only.** This skill does not handle `kind:bug` or `kind:enhancement` fast-track tasks. Add those as separate skills when the fast-track flow is wired up — do NOT silently widen the label filter.
 - **No worktree creation, no pre-fetched context, no role/mode in the dispatch.** The dispatched sub-agent does its own discovery off the issue ID and owns its full lifecycle (including its own tracking-task status transitions).
-- **Skip, don't fail, on benign outcomes.** "Blocked", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — log them and continue, never abort the whole run.
+- **Skip, don't fail, on benign outcomes.** "Blocked", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — track internally and continue, never surface per-task or abort the whole run.

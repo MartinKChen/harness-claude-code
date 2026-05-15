@@ -68,7 +68,7 @@ for gate in code security; do
 done
 ```
 
-Local filter — drop any candidate whose `labels` include `review:code-pending`, `review:code-running`, `review:security-pending`, or `review:security-running`. Log `skipped #<n> — review cycle in flight: <list>`.
+Local filter — drop any candidate whose `labels` include `review:code-pending`, `review:code-running`, `review:security-pending`, or `review:security-running`. Track as skipped (review cycle in flight).
 
 If the resulting set is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
@@ -106,7 +106,7 @@ Read the task's `type:*` label (exactly one of `type:e2e`, `type:backend`, `type
 | `type:backend`      | `engineer`      |
 | `type:frontend`     | `engineer`      |
 
-If the task has zero or more than one `type:*` label, roll back the lock (per step 3) and log `skipped #<n> — malformed type label(s): <list>`.
+If the task has zero or more than one `type:*` label, roll back the lock (per step 3) and track as skipped (malformed type labels).
 
 Pick a unique agent name of the form `<subagent_type>-fix-<task-#>` (e.g. `engineer-fix-42`, `e2e-author-fix-15`). This same string is used as the `Agent`'s `name` field AND the tracking task's `owner` so the user can correlate spinner, task row, and spawned agent.
 
@@ -120,7 +120,7 @@ Call `TaskCreate` with:
 
 Capture the returned `taskId`.
 
-If `TaskCreate` fails synchronously, roll back the lock (per step 3) and log `skipped #<n> — TaskCreate failed: <error>`.
+If `TaskCreate` fails synchronously, roll back the lock (per step 3) and track as skipped (TaskCreate failed).
 
 **4b. Dispatch the sub-agent and assign the tracking task**
 
@@ -162,15 +162,9 @@ Include only the gates that were actually `need-fix` before step 3's flip.
 
 If the user passed a positive integer N, stop after N tasks have been dispatched. Already-skipped tasks do **not** count.
 
-One-line-per-candidate summary:
+Track dispatched / skipped counts internally per task; do **not** print per-task decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `dispatched  #<n> "<title>" → <subagent_type> (gates: <comma-list>)`
-- `skipped     #<n> "<title>" — review cycle in flight: <list>`
-- `skipped     #<n> "<title>" — malformed type label(s): <list>`
-- `skipped     #<n> "<title>" — lock race`
-- `skipped     #<n> "<title>" — cap reached (dispatched N this run)`
-
-End with: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
+`Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
@@ -186,4 +180,4 @@ End with: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns one issue; independent candidates fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same message.
 - **`kind:feature` only.**
 - **No worktree creation, no pre-fetched context.** The dispatched sub-agent does its own discovery off the issue ID.
-- **Skip, don't fail, on benign outcomes.** "Review in flight", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — log and continue.
+- **Skip, don't fail, on benign outcomes.** "Review in flight", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — track internally and continue, never surface per-task.

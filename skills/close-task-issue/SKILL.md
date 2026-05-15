@@ -68,10 +68,10 @@ If empty, report "nothing to close" and stop. When a milestone filter was applie
 
 For each candidate, read its `labels` array and apply the type-specific rule:
 
-- Exactly one `type:*` label must be present. If zero or more than one, log `skipped #<n> — malformed type label(s): <list>` and continue.
+- Exactly one `type:*` label must be present. If zero or more than one, track as skipped (malformed type labels) and continue.
 - Compute the required-passed set from the table above.
-- Drop the candidate if any required `*-passed` label is missing — log `skipped #<n> — missing required gate(s): <list>`. (A task still mid-review will fall here.)
-- Drop the candidate if any `review:*-pending`, `review:*-running`, or `review:*-need-fix` label is *also* present — that means a fresh review cycle is in flight and closing now would race the reviewer. Log `skipped #<n> — review cycle in flight: <list>` and continue.
+- Drop the candidate if any required `*-passed` label is missing — track as skipped (missing required gates). (A task still mid-review will fall here.)
+- Drop the candidate if any `review:*-pending`, `review:*-running`, or `review:*-need-fix` label is *also* present — that means a fresh review cycle is in flight and closing now would race the reviewer. Track as skipped (review cycle in flight) and continue.
 
 ### 4. Close the task
 
@@ -87,15 +87,9 @@ The script tolerates already-removed labels (`422`) and already-closed issues as
 
 If the user passed a positive integer N, stop after N tasks have been closed this run. Already-skipped tasks do **not** count.
 
-One-line-per-task summary:
+Track closed / skipped counts internally per task; do **not** print per-task decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
 
-- `closed     #<n> "<title>" (type:<type>)`
-- `skipped    #<n> "<title>" — missing required gate(s): <list>`
-- `skipped    #<n> "<title>" — review cycle in flight: <list>`
-- `skipped    #<n> "<title>" — malformed type label(s): <list>`
-- `skipped    #<n> "<title>" — cap reached (closed N this run)`
-
-End with: `Closed <X>; skipped <Y>; <Z> remaining eligible.`
+`Closed <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
@@ -103,4 +97,4 @@ End with: `Closed <X>; skipped <Y>; <Z> remaining eligible.`
 - **Race-safe by re-check.** Step 3 re-reads each candidate's labels after the step-2 list call, so a task that picked up a fresh `*-need-fix` or `*-pending` between list and close is correctly skipped.
 - **No reopening of closed tasks.** This skill only closes; reviewers/engineers reopen when they need to drive a fresh fix cycle.
 - **No slice or PR mutation.** Closing the last task on a slice does **not** merge the slice PR — that's `close-pr`'s job, driven independently off the slice PR's check + mergeability state.
-- **Skip, don't fail, on benign outcomes.** Already-removed labels, already-closed issues, missing gates, and cap-reached are all expected — log and continue.
+- **Skip, don't fail, on benign outcomes.** Already-removed labels, already-closed issues, missing gates, and cap-reached are all expected — track internally and continue, never surface per-task.
