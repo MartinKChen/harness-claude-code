@@ -28,6 +28,17 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List open ready-to-implement feature tasks. |
+| `scripts/blocker-count.sh <task-#>` | Print the open-blocker count for the task. |
+| `scripts/lock-task.sh <task-#>` | Flip `status:ready-to-implement` → `status:in-progress`. |
+| `scripts/unlock-task.sh <task-#>` | Roll the flip back (only on synchronous dispatch failure). |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -40,49 +51,30 @@ repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"   # owner/r
 
 ### 2. Pull eligible task candidates
 
-List open task issues that are ready to implement and tagged as features. When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
+List open task issues that are ready to implement and tagged as features.
 
 ```bash
-gh issue list \
-  --state open \
-  --label "level:task" \
-  --label "status:ready-to-implement" \
-  --label "kind:feature" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,labels,url \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 If the result is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. For each candidate, query open-blocker count
 
-`gh issue view --json` does not expose dependency counts, so query GraphQL. `Issue.issueDependenciesSummary.blockedBy` is the count of **open** blockers (closed blockers don't count, which is what we want):
+`gh issue view --json` does not expose dependency counts, so the helper queries GraphQL. `Issue.issueDependenciesSummary.blockedBy` is the count of **open** blockers (closed blockers don't count, which is what we want):
 
 ```bash
-gh api graphql \
-  -F number=<n> -F owner=<owner> -F repo=<repo> \
-  -f query='
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        issue(number: $number) {
-          issueDependenciesSummary { blockedBy }
-        }
-      }
-    }
-  ' --jq '.data.repository.issue.issueDependenciesSummary.blockedBy'
+blocked_by="$(bash scripts/blocker-count.sh <task-#>)"
 ```
 
-Drop the candidate when `blockedBy > 0` — log `skipped #<n> — blocked by <count> open issue(s)` and continue.
+Drop the candidate when `blocked_by > 0` — log `skipped #<n> — blocked by <count> open issue(s)` and continue.
 
 ### 4. Lock the task with a label flip
 
 Flip both labels in one atomic `gh` call so the lock is visible immediately:
 
 ```bash
-gh issue edit "${task_number}" \
-  --remove-label "status:ready-to-implement" \
-  --add-label "status:in-progress"
+bash scripts/lock-task.sh "${task_number}"
 ```
 
 If the call fails (e.g. the label was already removed by a concurrent fire — `422`), treat it as benign and skip this task. Anything else: surface the error verbatim, stop processing further candidates for this run.
@@ -90,9 +82,7 @@ If the call fails (e.g. the label was already removed by a concurrent fire — `
 The lock MUST happen **before** the sub-agent dispatch in step 5. If the dispatch itself fails synchronously (bad `subagent_type`, missing tool, etc.), roll the lock back:
 
 ```bash
-gh issue edit "${task_number}" \
-  --remove-label "status:in-progress" \
-  --add-label "status:ready-to-implement"
+bash scripts/unlock-task.sh "${task_number}"
 ```
 
 so the next fire can retry. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it adds `review:*-pending` labels and exits, leaving `status:in-progress` for `close-task-issue` to clear once reviews pass).

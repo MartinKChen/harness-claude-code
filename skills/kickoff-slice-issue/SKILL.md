@@ -27,6 +27,17 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List open ready-to-implement feature slices. |
+| `scripts/inspect-slice.sh <slice-#>` | GraphQL: open-blocker count + sub-issues for the slice. |
+| `scripts/promote-slice.sh <slice-#>` | Flip slice `status:ready-to-implement` → `status:in-progress`. |
+| `scripts/unlock-task.sh <task-#>` | Append `status:ready-to-implement` to a task sub-issue. |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -40,17 +51,8 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate slice issues
 
-When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag and scan every milestone.
-
 ```bash
-gh issue list \
-  --state open \
-  --label "level:slice" \
-  --label "status:ready-to-implement" \
-  --label "kind:feature" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,url \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 If empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it in the message: `nothing to pick up (milestone: <milestone-name>)`.
@@ -60,20 +62,7 @@ If empty, report "nothing to pick up" and stop. When a milestone filter was appl
 `Issue.subIssues` returns the GitHub-native sub-issue children; `issueDependenciesSummary.blockedBy` counts only **open** blockers (closed blockers don't count).
 
 ```bash
-gh api graphql \
-  -F number=<slice-#> -F owner="${owner}" -F repo="${repo}" \
-  -f query='
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        issue(number: $number) {
-          issueDependenciesSummary { blockedBy }
-          subIssues(first: 100) {
-            nodes { number labels(first: 20) { nodes { name } } }
-          }
-        }
-      }
-    }
-  '
+slice_response="$(bash scripts/inspect-slice.sh <slice-#>)"
 ```
 
 If `blockedBy > 0`, skip the slice (`skipped slice #<n> — blocked by <count> open issue(s)`) and continue.
@@ -85,9 +74,7 @@ When unblocked, do both flips:
 1. **Flip the slice itself:**
 
    ```bash
-   gh issue edit "${slice_number}" \
-     --remove-label "status:ready-to-implement" \
-     --add-label "status:in-progress"
+   bash scripts/promote-slice.sh "${slice_number}"
    ```
 
 2. **Extract qualifying task sub-issue numbers and append `status:ready-to-implement` to each.** From the same GraphQL response, every sub-issue carrying both `level:task` and `kind:feature` qualifies:
@@ -102,7 +89,7 @@ When unblocked, do both flips:
    ')"
 
    for task_number in $task_numbers; do
-     gh issue edit "${task_number}" --add-label "status:ready-to-implement"
+     bash scripts/unlock-task.sh "${task_number}"
    done
    ```
 

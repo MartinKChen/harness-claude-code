@@ -25,30 +25,32 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List open in-progress feature slice issues. |
+| `scripts/inspect-subissues.sh <slice-#>` | GraphQL: sub-issue states + labels for the slice. |
+| `scripts/resolve-branch.sh <slice-#>` | Print the linked slice branch name (empty if none). |
+| `scripts/find-existing-pr.sh <head-branch>` | Print an existing PR # for the branch (empty if none). |
+| `scripts/open-draft-pr.sh <head-branch> <title> <body-file> [--milestone <name>]` | Create the draft PR; print the URL. |
+
 ## Workflow
 
 ### 1. Resolve the repo
 
 ```bash
 repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"   # owner/repo
-owner="${repo_slug%/*}"; repo="${repo_slug#*/}"
 ```
 
 If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate slice issues
 
-A slice is in scope when it is **open**, carries `level:slice` + `kind:feature` + `status:in-progress`. When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
-
 ```bash
-gh issue list \
-  --state open \
-  --label "level:slice" \
-  --label "kind:feature" \
-  --label "status:in-progress" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,url,milestone \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 If empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
@@ -58,19 +60,7 @@ If empty, report "nothing to pick up" and stop. When a milestone filter was appl
 For each candidate, pull the sub-issue list with state in one GraphQL call. Drop any slice with even one open sub-issue — that means task work is still mid-flight and the PR isn't ready yet.
 
 ```bash
-gh api graphql \
-  -F number=<slice-#> -F owner="${owner}" -F repo="${repo}" \
-  -f query='
-    query($owner: String!, $repo: String!, $number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        issue(number: $number) {
-          subIssues(first: 100) {
-            nodes { number state labels(first: 20) { nodes { name } } }
-          }
-        }
-      }
-    }
-  '
+slice_response="$(bash scripts/inspect-subissues.sh <slice-#>)"
 ```
 
 Local decision on the response JSON:
@@ -84,7 +74,7 @@ Local decision on the response JSON:
 The slice branch is attached to the slice issue (set by `create-issues` via `gh issue develop --create`). Pull it; skip the slice if no branch is attached.
 
 ```bash
-slice_branch="$(gh issue develop --list "${slice_number}" | head -1 | awk '{print $1}')"
+slice_branch="$(bash scripts/resolve-branch.sh "${slice_number}")"
 if [ -z "${slice_branch}" ]; then
   echo "skipped slice #${slice_number} — no linked branch"
   continue
@@ -94,8 +84,7 @@ fi
 This skill is idempotent. If a PR (draft or ready) already exists for the slice branch, skip — don't open a duplicate, don't mutate the existing PR's body or milestone:
 
 ```bash
-existing_pr="$(gh pr list --head "${slice_branch}" --state all --json number,state \
-  --jq '.[0].number // empty')"
+existing_pr="$(bash scripts/find-existing-pr.sh "${slice_branch}")"
 if [ -n "${existing_pr}" ]; then
   echo "skipped slice #${slice_number} — PR #${existing_pr} already exists"
   continue
@@ -119,7 +108,7 @@ Task sub-issues (closed before this PR was opened):
 - Closes #<task-#-N>
 ```
 
-Using `Closes` (not `Refs`) for tasks is safe here because every task sub-issue is already closed by the time this skill fires — the closing keyword is a no-op for them at merge time but is what GitHub needs to render them in the PR's Linked Issues / Development sidebar. Compose the final body once per slice and write it to a temp file for `gh pr create --body-file`:
+Using `Closes` (not `Refs`) for tasks is safe here because every task sub-issue is already closed by the time this skill fires — the closing keyword is a no-op for them at merge time but is what GitHub needs to render them in the PR's Linked Issues / Development sidebar. Compose the final body once per slice and write it to a temp file for `open-draft-pr.sh`:
 
 ```bash
 body_file="$(mktemp)"
@@ -137,21 +126,19 @@ If `${task_numbers}` is empty (a slice with no `level:task` sub-issues — unusu
 
 ### 6. Open the draft PR with the milestone attached
 
-Inherit the milestone from the slice issue (already captured in step 2's JSON). `gh pr create` accepts `--milestone <name-or-number>`; pass the milestone's `title` (display name) for stability:
+Inherit the milestone from the slice issue (already captured in step 2's JSON). Pass the milestone's `title` (display name) for stability:
 
 ```bash
-gh pr create \
-  --draft \
-  --base main \
-  --head "${slice_branch}" \
-  --title "${slice_title}" \
-  --body-file "${body_file}" \
-  --milestone "${slice_milestone_title}"
+bash scripts/open-draft-pr.sh \
+  "${slice_branch}" \
+  "${slice_title}" \
+  "${body_file}" \
+  ${slice_milestone_title:+--milestone "${slice_milestone_title}"}
 ```
 
 If the slice has no milestone (`.milestone` is `null` in step 2's JSON), omit `--milestone` and log it in the per-slice summary — don't fabricate a milestone or stop the run.
 
-If `gh pr create` fails:
+If `open-draft-pr.sh` fails:
 
 - **Lock race / duplicate PR (`422` "A pull request already exists")** → benign; log `skipped slice #<n> — PR raced into existence` and continue (a concurrent fire opened it).
 - **Missing milestone (`gh` rejects an unknown milestone name)** → re-run the create without `--milestone` and log `opened PR #<n> — slice milestone "<name>" not found, opened without milestone`; do not abort the run.

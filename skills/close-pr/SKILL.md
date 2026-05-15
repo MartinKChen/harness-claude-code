@@ -29,6 +29,20 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List draft open PRs as JSON. |
+| `scripts/inspect-pr.sh <pr-#>` | Print mergeability + statusCheckRollup as JSON. |
+| `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. |
+| `scripts/merge-pr.sh <pr-#>` | Promote draft → ready and squash-merge with `--delete-branch`. |
+| `scripts/undo-ready.sh <pr-#>` | Revert a ready-promotion back to draft (used on merge-race rollback). |
+| `scripts/resolve-slice-issue.sh <pr-#>` | Resolve the linked slice issue number from the PR. |
+| `scripts/close-slice-issue.sh <slice-#>` | Strip `status:in-progress` and close the slice issue. |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -41,15 +55,10 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate PRs
 
-A PR is a candidate when it is **draft** (the slice PR stays draft until this skill promotes and merges it). `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, scope via the `--search` qualifier `milestone:"<milestone-name>"` (single-quoted to survive shell expansion of the embedded double quotes); otherwise omit the flag.
+A PR is a candidate when it is **draft** (the slice PR stays draft until this skill promotes and merges it). `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, the script scopes via the `--search milestone:"…"` qualifier; otherwise it scans all milestones.
 
 ```bash
-gh pr list \
-  --draft \
-  --state open \
-  ${milestone:+--search "milestone:\"${milestone}\""} \
-  --json number,title,headRefName,baseRefName,url,labels,milestone \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 If empty, report "nothing to merge" and stop. When a milestone filter was applied, include it: `nothing to merge (milestone: <milestone-name>)`.
@@ -63,18 +72,13 @@ For each candidate:
 3.1 **Pull mergeability and check rollup in one call.** `statusCheckRollup` is GitHub's aggregate of every check run + status context on the head SHA; `mergeable` is the merge conflict state.
 
 ```bash
-gh pr view <pr-#> --json mergeable,mergeStateStatus,statusCheckRollup
+bash scripts/inspect-pr.sh <pr-#>
 ```
 
-3.2 **Wait out `UNKNOWN` mergeability.** GitHub returns `UNKNOWN` for ~seconds after the head SHA changes. Cap at ~10 s; treat `UNKNOWN` past the cap as a benign skip (`mergeability still UNKNOWN`).
+3.2 **Wait out `UNKNOWN` mergeability.** GitHub returns `UNKNOWN` for ~seconds after the head SHA changes. The script caps at ~10 s and prints the final status; treat a returned `UNKNOWN` as a benign skip (`mergeability still UNKNOWN`).
 
 ```bash
-attempts=0
-status="UNKNOWN"
-until [ "$status" = "MERGEABLE" -o "$status" = "CONFLICTING" ] || [ "$attempts" -ge 5 ]; do
-  status="$(gh pr view <pr-#> --json mergeable --jq '.mergeable')"
-  [ "$status" = "UNKNOWN" ] && { attempts=$((attempts+1)); sleep 2; }
-done
+status="$(bash scripts/wait-mergeability.sh <pr-#>)"
 ```
 
 3.3 **Classify.**
@@ -88,14 +92,13 @@ done
 ### 4. Promote draft → ready, squash-merge, delete the slice branch
 
 ```bash
-gh pr ready <pr-#>
-gh pr merge <pr-#> --squash --delete-branch
+bash scripts/merge-pr.sh <pr-#>
 ```
 
 Never `--force` a merge; never push directly to `main`; never override branch protection. If the merge fails because GitHub recomputed mergeability between step 3 and step 4 (race), revert the ready promotion and skip the PR for this fire:
 
 ```bash
-gh pr ready <pr-#> --undo
+bash scripts/undo-ready.sh <pr-#>
 ```
 
 Log `skipped PR #<n> — merge race`. A later fire will re-pick.
@@ -104,20 +107,18 @@ Log `skipped PR #<n> — merge race`. A later fire will re-pick.
 
 GitHub's squash-merge with a "Closes #<n>" trailer auto-closes the linked issue, but the slice issue is wired via the *Development* link (`gh issue develop`) rather than a body trailer — so GitHub may *not* close it automatically. Make the closure explicit:
 
-5.1 **Resolve the linked slice issue from the PR's `closingIssuesReferences`.**
+5.1 **Resolve the linked slice issue from the PR's `closingIssuesReferences`** (with a `Closes #<n>` / `Fixes #<n>` body-parse fallback):
 
 ```bash
-slice_issue="$(gh pr view <pr-#> --json closingIssuesReferences \
-  --jq '.closingIssuesReferences[0].number // empty')"
+slice_issue="$(bash scripts/resolve-slice-issue.sh <pr-#>)"
 ```
 
-If empty, fall back to parsing `Closes #<n>` / `Fixes #<n>` out of the PR body. If still empty, log `merged PR #<n> — no linked slice issue (left untouched)` and continue (the merge already succeeded; the slice issue lookup is best-effort).
+If empty, log `merged PR #<n> — no linked slice issue (left untouched)` and continue (the merge already succeeded; the slice issue lookup is best-effort).
 
 5.2 **Strip `status:in-progress` and close.**
 
 ```bash
-gh issue edit "${slice_issue}" --remove-label "status:in-progress"
-gh issue close "${slice_issue}" --reason completed
+bash scripts/close-slice-issue.sh "${slice_issue}"
 ```
 
 Already-removed label / already-closed issue → benign, no-op. Any other failure: surface verbatim and continue with the next PR (the merge has already landed; do not retry).

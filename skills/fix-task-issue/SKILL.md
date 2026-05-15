@@ -31,6 +31,16 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh <gate> [--milestone <name>]` | List open in-progress feature tasks carrying `review:<gate>-need-fix`. |
+| `scripts/lock-task.sh <task-#>` | Strip every `review:{code,security}-(passed\|need-fix)` label; print the snapshot. |
+| `scripts/unlock-task.sh <task-#> <label> [<label> ...]` | Re-add the snapshot of labels (rollback only). |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -50,19 +60,11 @@ A task is in scope when **all** of these hold:
 - carries at least one of `review:code-need-fix`, `review:security-need-fix`;
 - carries **no** `review:*-pending` and **no** `review:*-running` labels (those mean a review cycle is in flight — wait for it to land before dispatching a fix).
 
-Run one `gh issue list` per need-fix gate and merge by issue number on the orchestrator side; then re-read each candidate's `labels` to enforce the "no pending / no running" exclusion locally. When `<milestone-name>` is set, append `--milestone "${milestone}"` to every list call so the scan is scoped to that feature; otherwise omit the flag.
+Run one `gh issue list` per need-fix gate and merge by issue number on the orchestrator side; then re-read each candidate's `labels` to enforce the "no pending / no running" exclusion locally.
 
 ```bash
 for gate in code security; do
-  gh issue list \
-    --state open \
-    --label "level:task" \
-    --label "kind:feature" \
-    --label "status:in-progress" \
-    --label "review:${gate}-need-fix" \
-    ${milestone:+--milestone "${milestone}"} \
-    --json number,title,labels,url \
-    --limit 200
+  bash scripts/list-candidates.sh "${gate}" ${milestone:+--milestone "${milestone}"}
 done
 ```
 
@@ -72,18 +74,10 @@ If the resulting set is empty, report "nothing to pick up" and stop. When a mile
 
 ### 3. Lock by stripping every code/security terminal label
 
-For each candidate, snapshot the current `review:{code,security}-need-fix` and `review:{code,security}-passed` labels so a synchronous dispatch failure can roll back. Then in one atomic `gh` call, remove every snapshotted label. Do **not** add anything — re-adding `review:*-pending` is the engineer / e2e-author's terminal action, not the orchestrator's.
+For each candidate, the lock script reads the current `review:{code,security}-(passed|need-fix)` labels and removes them in one atomic `gh` call, then prints the snapshot to stdout. Capture the snapshot so a synchronous dispatch failure can roll back. Do **not** add anything — re-adding `review:*-pending` is the engineer / e2e-author's terminal action, not the orchestrator's.
 
 ```bash
-# $task_labels_json is the JSON labels array from step 2.
-snapshot="$(printf '%s' "$task_labels_json" | jq -r '
-  .[].name | select(test("^review:(code|security)-(passed|need-fix)$"))
-')"
-
-remove_args=()
-for lbl in $snapshot; do remove_args+=( --remove-label "$lbl" ); done
-
-gh issue edit "${task_number}" "${remove_args[@]}"
+snapshot="$(bash scripts/lock-task.sh "${task_number}")"
 ```
 
 If the call fails because a label was already removed by a concurrent fire (`422`), treat it as benign and skip this task. Anything else: surface verbatim and stop.
@@ -91,10 +85,7 @@ If the call fails because a label was already removed by a concurrent fire (`422
 The lock MUST happen **before** the sub-agent dispatch in step 4. If the dispatch itself fails synchronously, restore the snapshot in one call:
 
 ```bash
-restore_add=()
-for lbl in $snapshot; do restore_add+=( --add-label "$lbl" ); done
-
-gh issue edit "${task_number}" "${restore_add[@]}"
+bash scripts/unlock-task.sh "${task_number}" ${snapshot}
 ```
 
 Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle.

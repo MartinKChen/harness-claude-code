@@ -35,6 +35,15 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List open in-progress feature tasks already at `review:code-passed`. |
+| `scripts/close-task.sh <task-#>` | Strip `status:in-progress` and close the task as completed. |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -47,18 +56,10 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate tasks
 
-A task is a candidate when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and carries `review:code-passed`. (Code-passed is universal across `type:*`, so it's the cheapest pre-filter; we re-check the full required-gate set per task in step 3.) When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
+A task is a candidate when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and carries `review:code-passed`. (Code-passed is universal across `type:*`, so it's the cheapest pre-filter; we re-check the full required-gate set per task in step 3.)
 
 ```bash
-gh issue list \
-  --state open \
-  --label "level:task" \
-  --label "kind:feature" \
-  --label "status:in-progress" \
-  --label "review:code-passed" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,labels,url \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 If empty, report "nothing to close" and stop. When a milestone filter was applied, include it: `nothing to close (milestone: <milestone-name>)`.
@@ -77,11 +78,10 @@ For each candidate, read its `labels` array and apply the type-specific rule:
 In one atomic sequence per task: remove `status:in-progress`, then close. The `gh issue close` call also accepts `--reason completed`, which is the right reason here (the work landed cleanly).
 
 ```bash
-gh issue edit "${task_number}" --remove-label "status:in-progress"
-gh issue close "${task_number}" --reason completed
+bash scripts/close-task.sh "${task_number}"
 ```
 
-If the `--remove-label` call fails because the label was already removed by a concurrent fire (`422`), treat it as benign and proceed to the close. If the close fails (the issue was already closed by another runner), also treat as benign — the desired end state is already in place. Any other failure: surface verbatim and stop processing further candidates for this run.
+The script tolerates already-removed labels (`422`) and already-closed issues as benign no-ops. Any other failure: surface verbatim and stop processing further candidates for this run.
 
 ### 5. Honor the cap and report
 

@@ -29,6 +29,18 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh [--milestone <name>]` | List draft open PRs as JSON. |
+| `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. |
+| `scripts/inspect-checks.sh <pr-#>` | Emit `{running, failing}` for the head SHA's check rollup. |
+| `scripts/lock-pr.sh <pr-#>` | Add the `status:fix-in-progress` lock label. |
+| `scripts/unlock-pr.sh <pr-#>` | Remove the lock label (rollback on dispatch failure). |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -41,15 +53,10 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. Pull candidate PRs
 
-List every **draft** open PR and discard the ones that already carry the lock label `status:fix-in-progress` — a concurrent fire owns them. `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, scope via the `--search` qualifier `milestone:"<milestone-name>"` (single-quoted to survive shell expansion of the embedded double quotes); otherwise omit the flag.
+List every **draft** open PR and discard the ones that already carry the lock label `status:fix-in-progress` — a concurrent fire owns them.
 
 ```bash
-gh pr list \
-  --draft \
-  --state open \
-  ${milestone:+--search "milestone:\"${milestone}\""} \
-  --json number,title,headRefName,baseRefName,url,labels,milestone \
-  --limit 200
+bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
 Filter on the orchestrator side: keep PRs whose `labels` array does **not** include `status:fix-in-progress`. The `--search` qualifier is GitHub-side; the orchestrator does not need to re-check `milestone` locally.
@@ -62,51 +69,36 @@ For each candidate, derive the fix scenario set — 0–2 of:
 
 | Scenario   | Trigger                                                                                                                                                                                          |
 |------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `conflict` | `gh pr view <n> --json mergeable --jq .mergeable` returns `CONFLICTING`. `UNKNOWN` is benign — GitHub still computing; skip the PR this run and let a later fire re-classify.                    |
-| `ci`       | At least one workflow check in `statusCheckRollup` for the head SHA has `conclusion != "SUCCESS"` and `conclusion != "SKIPPED"` (or, for the legacy status-context shape, `state == "FAILURE"`). |
+| `conflict` | `wait-mergeability.sh <n>` returns `CONFLICTING`. `UNKNOWN` is benign — GitHub still computing; skip the PR this run and let a later fire re-classify.                                           |
+| `ci`       | `inspect-checks.sh <n>` returns a non-empty `failing` array.                                                                                                                                     |
 
 **Both signals must be in their terminal state before this PR is eligible for locking.** "Terminal" means: mergeability is `MERGEABLE` or `CONFLICTING` (never `UNKNOWN`), AND every workflow check on the head SHA is `completed` (never `IN_PROGRESS` / `QUEUED` / `PENDING` / `WAITING` / `null`). A PR with even one mid-flight signal is skipped this fire — the engineer mustn't be dispatched while either input is still moving (a `conflict`-only dispatch can become a `conflict`+`ci` dispatch as CI lands, and an engineer dispatched on incomplete data wastes a worktree on the wrong fix surface).
 
 #### 3.1 Mergeability scan
 
 ```bash
-attempts=0
-status="UNKNOWN"
-until [ "$status" = "MERGEABLE" -o "$status" = "CONFLICTING" ] || [ "$attempts" -ge 5 ]; do
-  status="$(gh pr view <n> --json mergeable --jq '.mergeable')"
-  [ "$status" = "UNKNOWN" ] && { attempts=$((attempts+1)); sleep 2; }
-done
+status="$(bash scripts/wait-mergeability.sh <pr-#>)"
 ```
 
 Cap at ~10 s. `UNKNOWN` past the cap → skip with `mergeability still UNKNOWN`.
 
 #### 3.2 Workflow-check scan
 
-Pull `statusCheckRollup` for the PR. GitHub's rollup is keyed on the head SHA and already collapses re-runs to the latest attempt per workflow name. We need two facets from the rollup:
+The script returns two facets keyed off the head SHA's `statusCheckRollup`:
 
 1. **Any check still running?** If so, the PR is not yet eligible — skip with `checks still running`.
 2. **Among the completed checks, any non-`SUCCESS`/non-`SKIPPED` conclusion?** That populates the `ci` scenario.
 
 ```bash
-rollup_json="$(gh pr view <n> --json statusCheckRollup --jq '.statusCheckRollup')"
-
-running="$(printf '%s' "$rollup_json" | jq '[.[]
-  | select(
-      (.__typename == "CheckRun"      and (.status      != "COMPLETED" or .conclusion == null)) or
-      (.__typename == "StatusContext" and (.state == "PENDING" or .state == "EXPECTED"))
-    )] | length')"
+checks_json="$(bash scripts/inspect-checks.sh <pr-#>)"
+running="$(printf '%s' "$checks_json" | jq '.running')"
 
 if [ "$running" -gt 0 ]; then
   echo "skipped PR #<n> — checks still running (${running})"
   continue   # next PR
 fi
 
-failing="$(printf '%s' "$rollup_json" | jq '[.[]
-  | select(
-      (.__typename == "CheckRun"     and .conclusion != "SUCCESS" and .conclusion != "SKIPPED") or
-      (.__typename == "StatusContext" and .state      != "SUCCESS")
-    )
-  | (.name // .context)] | unique')"
+failing="$(printf '%s' "$checks_json" | jq -c '.failing')"
 ```
 
 If `failing` is a non-empty JSON array → add `ci` to the scenario set.
@@ -122,7 +114,7 @@ If `failing` is a non-empty JSON array → add `ci` to the scenario set.
 Only PRs that made it through step 3.3 with a non-empty scenario set reach this step. Mergeability is decided (`MERGEABLE` / `CONFLICTING`, never `UNKNOWN`), every workflow check is `COMPLETED`, and at least one of `conflict` / `ci` is in the scenario set. Now add the lock label in one atomic `gh` call:
 
 ```bash
-gh pr edit <n> --add-label "status:fix-in-progress"
+bash scripts/lock-pr.sh <pr-#>
 ```
 
 `status:fix-in-progress` must exist in the repo's label set as a prerequisite (`gh label create status:fix-in-progress`).
@@ -132,7 +124,7 @@ If the call fails because the label was just added by a concurrent fire (`422` /
 The lock MUST happen **before** the `Agent` dispatch in step 5. If the dispatch itself fails synchronously (bad `subagent_type`, missing tool, etc.), roll the lock back:
 
 ```bash
-gh pr edit <n> --remove-label "status:fix-in-progress"
+bash scripts/unlock-pr.sh <pr-#>
 ```
 
 Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and removes `status:fix-in-progress` as part of its terminal push.

@@ -28,6 +28,16 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
+## Scripts
+
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/list-candidates.sh <gate> [--milestone <name>]` | List open in-progress feature tasks carrying `review:<gate>-pending`. |
+| `scripts/lock-gate.sh <task-#> <gate>` | Flip `review:<gate>-pending` → `review:<gate>-running` (touching only that gate). |
+| `scripts/unlock-gate.sh <task-#> <gate>` | Roll the flip back (only on synchronous dispatch failure). |
+
 ## Workflow
 
 ### 1. Resolve the repo
@@ -40,28 +50,11 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. Pull eligible tasks per gate
 
-A task is in scope when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and has the matching gate's `-pending` label. Run one `gh issue list` per gate so a task with both pending labels appears in both lists; merge and dedupe by issue number on the orchestrator side. When `<milestone-name>` is set, append `--milestone "${milestone}"` to every list call so the scan is scoped to that feature; otherwise omit the flag.
+A task is in scope when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and has the matching gate's `-pending` label. Run one `gh issue list` per gate so a task with both pending labels appears in both lists; merge and dedupe by issue number on the orchestrator side.
 
 ```bash
-gh issue list \
-  --state open \
-  --label "level:task" \
-  --label "kind:feature" \
-  --label "status:in-progress" \
-  --label "review:code-pending" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,labels,url \
-  --limit 200
-
-gh issue list \
-  --state open \
-  --label "level:task" \
-  --label "kind:feature" \
-  --label "status:in-progress" \
-  --label "review:security-pending" \
-  ${milestone:+--milestone "${milestone}"} \
-  --json number,title,labels,url \
-  --limit 200
+bash scripts/list-candidates.sh code     ${milestone:+--milestone "${milestone}"}
+bash scripts/list-candidates.sh security ${milestone:+--milestone "${milestone}"}
 ```
 
 If both lists are empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
@@ -76,12 +69,10 @@ Skip a pair (and log the skip reason) when:
 
 ### 4. Flip just the pending gate(s) to running — preserve every other label
 
-For each `(task, gate)` pair, flip `review:<gate>-pending` → `review:<gate>-running` in one atomic `gh` call. Pass only the labels you are removing/adding; do NOT touch any other label on the task. Concretely, if a task carries `review:security-pending` + `review:code-passed`, the security flip removes only `review:security-pending` and adds only `review:security-running`, leaving `review:code-passed` exactly as it was.
+For each `(task, gate)` pair, flip `review:<gate>-pending` → `review:<gate>-running` in one atomic `gh` call. The lock script touches only the named gate's labels; every other label on the task is preserved. Concretely, if a task carries `review:security-pending` + `review:code-passed`, locking the security gate removes only `review:security-pending` and adds only `review:security-running`, leaving `review:code-passed` exactly as it was.
 
 ```bash
-gh issue edit "${task_number}" \
-  --remove-label "review:${gate}-pending" \
-  --add-label "review:${gate}-running"
+bash scripts/lock-gate.sh "${task_number}" "${gate}"
 ```
 
 If the call fails because the pending label was already removed by a concurrent fire (`422`), treat it as benign and skip this pair. Anything else: surface the error verbatim, stop processing further pairs for this run.
@@ -89,9 +80,7 @@ If the call fails because the pending label was already removed by a concurrent 
 The flip MUST happen **before** the sub-agent dispatch in step 5. If the dispatch itself fails synchronously (bad `subagent_type`, missing tool, etc.), roll the flip back so the next fire can retry:
 
 ```bash
-gh issue edit "${task_number}" \
-  --remove-label "review:${gate}-running" \
-  --add-label "review:${gate}-pending"
+bash scripts/unlock-gate.sh "${task_number}" "${gate}"
 ```
 
 Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it flips to `-passed` / `-need-fix` on completion, or a later sweep clears stale `-running` on aborted runs).
