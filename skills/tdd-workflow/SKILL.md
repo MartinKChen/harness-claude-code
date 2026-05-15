@@ -1,11 +1,11 @@
 ---
 name: tdd-workflow
-description: "Strictly enforce Test-Driven Development whenever implementing, building, adding, or shipping a feature, module, function, class, endpoint, handler, service, or behavior. Activate on any implementation task across all languages and file types (.ts, .tsx, .js, .py, .go, .rs, .java, .rb, .swift, .kt, .cpp, .cs). Triggers on verbs like implement, build, add, create, ship, develop, code, write paired with feature-shaped nouns (feature, module, component, endpoint, handler, service, function, class, behavior, requirement). Triggers on phrases like 'implement X', 'build a feature for Y', 'add support for Z', 'ship the feature', 'work on the next ticket', 'satisfy the issue'. Also activates when a GitHub issue (e.g. `gh issue view <n>`, an issue URL, or `#<n>`) is referenced as the unit of work. Encodes the outside-in TDD loop (acceptance test → red/green/refactor module loop → adapter contract tests → wiring), the per-step commit cadence via the git-workflow skill, mandatory edge-case coverage, banned test anti-patterns, and the iron rules that make TDD a discipline."
+description: "Strictly enforce Test-Driven Development whenever implementing, building, adding, or shipping a feature, module, function, class, endpoint, handler, service, or behavior. Activate on any implementation task across all languages and file types (.ts, .tsx, .js, .py, .go, .rs, .java, .rb, .swift, .kt, .cpp, .cs). Triggers on verbs like implement, build, add, create, ship, develop, code, write paired with feature-shaped nouns (feature, module, component, endpoint, handler, service, function, class, behavior, requirement). Triggers on phrases like 'implement X', 'build a feature for Y', 'add support for Z', 'ship the feature', 'work on the next ticket', 'satisfy the issue'. Also activates when a GitHub issue (e.g. `gh issue view <n>`, an issue URL, or `#<n>`) is referenced as the unit of work. Encodes the outside-in TDD loop (acceptance test → red/green/refactor module loop → adapter contract tests → wiring), the per-step commit cadence (one commit per RED / GREEN / REFACTOR step, formatted per the dispatched caller's local `templates/commit-messages.md`), mandatory edge-case coverage, banned test anti-patterns, and the iron rules that make TDD a discipline."
 ---
 
 # tdd-workflow
 
-Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, produced via the `git-workflow` skill.
+Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller skill's local `templates/commit-messages.md` (e.g. `implement-feature-task/templates/commit-messages.md`, `fix-task-feedback/templates/commit-messages.md`).
 
 ## When to activate
 
@@ -38,16 +38,17 @@ Other skills still apply (route to them as you would any skill, not as files und
 
 | Skill | When to route to it |
 |-------|---------------------|
-| `git-workflow` | Every RED, GREEN, REFACTOR, contract-test, and wiring step — produce a commit message and commit via this skill. Also for branch naming. |
 | `design-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
 | `design-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
 | `database-patterns` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema/migration/naming. |
+
+Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `implement-feature-task`, `fix-pr-blockers`, `fix-task-feedback`, `author-e2e-tests`, or `fix-e2e-tests`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 
 ## Workflow
 
 ### Outside-in TDD loop
 
-0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit via `git-workflow` as `test(<feature>): add failing acceptance test for <behavior>`. This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
+0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller skill's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
 
 1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface (lean on `design-deep-module`). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
 
@@ -198,7 +199,7 @@ These are non-negotiable. They are what makes the discipline a discipline.
 
 ### Commit history shape
 
-After the loop, `git log --oneline` should read like a story of behavior added one slice at a time. Use this exact cadence (delegate the actual commit to `git-workflow`):
+After the loop, `git log --oneline` should read like a story of behavior added one slice at a time. Use this exact cadence (format every commit per the dispatched caller skill's `templates/commit-messages.md`):
 
 ```
 test(feature): add failing acceptance test for cart total recalculation

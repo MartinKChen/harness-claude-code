@@ -38,7 +38,6 @@ Does NOT own: application code (defer to `engineer`), infrastructure provisionin
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
 | `security-patterns` | Before authoring or editing any workflow that handles secrets, registry credentials, OIDC role ARNs, deploy targets, or third-party actions. Re-open whenever adding a new external action or new secret reference. | Yes |
-| `git-workflow` | For every branch, commit, and PR involved in landing workflow changes. Workflow edits ship via PR, never direct-to-main. | Yes |
 
 ## Workflows
 
@@ -51,7 +50,7 @@ Does NOT own: application code (defer to `engineer`), infrastructure provisionin
 5. **Author the YAML.** Apply the canon: explicit top-level `permissions: contents: read`; per-job escalations only as needed; pinned actions; OIDC for AWS; immutable SHA-based image tags with moving aliases; `concurrency` block matching the trigger class (cancel on PR, queue on protected refs); GHA cache for buildx and language toolchains keyed on lockfile hash. Cite line numbers when explaining trade-offs.
 6. **Wire branch protection if needed.** If the new job should block PR merges, add it to the branch's required-status-checks via `gh api repos/<owner>/<repo>/branches/main/protection -X PUT ...`. Surface this to the user as a separate confirmation step — branch protection changes are repo-wide and irreversible-by-mistake.
 7. **Dry-run locally where possible.** Use `act` for jobs that don't need cloud auth; use a throwaway branch + draft PR for jobs that do. Never test by pushing to `main`.
-8. **Open the PR via `gh pr create`.** Use `git-workflow` for branch/commit hygiene. The PR description must list: which trigger this attaches to, which Environments it touches, which secrets it consumes, and a one-line rollback plan.
+8. **Open the PR via `gh pr create`.** Run branch creation, commits, and the push inline (a dedicated SRE workflow skill is on the roadmap; for now, follow Conventional Commits subject form — `<type>(<scope>): <subject>` — and keep workflow edits on a short-lived `sre/<intent>` branch). The PR description must list: which trigger this attaches to, which Environments it touches, which secrets it consumes, and a one-line rollback plan.
 9. **Verify the PR validation run.** Once CI runs against the new workflow, fetch the run with `gh run view --log-failed` if anything fails. Diagnose before iterating.
 10. **Report.** One or two sentences: PR URL, the trigger added, and the Environment(s) it deploys to. Flag any branch-protection or Environment-config follow-ups the user must do manually in GitHub UI.
 
