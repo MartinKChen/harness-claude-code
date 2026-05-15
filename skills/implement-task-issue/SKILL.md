@@ -36,6 +36,7 @@ Every gh / shell operation below is factored into `scripts/`. Invoke each via `b
 |-------|---------|
 | `scripts/list-candidates.sh [--milestone <name>]` | List open ready-to-implement feature tasks. |
 | `scripts/blocker-count.sh <task-#>` | Print the open-blocker count for the task. |
+| `scripts/slice-in-flight.sh <task-#>` | Print the count of sibling tasks on the parent slice currently being edited (worktree-busy). |
 | `scripts/lock-task.sh <task-#>` | Flip `status:ready-to-implement` → `status:in-progress`. |
 | `scripts/unlock-task.sh <task-#>` | Roll the flip back (only on synchronous dispatch failure). |
 | `templates/dispatch-prompt.md` | Skeleton for the engineer / e2e-author implement dispatch; fill placeholders and pass as the `Agent` call's `prompt`. |
@@ -67,15 +68,29 @@ This matters because `create-issues` now writes a within-slice DAG (e2e tasks re
 
 If the result is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
-### 3. For each candidate, query open-blocker count
+### 3. For each candidate, run pre-lock eligibility gates
 
-`gh issue view --json` does not expose dependency counts, so the helper queries GraphQL. `Issue.issueDependenciesSummary.blockedBy` is the count of **open** blockers (closed blockers don't count, which is what we want):
+Two gates, both in GraphQL, both must pass before locking.
+
+**3a. Open-blocker count.** `gh issue view --json` does not expose dependency counts, so the helper queries GraphQL. `Issue.issueDependenciesSummary.blockedBy` is the count of **open** blockers (closed blockers don't count, which is what we want):
 
 ```bash
 blocked_by="$(bash scripts/blocker-count.sh <task-#>)"
 ```
 
 Drop the candidate when `blocked_by > 0` — track as skipped (blocked by N open issues) and continue.
+
+**3b. Slice in-flight count.** Multiple tasks under one slice can become eligible simultaneously (the within-slice DAG that `create-issues` writes), but they all share a single `/tmp/git-worktree/<repo>/<slice-branch>` worktree — dispatching two engineers / e2e-authors / fix-agents into the same slice races on the same files. The helper returns the count of sibling tasks currently being EDITED on the parent slice's worktree, using the predicate:
+
+> a task is being edited when it carries `status:in-progress` AND **no** `review:*` label of any kind.
+
+That predicate works because every dispatched sub-agent's terminal action is to add `review:*-pending` — while the agent is active, no review label is present. Tasks awaiting review (e.g. `review:code-pending`, `review:code-passed`) do NOT count as in-flight: the agent has exited and the worktree is idle.
+
+```bash
+in_flight="$(bash scripts/slice-in-flight.sh <task-#>)"
+```
+
+Drop the candidate when `in_flight > 0` — track as skipped (slice locked by N sibling task(s)) and continue. The skipped candidate stays eligible and will be picked up on a later fire once the in-flight agent's terminal label-add lands.
 
 ### 4. Lock the task with a label flip
 
@@ -137,7 +152,7 @@ Spawn the candidate with the `Agent` tool, passing:
 
 Immediately follow the `Agent` call — in the **same batched response** — with `TaskUpdate({ taskId, owner: <agent-name> })` so the task row reflects the assignment before the backgrounded sub-agent makes meaningful progress. Never split the `Agent` and `TaskUpdate(owner)` calls across turns.
 
-Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire.
+Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire. Note: "independent" here is enforced by step 3b's `slice-in-flight.sh` gate — multiple candidates from **different** slices can fan out at once (each lives in its own worktree), but within a single slice the gate guarantees at most one agent is dispatched per fire.
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `review-task-issue` / `close-task-issue` clear the GitHub-side labels once reviews pass).
 
@@ -154,6 +169,7 @@ Track dispatched / skipped counts internally per task; do **not** print per-task
 ## Iron rules
 
 - **Tasks only — no slice promotion.** Slice issues are promoted by `kickoff-slice-issue`, which is what populates `status:ready-to-implement` on the task sub-issues this skill consumes. Do NOT touch slice issues here.
+- **One agent per slice worktree at any moment.** Step 3b's `slice-in-flight.sh` gate enforces this: a slice with any sibling task in the `status:in-progress` + no `review:*` label state has a sub-agent actively editing its worktree, and no second agent may be dispatched into it. Skipped candidates stay eligible — they're picked up automatically once the in-flight agent's terminal label-add (`review:*-pending`) lands.
 - **Lock before dispatch.** The label flip in step 4 happens before the `TaskCreate` + `Agent` calls in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.

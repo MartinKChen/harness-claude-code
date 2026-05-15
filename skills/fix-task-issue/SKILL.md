@@ -38,6 +38,7 @@ Every gh / shell operation below is factored into `scripts/`. Invoke each via `b
 | Asset | Purpose |
 |-------|---------|
 | `scripts/list-candidates.sh <gate> [--milestone <name>]` | List open in-progress feature tasks carrying `review:<gate>-need-fix`. |
+| `scripts/slice-in-flight.sh <task-#>` | Print the count of sibling tasks on the parent slice currently being edited (worktree-busy). |
 | `scripts/lock-task.sh <task-#>` | Strip every `review:{code,security}-(passed\|need-fix)` label; print the snapshot. |
 | `scripts/unlock-task.sh <task-#> <label> [<label> ...]` | Re-add the snapshot of labels (rollback only). |
 | `templates/dispatch-prompt.md` | Skeleton for the engineer / e2e-author fix dispatch; fill placeholders and pass as the `Agent` call's `prompt`. |
@@ -70,6 +71,14 @@ done
 ```
 
 Local filter — drop any candidate whose `labels` include `review:code-pending`, `review:code-running`, `review:security-pending`, or `review:security-running`. Track as skipped (review cycle in flight).
+
+Then run the **slice in-flight gate**: for each remaining candidate, count sibling tasks on the same parent slice that are currently being EDITED by a dispatched sub-agent (`status:in-progress` AND no `review:*` label of any kind). When that count is > 0, the slice's `/tmp/git-worktree/<repo>/<slice-branch>` worktree is in active use — dispatching a fix-agent into it would race the in-flight agent's edits.
+
+```bash
+in_flight="$(bash scripts/slice-in-flight.sh <task-#>)"
+```
+
+Drop the candidate when `in_flight > 0` — track as skipped (slice locked by N sibling task(s)) and continue. The skipped candidate stays eligible and will be picked up on a later fire once the in-flight agent's terminal label-add lands.
 
 If the resulting set is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
@@ -158,6 +167,7 @@ Track dispatched / skipped counts internally per task; do **not** print per-task
 - **Strip only — the orchestrator does not add `review:*-pending`.** The dispatched engineer / e2e-author re-adds `review:*-pending` after pushing the fix. Re-adding here would race `review-task-issue`, which could dispatch reviewers against an unfinished tree.
 - **Strip both `need-fix` and `passed`.** A fix can invalidate a previously-passed gate; both must re-review once the engineer's terminal flip adds the pending labels back. Never selectively leave a `*-passed` label in place when locking.
 - **Skip when a review cycle is in flight.** `review:*-pending` or `review:*-running` on the task means a reviewer is mid-pass; dispatching a fix now would race the reviewer's read of the slice branch. Wait for the cycle to land (terminate at `*-passed` or `*-need-fix`).
+- **One agent per slice worktree at any moment.** Step 2's `slice-in-flight.sh` gate enforces this: a slice with any sibling task in the `status:in-progress` + no `review:*` label state has a sub-agent actively editing its worktree, and no second agent (engineer, e2e-author, or fix-agent) may be dispatched into it. Skipped candidates stay eligible — they're picked up automatically once the in-flight agent's terminal label-add lands. Cross-slice fan-out is unaffected (each slice has its own worktree).
 - **No e2e gate.** The `review:e2e-*` label family has been retired. E2e signal flows through the slice PR's GitHub Actions workflow check; this skill does not touch it.
 - **Lock before dispatch.** The label flip in step 3 happens before the `TaskCreate` + `Agent` calls in step 4.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
