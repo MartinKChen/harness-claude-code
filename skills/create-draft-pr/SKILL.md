@@ -18,7 +18,12 @@ Do NOT activate when the user wants to merge a PR (use `close-pr`), wants to fix
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many draft PRs to open this run. Empty / unset → process every eligible slice. A positive integer N → stop after N draft PRs have been opened; remaining eligible slices are picked up on the next invocation.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N draft PRs have been opened. Empty / unset → process every eligible slice.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -33,7 +38,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate slice issues
 
-A slice is in scope when it is **open**, carries `level:slice` + `kind:feature` + `status:in-progress`:
+A slice is in scope when it is **open**, carries `level:slice` + `kind:feature` + `status:in-progress`. When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
 
 ```bash
 gh issue list \
@@ -41,11 +46,12 @@ gh issue list \
   --label "level:slice" \
   --label "kind:feature" \
   --label "status:in-progress" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,url,milestone \
   --limit 200
 ```
 
-If empty, report "nothing to pick up" and stop.
+If empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. Filter to slices whose sub-issues are all closed
 

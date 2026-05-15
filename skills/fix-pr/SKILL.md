@@ -22,7 +22,12 @@ Do NOT activate when the user wants to merge clean draft PRs (use `close-pr`), w
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many PRs to dispatch this run. Empty / unset → process every eligible PR.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the draft-PR scan to PRs whose milestone matches (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone `create-draft-pr` inherits from the slice issue). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N PRs have been dispatched. Empty / unset → process every eligible PR.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -36,19 +41,20 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. Pull candidate PRs
 
-List every **draft** open PR and discard the ones that already carry the lock label `status:fix-in-progress` — a concurrent fire owns them:
+List every **draft** open PR and discard the ones that already carry the lock label `status:fix-in-progress` — a concurrent fire owns them. `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, scope via the `--search` qualifier `milestone:"<milestone-name>"` (single-quoted to survive shell expansion of the embedded double quotes); otherwise omit the flag.
 
 ```bash
 gh pr list \
   --draft \
   --state open \
-  --json number,title,headRefName,baseRefName,url,labels \
+  ${milestone:+--search "milestone:\"${milestone}\""} \
+  --json number,title,headRefName,baseRefName,url,labels,milestone \
   --limit 200
 ```
 
-Filter on the orchestrator side: keep PRs whose `labels` array does **not** include `status:fix-in-progress`.
+Filter on the orchestrator side: keep PRs whose `labels` array does **not** include `status:fix-in-progress`. The `--search` qualifier is GitHub-side; the orchestrator does not need to re-check `milestone` locally.
 
-If the filtered list is empty, report "nothing to pick up" and stop.
+If the filtered list is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. Classify scenarios per PR
 

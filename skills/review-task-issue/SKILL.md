@@ -21,7 +21,12 @@ Do NOT activate when the user wants to review a slice PR directly (the `review:*
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many `(task, gate)` pairs to dispatch this run. Empty / unset → process every eligible pair. A positive integer N → stop after N pairs have been locked + dispatched. A task with both gates pending counts as **two** pairs against the cap.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N `(task, gate)` pairs have been locked + dispatched. A task with both gates pending counts as **two** pairs against the cap. Empty / unset → process every eligible pair.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -35,7 +40,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. Pull eligible tasks per gate
 
-A task is in scope when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and has the matching gate's `-pending` label. Run one `gh issue list` per gate so a task with both pending labels appears in both lists; merge and dedupe by issue number on the orchestrator side.
+A task is in scope when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and has the matching gate's `-pending` label. Run one `gh issue list` per gate so a task with both pending labels appears in both lists; merge and dedupe by issue number on the orchestrator side. When `<milestone-name>` is set, append `--milestone "${milestone}"` to every list call so the scan is scoped to that feature; otherwise omit the flag.
 
 ```bash
 gh issue list \
@@ -44,6 +49,7 @@ gh issue list \
   --label "kind:feature" \
   --label "status:in-progress" \
   --label "review:code-pending" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,labels,url \
   --limit 200
 
@@ -53,11 +59,12 @@ gh issue list \
   --label "kind:feature" \
   --label "status:in-progress" \
   --label "review:security-pending" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,labels,url \
   --limit 200
 ```
 
-If both lists are empty, report "nothing to pick up" and stop.
+If both lists are empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. Build the (task, gate) work list
 

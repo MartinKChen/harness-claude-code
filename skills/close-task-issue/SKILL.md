@@ -28,7 +28,12 @@ Do NOT activate when the user wants to dispatch reviewers (use `review-task-issu
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many tasks to close this run. Empty / unset → close every eligible task.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N tasks have been closed. Empty / unset → close every eligible task.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -42,7 +47,7 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate tasks
 
-A task is a candidate when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and carries `review:code-passed`. (Code-passed is universal across `type:*`, so it's the cheapest pre-filter; we re-check the full required-gate set per task in step 3.)
+A task is a candidate when it is **open**, carries `level:task` + `kind:feature` + `status:in-progress`, and carries `review:code-passed`. (Code-passed is universal across `type:*`, so it's the cheapest pre-filter; we re-check the full required-gate set per task in step 3.) When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
 
 ```bash
 gh issue list \
@@ -51,11 +56,12 @@ gh issue list \
   --label "kind:feature" \
   --label "status:in-progress" \
   --label "review:code-passed" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,labels,url \
   --limit 200
 ```
 
-If empty, report "nothing to close" and stop.
+If empty, report "nothing to close" and stop. When a milestone filter was applied, include it: `nothing to close (milestone: <milestone-name>)`.
 
 ### 3. Validate the full required-gate set per task
 

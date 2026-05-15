@@ -24,7 +24,12 @@ Do NOT activate when the user wants to fix a draft PR's CI/conflict blockers (th
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N tasks have been dispatched. Empty / unset → process every eligible task.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -45,7 +50,7 @@ A task is in scope when **all** of these hold:
 - carries at least one of `review:code-need-fix`, `review:security-need-fix`;
 - carries **no** `review:*-pending` and **no** `review:*-running` labels (those mean a review cycle is in flight — wait for it to land before dispatching a fix).
 
-Run one `gh issue list` per need-fix gate and merge by issue number on the orchestrator side; then re-read each candidate's `labels` to enforce the "no pending / no running" exclusion locally.
+Run one `gh issue list` per need-fix gate and merge by issue number on the orchestrator side; then re-read each candidate's `labels` to enforce the "no pending / no running" exclusion locally. When `<milestone-name>` is set, append `--milestone "${milestone}"` to every list call so the scan is scoped to that feature; otherwise omit the flag.
 
 ```bash
 for gate in code security; do
@@ -55,6 +60,7 @@ for gate in code security; do
     --label "kind:feature" \
     --label "status:in-progress" \
     --label "review:${gate}-need-fix" \
+    ${milestone:+--milestone "${milestone}"} \
     --json number,title,labels,url \
     --limit 200
 done
@@ -62,7 +68,7 @@ done
 
 Local filter — drop any candidate whose `labels` include `review:code-pending`, `review:code-running`, `review:security-pending`, or `review:security-running`. Log `skipped #<n> — review cycle in flight: <list>`.
 
-If the resulting set is empty, report "nothing to pick up" and stop.
+If the resulting set is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. Lock by stripping every code/security terminal label
 

@@ -21,7 +21,12 @@ Do NOT activate when the user wants to promote slice issues (use `kickoff-slice-
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task. A positive integer N → stop after N tasks have been locked + dispatched; remaining eligible tasks are picked up on the next invocation.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N tasks have been locked + dispatched. Empty / unset → process every eligible task. Already-skipped tasks (blocked / malformed) do not count toward N.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -35,7 +40,7 @@ repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"   # owner/r
 
 ### 2. Pull eligible task candidates
 
-List open task issues that are ready to implement and tagged as features:
+List open task issues that are ready to implement and tagged as features. When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag.
 
 ```bash
 gh issue list \
@@ -43,11 +48,12 @@ gh issue list \
   --label "level:task" \
   --label "status:ready-to-implement" \
   --label "kind:feature" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,labels,url \
   --limit 200
 ```
 
-If the result is empty, report "nothing to pick up" and stop.
+If the result is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. For each candidate, query open-blocker count
 

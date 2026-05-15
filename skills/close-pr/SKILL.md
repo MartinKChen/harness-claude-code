@@ -22,7 +22,12 @@ Do NOT activate when the user wants to fix CI / merge-conflict blockers on a dra
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many PRs to merge this run. Empty / unset → merge every eligible PR.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the draft-PR scan to PRs whose milestone matches (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone `create-draft-pr` inherits from the slice issue). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N PRs have been merged. Empty / unset → merge every eligible PR.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -36,17 +41,18 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate PRs
 
-A PR is a candidate when it is **draft** (the slice PR stays draft until this skill promotes and merges it):
+A PR is a candidate when it is **draft** (the slice PR stays draft until this skill promotes and merges it). `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, scope via the `--search` qualifier `milestone:"<milestone-name>"` (single-quoted to survive shell expansion of the embedded double quotes); otherwise omit the flag.
 
 ```bash
 gh pr list \
   --draft \
   --state open \
-  --json number,title,headRefName,baseRefName,url,labels \
+  ${milestone:+--search "milestone:\"${milestone}\""} \
+  --json number,title,headRefName,baseRefName,url,labels,milestone \
   --limit 200
 ```
 
-If empty, report "nothing to merge" and stop.
+If empty, report "nothing to merge" and stop. When a milestone filter was applied, include it: `nothing to merge (milestone: <milestone-name>)`.
 
 ### 3. Per PR — verify checks green and mergeable
 

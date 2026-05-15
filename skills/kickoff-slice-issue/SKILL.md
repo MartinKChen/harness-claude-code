@@ -20,7 +20,12 @@ Do NOT activate when the user wants to dispatch agents to start the actual work 
 
 ## Arguments
 
-The skill accepts an optional positive integer cap on how many slices to promote this run. Empty / unset → process every eligible slice. A positive integer N → stop after N slices have been promoted; remaining eligible slices are picked up on the next invocation.
+Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
+
+- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone created by `/deep-dive-feature` and used by `create-issues`). Empty / unset → scan every milestone.
+- `<cap>` — optional positive integer; stop after N slices have been promoted. Empty / unset → process every eligible slice. Already-skipped slices (blocked, etc.) do not count toward N.
+
+When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Workflow
 
@@ -35,17 +40,20 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. List candidate slice issues
 
+When `<milestone-name>` is set, append `--milestone "${milestone}"` so the scan is scoped to that feature; otherwise omit the flag and scan every milestone.
+
 ```bash
 gh issue list \
   --state open \
   --label "level:slice" \
   --label "status:ready-to-implement" \
   --label "kind:feature" \
+  ${milestone:+--milestone "${milestone}"} \
   --json number,title,url \
   --limit 200
 ```
 
-If empty, report "nothing to pick up" and stop.
+If empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it in the message: `nothing to pick up (milestone: <milestone-name>)`.
 
 ### 3. For each slice: query open-blocker count and sub-issues in one GraphQL call
 
