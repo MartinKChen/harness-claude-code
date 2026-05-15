@@ -3,12 +3,21 @@ Used in step 5b of the create-issues skill as the body of a `backend` task
 sub-issue. The task's type is carried by the `type:backend` label set on
 `gh issue create` — do not duplicate it in the body.
 
+ATOMIC: one `backend` task delivers **exactly one** of:
+- a single API endpoint, OR
+- a single data-model entity change (one table / model class), OR
+- a single utility function/module.
+
+Do NOT bundle. "Endpoint + its model" is two tasks ordered via `Blocked by`,
+not one. If the Delivery section needs the word "and" between two of those
+units, split the task.
+
 When the task changes a data model, the **Migration scenarios** block is
 mandatory; otherwise omit it entirely.
 -->
 
 ## Delivery
-What is being created or modified:
+The **single** unit being created or modified — pick exactly one of the lines below and delete the others:
 - API endpoint: `POST /<resource>` — <purpose>
 - Data model: `<Entity>` — <columns / relations added or changed>
 - Utility: `<fn>` — <purpose>

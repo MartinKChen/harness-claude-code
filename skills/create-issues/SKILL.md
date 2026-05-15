@@ -88,32 +88,32 @@ For each **slice** (which becomes a parent issue), decide:
 - **Blocked by** — which sibling slices (if any) must complete first. Most slices should have ≤1 blocker; a long blocker chain usually means the slices are too thick.
 - **User stories covered** — which user stories from the source this addresses, if the source has them. Omit if the source has no user stories.
 
-For each slice, then decompose into **tasks** (which become sub-issues). Pick whichever of the three types apply to the slice. A slice with UI typically has multiple tasks of the same type (e.g. two `backend` tasks for two distinct endpoints, three `frontend` tasks for three components), so each task needs a stable local **ID** for the dependency graph to be unambiguous before real issue numbers exist.
+For each slice, then decompose into **tasks** (which become sub-issues). Pick whichever of the three types apply to the slice. **Tasks MUST be atomic** — each task delivers exactly one unit of work (one test case, one endpoint, one entity change, one utility, one page, one component, one hook). A slice typically has multiple tasks of the same type (e.g. three `e2e` tasks for three distinct user flows, two `backend` tasks for two distinct endpoints, three `frontend` tasks for three components), so each task needs a stable local **ID** for the dependency graph to be unambiguous before real issue numbers exist.
 
-Types:
+Types — each task delivers **exactly one atomic unit**:
 
-- **e2e** — present whenever the slice has UI. Captures the E2E tests that validate the slice's acceptance criteria from the UI. There is at most one `e2e` task per slice.
-- **backend** — present when the slice touches API endpoints, data models, or backend utilities. A slice may have multiple `backend` tasks (one per endpoint / model / utility cluster).
-- **frontend** — present when the slice touches pages, components, or hooks. A slice may have multiple `frontend` tasks.
+- **e2e** — present whenever the slice has UI. Each `e2e` task is **one E2E test case = one user flow through the UI**. A slice whose acceptance criteria span multiple scenarios (happy path, validation error, edge case, etc.) MUST become multiple `e2e` tasks — one per scenario. Do not bundle scenarios into a single task.
+- **backend** — present when the slice touches API endpoints, data models, or backend utilities. Each `backend` task delivers **exactly one** of: a single API endpoint, a single data-model entity change (one table / model class), or a single utility function/module. Do not cluster two endpoints, two entities, or "endpoint + its model" into one task — split them and order via `Blocked by`.
+- **frontend** — present when the slice touches pages, components, or hooks. Each `frontend` task delivers **exactly one** of: a single page, a single component, or a single hook. Do not bundle multiple components, or "page + its components", into one task — split them and order via `Blocked by`.
 
 For each task, decide:
 
-- **ID** — a stable local identifier of the form `<slice#>.<type-code>[.<index>]` where `type-code` is one of `e2e` / `be` / `fe`, and `index` is `1`, `2`, … when the slice has more than one task of that type. Examples: `1.e2e`, `1.be.1`, `1.be.2`, `1.fe.1`. The `e2e` task always uses the index-less form `<slice#>.e2e` since there is at most one. These IDs are used in the breakdown and quiz; they are replaced with real issue numbers (`#123`) during the post-creation passes.
+- **ID** — a stable local identifier of the form `<slice#>.<type-code>.<index>` where `type-code` is one of `e2e` / `be` / `fe`, and `index` is `1`, `2`, … . Examples: `1.e2e.1`, `1.e2e.2`, `1.be.1`, `1.be.2`, `1.fe.1`. The index is always required (even when a slice happens to have only one task of a given type) so atomic decomposition stays visually consistent across slices. These IDs are used in the breakdown and quiz; they are replaced with real issue numbers (`#123`) during the post-creation passes.
 - **Type** — `e2e` | `backend` | `frontend`.
-- **Delivery** — what is being created/modified:
-  - `e2e` → the E2E test cases to write, **expressed as user flows through the UI** (e.g. "user navigates to /entities, clicks 'New', fills the form, submits, then sees the new row in the list"). E2E validates behavior end-to-end via the UI — never as direct API calls or backend assertions.
-  - `backend` → the API endpoints / data models / utilities to create or modify.
-  - `frontend` → the pages / components / hooks to create or modify.
+- **Delivery** — the **single** unit being created/modified:
+  - `e2e` → **one** E2E test case, expressed as **one** user flow through the UI (e.g. "user navigates to /entities, clicks 'New', fills the form, submits, then sees the new row in the list"). E2E validates behavior end-to-end via the UI — never as direct API calls or backend assertions. One task = one flow = one mapped acceptance-criteria scenario.
+  - `backend` → **one** API endpoint, **or** **one** data-model entity change, **or** **one** utility. If a task description needs the word "and" between two of these, split it.
+  - `frontend` → **one** page, **or** **one** component, **or** **one** hook. If a task description needs the word "and" between two of these, split it.
 - **Done criteria** — how we know the task is finished:
-  - `e2e` → E2E test cases cover every scenario in the parent issue's acceptance criteria, exercised through the UI.
-  - `backend` → behavior described with EARS + Gherkin notation. Tasks involving a data-model change MUST also describe migration test scenarios for both upgrade and downgrade.
-  - `frontend` → behavior described with EARS + Gherkin notation.
+  - `e2e` → the single E2E test case described in Delivery has been written and exercises the mapped acceptance-criteria scenario through the UI.
+  - `backend` → behavior of the single unit described with EARS + Gherkin notation. Tasks involving a data-model change MUST also describe migration test scenarios for both upgrade and downgrade.
+  - `frontend` → behavior of the single unit described with EARS + Gherkin notation.
 - **Blocked by** — task IDs that must complete first. Tasks within a slice are implemented **strictly sequentially** — pick exactly one same-slice predecessor (the immediately preceding task in the slice's order), or none for the first task. The order within a slice is:
-  1. The slice's `e2e` task (when present) ALWAYS comes first.
-  2. Then `backend` tasks in index order (`be.1` → `be.2` → …).
-  3. Then `frontend` tasks in index order (`fe.1` → `fe.2` → …).
+  1. All `e2e` tasks (when present) come first, in index order (`e2e.1` → `e2e.2` → …). E2E first preserves the outside-in TDD loop: tests fail, then backend + frontend make them pass.
+  2. Then `backend` tasks in index order (`be.1` → `be.2` → …). Within backend, prefer data-model tasks before the endpoints that consume them, and endpoints before the utilities that wrap them.
+  3. Then `frontend` tasks in index order (`fe.1` → `fe.2` → …). Within frontend, prefer hooks before components, and components before the pages that compose them.
   
-  Example for a slice with all four kinds: `1.e2e` ← `1.be.1` ← `1.be.2` ← `1.fe.1` (each task lists only the one immediately to its left as `Blocked by`). Cross-slice blockers (a task that genuinely depends on a task in a prior slice) are still allowed when truly required, but should be rare — most cross-slice dependencies are already captured at the slice level.
+  Example for a slice with two e2e cases, two backend units, and one frontend component: `1.e2e.1` ← `1.e2e.2` ← `1.be.1` ← `1.be.2` ← `1.fe.1` (each task lists only the one immediately to its left as `Blocked by`). Cross-slice blockers (a task that genuinely depends on a task in a prior slice) are still allowed when truly required, but should be rare — most cross-slice dependencies are already captured at the slice level.
 
 ### 4. Quiz the user
 
@@ -193,7 +193,7 @@ Notes:
 
 #### 5b. Create task issues (sub-issues) per slice
 
-For each slice's tasks, in the slice's sequential order (`e2e` first when present, then `backend` tasks in index order, then `frontend` tasks in index order):
+For each slice's tasks, in the slice's sequential order (all `e2e` tasks in index order when present, then `backend` tasks in index order, then `frontend` tasks in index order):
 
 ```bash
 gh issue create \
@@ -232,7 +232,7 @@ After creation:
 
    Every task sub-issue under the slice gets the same branch attached. If `gh issue develop` reports that a branch by that name already exists (it will — 5a just created it), that's the intended path: it links the existing branch to the task issue and exits cleanly.
 
-3. **Wire 1-up `Blocked by` immediately**, using the same GraphQL `addBlockedBy` mutation shown in 5a. Per the sequential rule, every task except the first in its slice has exactly one same-slice blocker — the immediately preceding task in the slice's order (`e2e` → `be.1` → `be.2` → … → `fe.1` → `fe.2` → …). Translate every local task ID (`1.be.1`, etc.) into a real issue number via the mapping before issuing the API call.
+3. **Wire 1-up `Blocked by` immediately**, using the same GraphQL `addBlockedBy` mutation shown in 5a. Per the sequential rule, every task except the first in its slice has exactly one same-slice blocker — the immediately preceding task in the slice's order (`e2e.1` → `e2e.2` → … → `be.1` → `be.2` → … → `fe.1` → `fe.2` → …). Translate every local task ID (`1.be.1`, etc.) into a real issue number via the mapping before issuing the API call.
 
    Cross-slice task blockers are allowed when truly required, but again only the immediate predecessor — never transitive ancestors.
 
@@ -253,17 +253,20 @@ Bad — horizontal split, none of these is independently shippable:
 #4 Write the tests for <feature>
 ```
 
-Good — vertical tracer bullets, each merge leaves the product working. Tasks within a slice form a single sequential chain (`e2e` first, then `backend`, then `frontend`):
+Good — vertical tracer bullets, each merge leaves the product working. Tasks within a slice form a single sequential chain (`e2e` tasks first, then `backend`, then `frontend`), and each task is **atomic** — one test case, one endpoint, one entity, one component, etc.:
 
 ```
 #1 Show empty <feature> page behind a flag (parent issue)
-   1. task: e2e — UI smoke flow: navigate to page behind flag, see empty state
-   2. task: backend — stub GET endpoint returning empty list   (blocked by 1)
-   3. task: frontend — page shell behind feature flag           (blocked by 2)
+   1. task: e2e.1 — UI flow: navigate to page behind flag, see empty state
+   2. task: be.1  — GET /<entities> endpoint returning empty list   (blocked by 1)
+   3. task: fe.1  — page shell behind feature flag                  (blocked by 2)
 #2 Persist a single <entity> end-to-end (parent issue)
-   1. task: e2e — UI flow: open create form, submit, see new <entity> in list
-   2. task: backend — schema column + POST endpoint (incl. migration) (blocked by 1)
-   3. task: frontend — create form + optimistic update          (blocked by 2)
+   1. task: e2e.1 — UI flow: open create form, submit, see new <entity> in list
+   2. task: e2e.2 — UI flow: submit form with empty required field, see inline error (blocked by 1)
+   3. task: be.1  — <Entity> data model + migration                 (blocked by 2)
+   4. task: be.2  — POST /<entities> endpoint                       (blocked by 3)
+   5. task: fe.1  — useCreate<Entity> hook                          (blocked by 4)
+   6. task: fe.2  — <Entity>CreateForm component                    (blocked by 5)
 ```
 
 ### Iron rules
@@ -276,9 +279,10 @@ Good — vertical tracer bullets, each merge leaves the product working. Tasks w
 - **Use the project's vocabulary.** Issue titles and descriptions must use terms from the project's domain glossary verbatim — no synonyms, no rephrasings. Respect ADRs in any area you touch.
 - **Critical paths drive E2E design.** `e2e` task user-flow deliveries are mapped onto an existing `docs/CRITICALPATHs/` flow when one exists, and extend rather than fragment that flow. A feature that introduces a brand-new critical path means lock-in is incomplete — halt and surface, do not invent the critical path inside an issue body.
 - **Quiz before locking.** Never create issues until the user explicitly approves the slice + task breakdown.
-- **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>[.<index>]` (`e2e` / `be` / `fe`). IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers as each issue is created in step 5.
-- **1-up `Blocked by` only.** For chains `s1 → s2 → s3` (or `1.e2e → 1.be.1 → 1.be.2`), record only the immediate predecessor as the blocker. Never include transitive ancestors — GitHub infers them.
-- **Sequential tasks within a slice.** Tasks within a slice are implemented one at a time, in a single chain. Order: `e2e` (when present) → `backend` tasks in index order → `frontend` tasks in index order. Each task lists exactly the immediately preceding task in that chain as its same-slice blocker (or none, for the first task).
+- **Atomic tasks.** Each task delivers **exactly one** unit of work — one E2E test case (= one user flow), one API endpoint, one data-model entity change, one utility, one page, one component, or one hook. Splitting is mandatory: if a task description requires the word "and" to join two of those units, it MUST be split into two tasks ordered via `Blocked by`. Many small atomic tasks are correct; "bundled for convenience" tasks are not.
+- **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>.<index>` (`e2e` / `be` / `fe`); the index is always present, even when the slice happens to have only one task of that type. IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers as each issue is created in step 5.
+- **1-up `Blocked by` only.** For chains `s1 → s2 → s3` (or `1.e2e.1 → 1.e2e.2 → 1.be.1 → 1.be.2`), record only the immediate predecessor as the blocker. Never include transitive ancestors — GitHub infers them.
+- **Sequential tasks within a slice.** Tasks within a slice are implemented one at a time, in a single chain. Order: all `e2e` tasks in index order (when present) → `backend` tasks in index order (data-model before endpoints before utilities, when those choices apply) → `frontend` tasks in index order (hooks before components before pages, when those choices apply). Each task lists exactly the immediately preceding task in that chain as its same-slice blocker (or none, for the first task).
 - **Slice branch is created at issue-creation time.** Step 5a opens the slice issue and immediately creates its `feature/<slice#>-<intent>` branch via `gh issue develop`. The slice is born ready for downstream task work — there is no separate "pickup slice" loop that materializes branches afterwards.
 - **Task sub-issues share the slice branch.** Every task sub-issue created in 5b has the slice's `feature/<slice#>-<intent>` branch (from 5a) linked to it via `gh issue develop --name`. There is no per-task branch — all task work for a slice integrates onto the single slice branch, and the GitHub "Development" link on each task surfaces that shared target.
 - **Branch intent name is hand-picked, not auto-slugged.** The `<intent>` segment is a short kebab-case noun-phrase (≤40 chars) that conveys what the slice does, chosen during step 5a. Do NOT mechanically slugify the issue title — titles are written for humans scanning a list, branch names need to read well in isolation.
