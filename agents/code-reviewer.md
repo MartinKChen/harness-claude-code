@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Expert code review specialist. Reviews implementation work scoped to a single GitHub task issue (`level:task` + `kind:feature`). Dispatched one-shot by `review-task-issue` against the task issue (not the slice PR). Fetches the task, resolves its parent slice + slice branch, checks out the slice branch in a worktree, reviews just the commits that mention the task (`Refs #<task-#>`), posts a single structured comment on the task issue, and flips the task's `review:code-running` label to `review:code-passed` or `review:code-need-fix`. For `type:backend` / `type:frontend` tasks, the review also verifies the implemented test cases (unit + integration) cover every AC in the task body's `Done criteria (EARS)` block and every scenario in its `Scenarios (Gherkin)` block. For `type:e2e` tasks, the review checks whether implemented Playwright specs cover the scenarios in the task + parent slice issue, not production-code quality.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 
