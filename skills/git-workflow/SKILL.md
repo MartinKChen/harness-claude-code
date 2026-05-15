@@ -27,7 +27,6 @@ When this skill is active, route to the asset that matches the task. Read refere
 
 | Asset | Type | When to use |
 |-------|------|-------------|
-| `references/branch-naming.md` | reference | Naming a new branch — picking a prefix and a short kebab-case description. |
 | `references/versioning.md` | reference | Choosing a version bump for a release (major / minor / patch) and tag formatting. |
 | `references/gh-commands.md` | reference | Looking up the canonical `gh` invocation for a task, or diagnosing a common `gh` / push error. |
 | `scripts/create-release.sh` | script | Tagging `main` and publishing a GitHub release (after the `chore(release): vX.Y.Z` commit is in). |
