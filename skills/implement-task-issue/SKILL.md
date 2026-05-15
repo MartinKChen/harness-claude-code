@@ -28,16 +28,17 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
-## Scripts
+## Scripts and templates
 
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The dispatch-prompt skeleton lives under `templates/`.
 
-| Script | Purpose |
-|--------|---------|
+| Asset | Purpose |
+|-------|---------|
 | `scripts/list-candidates.sh [--milestone <name>]` | List open ready-to-implement feature tasks. |
 | `scripts/blocker-count.sh <task-#>` | Print the open-blocker count for the task. |
 | `scripts/lock-task.sh <task-#>` | Flip `status:ready-to-implement` → `status:in-progress`. |
 | `scripts/unlock-task.sh <task-#>` | Roll the flip back (only on synchronous dispatch failure). |
+| `templates/dispatch-prompt.md` | Skeleton for the engineer / e2e-author implement dispatch; fill placeholders and pass as the `Agent` call's `prompt`. |
 
 ## Workflow
 
@@ -133,15 +134,7 @@ Independent candidates within the same fire are dispatched in parallel: emit all
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `review-task-issue` / `close-task-issue` clear the GitHub-side labels once reviews pass).
 
-Skeleton for the dispatch prompt:
-
-```
-Implement GitHub task issue #<task-#> ("<task-title>").
-URL: <task-url>
-Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and added the `review:*-pending` labels on the GitHub task.
-
-Fetch any further context you need (body, labels, parent slice issue, parent branch, etc.) yourself via `gh` — you have the issue ID.
-```
+Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<task-#>`, `<task-title>`, `<task-url>`, `<taskId>`) and pass the resulting text as the `Agent` call's `prompt`.
 
 ### 6. Honor the cap and report
 

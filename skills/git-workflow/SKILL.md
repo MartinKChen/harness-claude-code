@@ -21,9 +21,9 @@ Activate this skill whenever the user:
 
 Do NOT activate when the user is asking about git internals unrelated to our workflow (e.g. "explain how rebase works"), or when they are working in a non-GitHub host (GitLab, Bitbucket) — the conventions here assume GitHub Flow + `gh`.
 
-## References, templates, and scripts
+## References and scripts
 
-When this skill is active, route to the asset that matches the task. Read references on demand; copy templates before editing; invoke scripts via `bash` (or directly — they are executable).
+When this skill is active, route to the asset that matches the task. Read references on demand; invoke scripts via `bash` (or directly — they are executable). The PR-body template ships with the `create-draft-pr` skill (at `create-draft-pr/templates/pr-body.md`), not here.
 
 | Asset | Type | When to use |
 |-------|------|-------------|
@@ -31,9 +31,8 @@ When this skill is active, route to the asset that matches the task. Read refere
 | `references/commit-messages.md` | reference | Writing a commit message or PR title — Conventional Commits format, type table, and examples. |
 | `references/versioning.md` | reference | Choosing a version bump for a release (major / minor / patch) and tag formatting. |
 | `references/gh-commands.md` | reference | Looking up the canonical `gh` invocation for a task, or diagnosing a common `gh` / push error. |
-| `templates/pr-body.md` | template | Composing a PR body — copy the template, fill in the sections, drop those that don't apply. |
 | `scripts/start-feature.sh` | script | Starting a new branch in its own worktree off latest `origin/main`. |
-| `scripts/create-pr.sh` | script | Rebasing the current branch on `main`, pushing, and opening a PR with the standard template body. |
+| `scripts/create-pr.sh` | script | Rebasing the current branch on `main`, pushing, and opening a PR with a caller-supplied body file. |
 | `scripts/create-issue.sh` | script | Creating an issue, optionally linking it as a blocker on a parent issue. |
 | `scripts/update-pr.sh` | script | Pulling the PR branch's remote updates, rebasing on `main`, and pushing with `--force-with-lease`. |
 | `scripts/create-release.sh` | script | Tagging `main` and publishing a GitHub release (after the `chore(release): vX.Y.Z` commit is in). |

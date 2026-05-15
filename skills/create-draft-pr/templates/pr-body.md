@@ -30,4 +30,9 @@ Before/after screenshots for UI changes.
 - [ ] Tests pass locally
 - [ ] Related issues linked
 
-Closes #<issue-number>
+Closes #<slice-#>
+
+Task sub-issues (closed before this PR was opened):
+- Closes #<task-#-1>
+- Closes #<task-#-2>
+- Closes #<task-#-N>

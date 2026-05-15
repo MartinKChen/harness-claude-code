@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Rebase the current branch on origin/main, push it, and open a PR with the
-# standard PR-body template.
+# Rebase the current branch on origin/main, push it, and open a PR with a
+# caller-supplied body file.
 #
 # Usage:
 #   create-pr.sh <title> <body-file>
@@ -9,7 +9,8 @@
 #   create-pr.sh "feat(auth): add SSO support for enterprise users" pr-body.md
 #
 # Title format: see ../references/commit-messages.md (PR titles section).
-# Body file:    start from ../templates/pr-body.md and fill in the sections.
+# Body file:    write your own, or start from the `create-draft-pr` skill's
+#               `templates/pr-body.md` if the slice-PR shape applies.
 set -euo pipefail
 
 title="${1:-}"
@@ -18,7 +19,7 @@ body_file="${2:-}"
 if [[ -z "$title" || -z "$body_file" ]]; then
   echo "usage: $0 <title> <body-file>" >&2
   echo "  title format: see references/commit-messages.md" >&2
-  echo "  body-file:    fill from templates/pr-body.md before running" >&2
+  echo "  body-file:    write your own, or copy create-draft-pr/templates/pr-body.md" >&2
   exit 1
 fi
 

@@ -31,15 +31,16 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
-## Scripts
+## Scripts and templates
 
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The dispatch-prompt skeleton lives under `templates/`.
 
-| Script | Purpose |
-|--------|---------|
+| Asset | Purpose |
+|-------|---------|
 | `scripts/list-candidates.sh <gate> [--milestone <name>]` | List open in-progress feature tasks carrying `review:<gate>-need-fix`. |
 | `scripts/lock-task.sh <task-#>` | Strip every `review:{code,security}-(passed\|need-fix)` label; print the snapshot. |
 | `scripts/unlock-task.sh <task-#> <label> [<label> ...]` | Re-add the snapshot of labels (rollback only). |
+| `templates/dispatch-prompt.md` | Skeleton for the engineer / e2e-author fix dispatch; fill placeholders and pass as the `Agent` call's `prompt`. |
 
 ## Workflow
 
@@ -142,21 +143,7 @@ If the `Agent` dispatch fails synchronously, roll back BOTH the lock (per step 3
 
 The spawn prompt passes the **task issue number, title, URL, the original need-fix gates** (the subset of the snapshot whose labels were `review:{code,security}-need-fix`, NOT the `*-passed` ones — `code` and/or `security`), and the orchestrator `taskId`. The dispatched agent reads the reviewer's findings comment on the GitHub task and fixes accordingly; the need-fix gates tell it which reviewer comment(s) to read.
 
-Skeleton:
-
-```
-Fix the review feedback on GitHub task issue #<task-#> ("<task-title>").
-URL: <task-url>
-Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and re-added the `review:*-pending` labels on the GitHub task.
-
-Reviewer gates that reported `need-fix` (read the matching reviewer comment on the issue):
-- code
-- security
-
-Fetch any further context you need (issue body, reviewer findings comments, parent slice issue, slice branch, etc.) yourself via `gh` — you have the issue ID.
-```
-
-Include only the gates that were actually `need-fix` before step 3's flip.
+Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<task-#>`, `<task-title>`, `<task-url>`, `<taskId>`) and prune the reviewer-gate bullet list down to only the gates that were actually `need-fix` before step 3's flip — never leave a bullet for a gate that didn't trigger.
 
 ### 5. Honor the cap and report
 

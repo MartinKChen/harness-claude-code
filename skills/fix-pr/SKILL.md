@@ -29,17 +29,18 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
-## Scripts
+## Scripts and templates
 
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The dispatch-prompt skeleton lives under `templates/`.
 
-| Script | Purpose |
-|--------|---------|
+| Asset | Purpose |
+|-------|---------|
 | `scripts/list-candidates.sh [--milestone <name>]` | List draft open PRs as JSON. |
 | `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. |
 | `scripts/inspect-checks.sh <pr-#>` | Emit `{running, failing}` for the head SHA's check rollup. |
 | `scripts/lock-pr.sh <pr-#>` | Add the `status:fix-in-progress` lock label. |
 | `scripts/unlock-pr.sh <pr-#>` | Remove the lock label (rollback on dispatch failure). |
+| `templates/dispatch-prompt.md` | Skeleton for the `engineer` Mode-B dispatch prompt; fill placeholders and pass as the `Agent` call's `prompt`. |
 
 ## Workflow
 
@@ -165,20 +166,7 @@ Independent PRs fan out in parallel: emit all the `Agent` calls AND their matchi
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Once the engineer is running, ownership transfers — it owns the terminal `status:fix-in-progress` removal and the tracking task's `completed` flip.
 
-Skeleton:
-
-```
-Fix PR #<pr-#> in Mode B.
-Orchestrator tracking task: <taskId> — call `TaskUpdate({ taskId: "<taskId>", status: "in_progress" })` when you begin and `TaskUpdate({ taskId: "<taskId>", status: "completed" })` once you've pushed and removed `status:fix-in-progress` from the PR.
-
-Scenarios to address (handle every one listed):
-- conflict
-- ci
-
-Fetch any further context yourself via `gh` and `git` — you have the PR number.
-```
-
-Include only the scenarios that classified for this PR; never list one that didn't trigger.
+Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<pr-#>`, `<taskId>`) and prune the scenario bullet list down to only the scenarios that classified for this PR — never leave a bullet for a scenario that didn't trigger.
 
 ### 6. Honor the cap and report
 

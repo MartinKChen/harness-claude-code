@@ -25,17 +25,18 @@ Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
-## Scripts
+## Scripts and templates
 
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The PR-body skeleton lives under `templates/`.
 
-| Script | Purpose |
-|--------|---------|
+| Asset | Purpose |
+|-------|---------|
 | `scripts/list-candidates.sh [--milestone <name>]` | List open in-progress feature slice issues. |
 | `scripts/inspect-subissues.sh <slice-#>` | GraphQL: sub-issue states + labels for the slice. |
 | `scripts/resolve-branch.sh <slice-#>` | Print the linked slice branch name (empty if none). |
 | `scripts/find-existing-pr.sh <head-branch>` | Print an existing PR # for the branch (empty if none). |
 | `scripts/open-draft-pr.sh <head-branch> <title> <body-file> [--milestone <name>]` | Create the draft PR; print the URL. |
+| `templates/pr-body.md` | PR-body skeleton (sections + trailing linked-issues block placeholders). Copy and fill before opening the PR. |
 
 ## Workflow
 
@@ -93,36 +94,33 @@ fi
 
 ### 5. Compose the PR body
 
-Defer to the **`git-workflow` skill's PR body template** for the structure of the body — invoke `git-workflow` and use whatever PR-body template it ships. Do NOT hard-code a filesystem path to the template: this skill lives in a plugin and the installed location of `git-workflow`'s assets is environment-dependent (`git-workflow` knows where its own template lives; resolve through the skill, not through `$(git rev-parse --show-toplevel)/skills/...`).
+Start from `templates/pr-body.md`, which ships the standard PR-body sections (What / Why / How / Testing / Screenshots / Checklist) plus a trailing linked-issues block with three placeholders: `<slice-#>`, `<task-#-1>` … `<task-#-N>`.
 
-The template ends with a `Closes #<issue-number>` placeholder line. Replace that single line with a fully-rendered linked-issues block. Order is load-bearing: **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body** so `close-pr`'s `closingIssuesReferences[0]` reads the slice issue (and not a task) when it later strips `status:in-progress` and closes the slice.
+Order in the trailing block is load-bearing: **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body** so `close-pr`'s `closingIssuesReferences[0]` reads the slice issue (and not a task) when it later strips `status:in-progress` and closes the slice.
 
-Linked-issues block (replaces the template's trailing `Closes #<issue-number>` line):
+Using `Closes` (not `Refs`) for tasks is safe here because every task sub-issue is already closed by the time this skill fires — the closing keyword is a no-op for them at merge time but is what GitHub needs to render them in the PR's Linked Issues / Development sidebar.
 
-```
-Closes #<slice-#>
-
-Task sub-issues (closed before this PR was opened):
-- Closes #<task-#-1>
-- Closes #<task-#-2>
-- Closes #<task-#-N>
-```
-
-Using `Closes` (not `Refs`) for tasks is safe here because every task sub-issue is already closed by the time this skill fires — the closing keyword is a no-op for them at merge time but is what GitHub needs to render them in the PR's Linked Issues / Development sidebar. Compose the final body once per slice and write it to a temp file for `open-draft-pr.sh`:
+Copy the template, fill in the prose sections (or drop sections that don't apply), then replace the trailing-block placeholders with the actual slice and task numbers — write the final body to a temp file for `open-draft-pr.sh`:
 
 ```bash
 body_file="$(mktemp)"
-{
-  printf '%s\n' "${body_template%Closes #*}"   # git-workflow's template minus its trailing placeholder
-  printf 'Closes #%s\n\n' "${slice_number}"
-  printf 'Task sub-issues (closed before this PR was opened):\n'
-  for t in ${task_numbers}; do
-    printf -- '- Closes #%s\n' "${t}"
-  done
-} > "${body_file}"
+cp templates/pr-body.md "${body_file}"
+
+# Replace the linked-issues block placeholders. The template's three
+# `- Closes #<task-#-N>` lines are a marker for the block — strip them
+# and emit one `- Closes #<task-#>` line per actual task sub-issue.
+sed -i.bak \
+  -e "s/Closes #<slice-#>/Closes #${slice_number}/" \
+  -e '/Closes #<task-#-/d' \
+  "${body_file}"
+rm -f "${body_file}.bak"
+
+for t in ${task_numbers}; do
+  printf -- '- Closes #%s\n' "${t}" >> "${body_file}"
+done
 ```
 
-If `${task_numbers}` is empty (a slice with no `level:task` sub-issues — unusual but possible), omit the "Task sub-issues" section entirely; don't ship an empty bulleted list.
+If `${task_numbers}` is empty (a slice with no `level:task` sub-issues — unusual but possible), also strip the "Task sub-issues (closed before this PR was opened):" line so the block doesn't ship as a dangling header.
 
 ### 6. Open the draft PR with the milestone attached
 
@@ -164,7 +162,7 @@ Track opened / skipped counts internally per slice; do **not** print per-slice d
 - **Idempotent on the PR.** If a PR (draft or ready) already exists for the slice branch, this skill is a no-op for that slice — it never mutates an existing PR's title, body, milestone, or labels. Re-running on a slice already PR'd is benign.
 - **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body.** `close-pr` reads `closingIssuesReferences[0]` to find the slice issue it strips `status:in-progress` from. Putting a task ahead of the slice would point `close-pr` at the wrong issue.
 - **Use `Closes` for every linked issue, not `Refs`.** All task sub-issues are already closed when this skill fires, so the closing keyword is a no-op at merge time but is what populates the PR's Linked Issues / Development sidebar. Keep the linkage discoverable in the UI.
-- **Body template comes from the `git-workflow` skill — soft reference only.** Resolve the template by invoking `git-workflow` and using its PR-body template; never hard-code a filesystem path (this is a plugin, and the installed location of another skill's assets is environment-dependent). Do not duplicate the template inline. The template's trailing `Closes #<issue-number>` placeholder is replaced wholesale by the rendered linked-issues block in step 5.
+- **Body template ships with this skill at `templates/pr-body.md`.** Copy and fill it; do not duplicate the template inline in the SKILL or inline in the script. The trailing linked-issues block placeholders (`<slice-#>` and the `<task-#-N>` lines) are replaced wholesale by the rendered slice + task numbers in step 5.
 - **Milestone inherits from the slice issue.** If the slice has no milestone, open the PR without one — never fabricate or pick a milestone heuristically. The slice is the source of truth for which release the work belongs to.
 - **`kind:feature` only.** Bugs / enhancements are out of scope; if a fast-track flow is added later, give it its own skill rather than widening the label filter here.
 - **No branch creation, no commits, no merge.** This skill only opens draft PRs. The slice branch was created by `create-issues`; commits land via the engineer / e2e-author; merge is owned by `close-pr`.
