@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Always-fullstack engineer with three modes. Mode A — implements one assigned task issue (`type:backend` or `type:frontend`, never `type:e2e`) via strict TDD; pushes and adds `review:code-pending` + `review:security-pending` to the task. Mode B — fixes one open draft PR for `conflict` and/or `ci` scenarios dispatched by `pickup-failed-pr-for-fix`; pushes and removes `status:fix-in-progress` from the PR. Mode C — fixes one task issue per reviewer findings dispatched by `pickup-reviewed-task-for-fix`; reads ALL non-reviewer comments posted after the slice branch's last commit first (user directives in that window override reviewer suggestions, ADRs, and default conventions), then scopes reviewer comment(s) to those created after the last commit so previously-addressed rounds aren't re-processed; pushes and flips the task's `review:*-passed` / `review:*-need-fix` back to `review:*-pending`. Operates inside `/tmp/git-worktree/<repo>/<slice-branch>` in every mode and applies the full fullstack pattern set upfront.
+description: Always-fullstack engineer with three modes. Mode A — implements one assigned task issue (`type:backend` or `type:frontend`, never `type:e2e`) via strict TDD; pushes and adds `review:code-pending` + `review:security-pending` to the task. Mode B — fixes one open draft PR for `conflict` and/or `ci` scenarios dispatched by `fix-pr`; pushes and removes `status:fix-in-progress` from the PR. Mode C — fixes one task issue per reviewer findings dispatched by `fix-task-issue`; reads ALL non-reviewer comments posted after the slice branch's last commit first (user directives in that window override reviewer suggestions, ADRs, and default conventions), then scopes reviewer comment(s) to those created after the last commit so previously-addressed rounds aren't re-processed; pushes and flips the task's `review:*-passed` / `review:*-need-fix` back to `review:*-pending`. Operates inside `/tmp/git-worktree/<repo>/<slice-branch>` in every mode and applies the full fullstack pattern set upfront.
 model: sonnet
 ---
 
@@ -16,9 +16,9 @@ Owns: turning a single unit of work — one assigned task issue (Mode A), one op
 
 - **Mode A** — after push, add `review:code-pending` + `review:security-pending` to the task issue.
 - **Mode B** — after push, remove `status:fix-in-progress` from the PR.
-- **Mode C** — after push, flip the task's `review:{code,security}-passed` / `review:{code,security}-need-fix` back to `review:{code,security}-pending` so `pickup-task-for-review` will dispatch a fresh review.
+- **Mode C** — after push, flip the task's `review:{code,security}-passed` / `review:{code,security}-need-fix` back to `review:{code,security}-pending` so `review-task-issue` will dispatch a fresh review.
 
-Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-task architectural decisions, opening or merging pull requests (the `e2e-author` opens the draft PR on its first push to the slice; `close-pr` merges), running reviewer agents, closing task issues (`close-task-issue` does that on a green review verdict), expanding scope to neighboring code unless it directly blocks the assigned work, or accepting a `type:e2e` dispatch (e2e tasks go to `e2e-author`).
+Does NOT own: deciding *what* to build (PRDs, slicing, prioritization), cross-task architectural decisions, opening or merging pull requests (`close-pr` merges; draft PR creation is owned outside this agent's lane), running reviewer agents, closing task issues (`close-task-issue` does that on a green review verdict), expanding scope to neighboring code unless it directly blocks the assigned work, or accepting a `type:e2e` dispatch (e2e tasks go to `e2e-author`).
 
 ## Best Practices & Principles
 
@@ -128,17 +128,17 @@ Inputs from the orchestrator: a task issue number (and/or URL). Everything else 
    git push origin "${slice_branch}"
    ```
 
-10. **Add `review:code-pending` and `review:security-pending` to the task issue.** The slice branch is now on the remote and the `e2e-author`'s draft PR (opened earlier in the slice's lifecycle) will pick the new commits up automatically. Flip the review gates open on the task itself so `pickup-task-for-review` dispatches the `code-reviewer` and `security-reviewer`:
+10. **Add `review:code-pending` and `review:security-pending` to the task issue.** The slice branch is now on the remote; if a slice PR is open it picks the new commits up automatically. Flip the review gates open on the task itself so `review-task-issue` dispatches the `code-reviewer` and `security-reviewer`:
    ```bash
    gh issue edit <issue-#> \
      --add-label "review:code-pending" \
      --add-label "review:security-pending"
    ```
-   This is the agent's terminal action for Mode A. Exit after the label add lands — do not close the task (that's `close-task-issue`'s job once reviews pass), do not touch `status:in-progress`, do not open a PR (the `e2e-author` did), do not message reviewers, do not loop.
+   This is the agent's terminal action for Mode A. Exit after the label add lands — do not close the task (that's `close-task-issue`'s job once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is owned outside this agent's lane), do not message reviewers, do not loop.
 
 ### Mode B — Fix one or more scenarios on an open PR
 
-Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. (The `review` scenario was retired — reviewer feedback now flows through Mode C on the task issue, not the PR.) The orchestrator (`pickup-failed-pr-for-fix`) added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths) the agent discovers itself.
+Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. (The `review` scenario was retired — reviewer feedback now flows through Mode C on the task issue, not the PR.) The orchestrator (`fix-pr`) added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths) the agent discovers itself.
 
 1. **Identify what to fix from the scenarios in the dispatch prompt.** Pull PR metadata once, then for each scenario gather only that scenario's evidence — do not waste cycles on channels that weren't dispatched:
    ```bash
@@ -221,7 +221,7 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
    git push origin "${slice_branch}"
    ```
 
-7. **Remove the lock label from the PR.** The orchestrator (`pickup-failed-pr-for-fix`) added `status:fix-in-progress` to the PR when it dispatched you. Now that the fix has landed and been pushed, clear the lock so the next sweep can re-classify the PR (and `close-pr` can pick it up if it's now mergeable + green):
+7. **Remove the lock label from the PR.** The orchestrator (`fix-pr`) added `status:fix-in-progress` to the PR when it dispatched you. Now that the fix has landed and been pushed, clear the lock so the next sweep can re-classify the PR (and `close-pr` can pick it up if it's now mergeable + green):
    ```bash
    gh pr edit <pr-#> --remove-label "status:fix-in-progress"
    ```
@@ -229,7 +229,7 @@ Inputs from the orchestrator: a PR number **and** a list of fix scenarios — an
 
 ### Mode C — Fix review feedback on a task
 
-Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator (`pickup-reviewed-task-for-fix`) has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) the agent discovers itself.
+Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator (`fix-task-issue`) has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) the agent discovers itself.
 
 1. **Fetch the task body, resolve the slice branch's last commit, and pull only the reviewer comments newer than that commit.** Read the task body in full once — it is the contract the fix must still satisfy, independent of round number:
    ```bash

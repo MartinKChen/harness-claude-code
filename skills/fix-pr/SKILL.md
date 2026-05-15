@@ -1,19 +1,28 @@
 ---
-description: Scan **draft** PRs for failing GitHub Actions workflow checks on the head branch and/or merge conflicts against the base branch. Lock each affected PR with a `status:fix-in-progress` label flip, and dispatch a one-shot `engineer` sub-agent in Mode B with the list of fix scenarios it must handle (any non-empty subset of `conflict` / `ci`).
-argument-hint: "[optional: max number of PRs to dispatch this run; default: all eligible]"
+name: fix-pr
+description: "Scan **draft** PRs for failing GitHub Actions workflow checks on the head branch and/or merge conflicts against the base branch. Lock each affected PR with a `status:fix-in-progress` label flip, and dispatch a one-shot `engineer` sub-agent in Mode B with the list of fix scenarios it must handle (any non-empty subset of `conflict` / `ci`). Activate on phrases like 'fix the failing PRs', 'pick up draft PRs blocked by CI or conflicts', 'dispatch engineers against red PRs', '/fix-pr', or whenever the orchestrator needs to clear CI / merge-conflict blockers on draft slice PRs. Do NOT activate to merge a clean PR (use `close-pr`), to review code (use `review-task-issue`), or to fix reviewer findings on a task (use `fix-task-issue`)."
 ---
 
-# pickup-failed-pr-for-fix
+# fix-pr
 
 Drive the fix-routing pass for draft PRs that can't merge yet — either at least one Actions workflow check failed on the head branch, or the branch conflicts with its merge target. Classify each affected PR's scenarios, lock it so concurrent fires don't double-pick, and dispatch a one-shot `engineer` to fix.
 
-This command does **not** review PRs, does **not** flip `review:*` labels, and does **not** merge PRs. It targets a single concern: clear the CI and merge-conflict blockers that stand between a draft slice PR and `close-pr`'s merge sweep. Reviews live on task issues (`pickup-task-for-review` + `pickup-reviewed-task-for-fix`); merging is owned by `close-pr`.
+This skill does **not** review PRs, does **not** flip `review:*` labels, and does **not** merge PRs. It targets a single concern: clear the CI and merge-conflict blockers that stand between a draft slice PR and `close-pr`'s merge sweep. Reviews live on task issues (`review-task-issue` + `fix-task-issue`); merging is owned by `close-pr`.
 
-The command never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched `engineer`.
+The skill never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched `engineer`.
+
+## When to activate
+
+Activate this skill whenever the user:
+
+- Types `/fix-pr` (with or without a numeric cap argument).
+- Asks to "fix the failing PRs", "clear CI / conflict blockers on draft PRs", "dispatch engineers against red PRs", or "pick up draft PRs with failing checks".
+
+Do NOT activate when the user wants to merge clean draft PRs (use `close-pr`), wants to review code or security on a task (use `review-task-issue`), or wants to address reviewer findings on a task issue (use `fix-task-issue`).
 
 ## Arguments
 
-`$ARGUMENTS` — optional positive integer cap on how many PRs to dispatch this run. Empty / unset → process every eligible PR.
+The skill accepts an optional positive integer cap on how many PRs to dispatch this run. Empty / unset → process every eligible PR.
 
 ## Workflow
 
@@ -175,7 +184,7 @@ Include only the scenarios that classified for this PR; never list one that didn
 
 ### 6. Honor the cap and report
 
-If `$ARGUMENTS` is a positive integer N, stop after N PRs have been dispatched this run. Already-skipped PRs do not count.
+If the user passed a positive integer N, stop after N PRs have been dispatched this run. Already-skipped PRs do not count.
 
 Print a one-line-per-PR summary:
 
@@ -190,8 +199,8 @@ End with one sentence: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
-- **Drafts only.** ready-to-review PRs are not in scope for this command. The slice PR is opened as a draft by `e2e-author` and stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
-- **No review handling, no merging.** This command does not touch `review:*` labels (those live on task issues now) and does not call `gh pr merge` (that's `close-pr`'s job).
+- **Drafts only.** ready-to-review PRs are not in scope for this skill. The slice PR stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
+- **No review handling, no merging.** This skill does not touch `review:*` labels (those live on task issues now) and does not call `gh pr merge` (that's `close-pr`'s job).
 - **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `TaskCreate` + `Agent` calls in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
 - **One orchestrator tracking task per dispatched engineer.** Every dispatched PR gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across PRs and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, remove `status:fix-in-progress` from the PR and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers (engineer removes the lock label and flips the tracking task to `completed`).

@@ -1,17 +1,27 @@
 ---
-description: Find every open `level:task` + `kind:feature` + `status:in-progress` task carrying a `review:code-pending` or `review:security-pending` label, flip the pending gate(s) to `-running`, and dispatch the matching one-shot reviewer sub-agent (`review:code-running` → `code-reviewer`, `review:security-running` → `security-reviewer`). Reviews are now scoped to the task issue itself, not the slice PR.
-argument-hint: "[optional: max number of task-gate pairs to dispatch this run; default: all eligible]"
+name: review-task-issue
+description: "Find every open `level:task` + `kind:feature` + `status:in-progress` task carrying a `review:code-pending` or `review:security-pending` label, flip the pending gate(s) to `-running`, and dispatch the matching one-shot reviewer sub-agent (`review:code-running` → `code-reviewer`, `review:security-running` → `security-reviewer`). Reviews are scoped to the task issue itself, not the slice PR. Activate on phrases like 'review the task issues', 'pick up pending reviews', 'kick off code/security review', '/review-task-issue', or whenever the orchestrator needs to fan out reviewer agents against task issues whose review gates are pending. Do NOT activate to review a slice PR — `review:*` labels live on task issues now."
 ---
 
-# pickup-task-for-review
+# review-task-issue
 
 Scan task issues that have finished implementation and are waiting on review, lock each pending gate by flipping `review:<gate>-pending` → `review:<gate>-running` so concurrent fires don't double-pick the same gate, then dispatch the matching reviewer sub-agent. Handles the **code** and **security** gates only — the e2e gate has been retired from the label scheme (`review:e2e-*` is no longer used); the slice PR's GitHub Actions workflow check is the e2e signal.
 
-The command never checks out, edits, or pushes to any branch; the dispatched sub-agent runs the review and flips the gate to its terminal `-passed` / `-need-fix` state.
+The skill never checks out, edits, or pushes to any branch; the dispatched sub-agent runs the review and flips the gate to its terminal `-passed` / `-need-fix` state.
+
+## When to activate
+
+Activate this skill whenever the user:
+
+- Types `/review-task-issue` (with or without a numeric cap argument).
+- Asks to "pick up reviews", "dispatch reviewers", "review pending task issues", or "kick off code/security review on task issues".
+- Wants to fan out `code-reviewer` / `security-reviewer` sub-agents against every open task issue carrying a `review:*-pending` label.
+
+Do NOT activate when the user wants to review a slice PR directly (the `review:*` label family no longer lives on PRs), when no `review:*-pending` gate exists, or when they want a single ad-hoc review on a specific task without scanning the full backlog.
 
 ## Arguments
 
-`$ARGUMENTS` — optional positive integer cap on how many `(task, gate)` pairs to dispatch this run. Empty / unset → process every eligible pair. A positive integer N → stop after N pairs have been locked + dispatched. A task with both gates pending counts as **two** pairs against the cap.
+The skill accepts an optional positive integer cap on how many `(task, gate)` pairs to dispatch this run. Empty / unset → process every eligible pair. A positive integer N → stop after N pairs have been locked + dispatched. A task with both gates pending counts as **two** pairs against the cap.
 
 ## Workflow
 
@@ -88,9 +98,16 @@ Map gate to `subagent_type`:
 | `review:code-running`      | `code-reviewer`     |
 | `review:security-running`  | `security-reviewer` |
 
-Spawn each pair with the `Agent` tool, `mode=auto`. Independent pairs within the same fire are dispatched in parallel as multiple `Agent` calls in the same response — including the two gates of the same task when both were pending (each gate runs as its own one-shot sub-agent).
+Spawn each pair with the `Agent` tool, passing:
 
-The spawn prompt is minimal — pass only the **task issue number**. The dispatched agent fetches everything else it needs (issue body, parent slice issue, slice branch, worktree path, recent commits) from `gh` and `git`.
+- `subagent_type` — per the table above
+- `mode` — `auto`
+- `run_in_background` — `true` (mandatory; see below)
+- `prompt` — minimal; only the **task issue number** and the gate
+
+`run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the reviewer fully terminates, which serializes pairs that were supposed to fan out in parallel — when both gates of one task are pending and a fire has, say, three other tasks ready, the orchestrator should dispatch all of them in a single response and continue, not wait for the first reviewer to finish before starting the next.
+
+Independent pairs within the same fire are dispatched in parallel as multiple `Agent` calls in the same response — including the two gates of the same task when both were pending (each gate runs as its own one-shot sub-agent). The dispatched agent fetches everything else it needs (issue body, parent slice issue, slice branch, worktree path, recent commits) from `gh` and `git`.
 
 Skeleton:
 
@@ -102,7 +119,7 @@ Fetch any further context you need (issue body, parent slice issue, slice branch
 
 ### 6. Honor the cap and report
 
-If `$ARGUMENTS` is a positive integer N, stop locking + dispatching new pairs once N have been dispatched in this run. Already-skipped pairs do **not** count toward N.
+If the user passed a positive integer N, stop locking + dispatching new pairs once N have been dispatched in this run. Already-skipped pairs do **not** count toward N.
 
 Print a one-line-per-pair summary:
 
@@ -120,6 +137,7 @@ End with one sentence: `Dispatched <X> pair(s); skipped <Y>; <Z> remaining eligi
 - **Roll back the flip only on synchronous dispatch failure.** Once the sub-agent is running, ownership transfers — the agent flips the gate to its terminal state (`-passed` / `-need-fix`) on completion.
 - **Touch only the pending gate's labels.** When flipping, pass only the `--remove-label` / `--add-label` for the one gate being moved. Never re-add or remove labels for the other gate, the `status:*` family, the `kind:*` family, or anything else on the task.
 - **One `(task, gate)` per dispatched sub-agent.** Each `Agent` call owns exactly one gate of one task. Independent pairs go out as parallel `Agent` calls in the same response — including both gates of a single task when both were pending.
-- **Code and security only.** This command does not handle a `review:e2e-*` family (retired — the slice PR's e2e workflow check is the only e2e signal). Do NOT widen the gate set.
+- **Background dispatch only.** Every `Agent` call MUST set `run_in_background: true`. Foreground dispatch blocks the turn, serializes parallel `(task, gate)` pairs, and stalls the orchestrator on the first reviewer even when other pairs are already locked and ready to fan out.
+- **Code and security only.** This skill does not handle a `review:e2e-*` family (retired — the slice PR's e2e workflow check is the only e2e signal). Do NOT widen the gate set.
 - **Skip, don't fail, on benign outcomes.** "Already running", "lock race", "cap reached" are all expected — log them and continue.
 - **No code-changing work.** The dispatched reviewer sub-agent owns code reads, the verdict comment, and the terminal label flip.

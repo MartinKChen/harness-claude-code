@@ -1,21 +1,30 @@
 ---
-description: Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:in-progress` task carrying at least one `review:code-need-fix` or `review:security-need-fix` label (and no `review:*-pending` / `review:*-running` — those mean a review cycle is still mid-flight). Lock each task by **stripping** every `review:{code,security}-need-fix` and every `review:{code,security}-passed` label (the absence of those terminal labels is the lock); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. The dispatched agent owns re-adding `review:*-pending` as its terminal action once the fix is pushed.
-argument-hint: "[optional: max number of tasks to pick up this run; default: all eligible]"
+name: fix-task-issue
+description: "Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:in-progress` task carrying at least one `review:code-need-fix` or `review:security-need-fix` label (and no `review:*-pending` / `review:*-running` — those mean a review cycle is still mid-flight). Lock each task by **stripping** every `review:{code,security}-need-fix` and every `review:{code,security}-passed` label (the absence of those terminal labels is the lock); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. The dispatched agent owns re-adding `review:*-pending` as its terminal action once the fix is pushed. Activate on phrases like 'fix the reviewed tasks', 'pick up tasks needing fix', 'dispatch fix agents for need-fix tasks', '/fix-task-issue', or whenever the orchestrator needs to fan out engineer / e2e-author agents against task issues whose reviewer verdict came back as `need-fix`. Do NOT activate while a review cycle is still in flight on the task."
 ---
 
-# pickup-reviewed-task-for-fix
+# fix-task-issue
 
 Scan open task issues that have at least one reviewer verdict back as `*-need-fix`, lock each task by stripping the terminal review labels, and dispatch the right one-shot sub-agent to fix the implementation. The agent reads the reviewer's findings (PR-style structured comment posted on the task issue) and produces a fix commit on the slice branch.
 
-The lock mechanic is **strip only**: this command removes every `review:{code,security}-need-fix` and `review:{code,security}-passed` label on the task and leaves the gate labels absent. The engineer / e2e-author re-adds `review:*-pending` as its terminal step once the fix is pushed — this is what triggers `pickup-task-for-review` to dispatch a fresh review (a fix can invalidate a previously-passed gate, so both gates must re-review).
+The lock mechanic is **strip only**: this skill removes every `review:{code,security}-need-fix` and `review:{code,security}-passed` label on the task and leaves the gate labels absent. The engineer / e2e-author re-adds `review:*-pending` as its terminal step once the fix is pushed — this is what triggers `review-task-issue` to dispatch a fresh review (a fix can invalidate a previously-passed gate, so both gates must re-review).
 
 The e2e gate is **not** part of this label family. E2e signal comes from the slice PR's GitHub Actions workflow check, not from a `review:e2e-*` label.
 
-The command never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
+The skill never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
+
+## When to activate
+
+Activate this skill whenever the user:
+
+- Types `/fix-task-issue` (with or without a numeric cap argument).
+- Asks to "fix tasks that came back as need-fix", "dispatch fix agents", "pick up reviewed tasks for fix", or "address reviewer findings on task issues".
+
+Do NOT activate when the user wants to fix a draft PR's CI/conflict blockers (that's `fix-pr`), wants to dispatch a fresh review (that's `review-task-issue`), or wants to start a brand-new implementation (that's `implement-task-issue`).
 
 ## Arguments
 
-`$ARGUMENTS` — optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task.
+The skill accepts an optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task.
 
 ## Workflow
 
@@ -85,8 +94,8 @@ gh issue edit "${task_number}" "${restore_add[@]}"
 Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle.
 
 The lock works because both downstream queries are negative on the stripped state:
-- `pickup-reviewed-task-for-fix` (this command) requires at least one `review:*-need-fix` label, so the stripped task no longer matches its filter.
-- `pickup-task-for-review` requires at least one `review:*-pending` label, so the stripped task doesn't get picked up for review either — until the engineer's terminal flip adds `review:*-pending` back.
+- `fix-task-issue` (this skill) requires at least one `review:*-need-fix` label, so the stripped task no longer matches its filter.
+- `review-task-issue` requires at least one `review:*-pending` label, so the stripped task doesn't get picked up for review either — until the engineer's terminal flip adds `review:*-pending` back.
 
 ### 4. Create an orchestrator tracking task, then dispatch the matching sub-agent
 
@@ -154,7 +163,7 @@ Include only the gates that were actually `need-fix` before step 3's flip.
 
 ### 5. Honor the cap and report
 
-If `$ARGUMENTS` is a positive integer N, stop after N tasks have been dispatched. Already-skipped tasks do **not** count.
+If the user passed a positive integer N, stop after N tasks have been dispatched. Already-skipped tasks do **not** count.
 
 One-line-per-candidate summary:
 
@@ -168,10 +177,10 @@ End with: `Dispatched <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
-- **Strip only — the orchestrator does not add `review:*-pending`.** The dispatched engineer / e2e-author re-adds `review:*-pending` after pushing the fix. Re-adding here would race `pickup-task-for-review`, which could dispatch reviewers against an unfinished tree.
+- **Strip only — the orchestrator does not add `review:*-pending`.** The dispatched engineer / e2e-author re-adds `review:*-pending` after pushing the fix. Re-adding here would race `review-task-issue`, which could dispatch reviewers against an unfinished tree.
 - **Strip both `need-fix` and `passed`.** A fix can invalidate a previously-passed gate; both must re-review once the engineer's terminal flip adds the pending labels back. Never selectively leave a `*-passed` label in place when locking.
 - **Skip when a review cycle is in flight.** `review:*-pending` or `review:*-running` on the task means a reviewer is mid-pass; dispatching a fix now would race the reviewer's read of the slice branch. Wait for the cycle to land (terminate at `*-passed` or `*-need-fix`).
-- **No e2e gate.** The `review:e2e-*` label family has been retired. E2e signal flows through the slice PR's GitHub Actions workflow check; this command does not touch it.
+- **No e2e gate.** The `review:e2e-*` label family has been retired. E2e signal flows through the slice PR's GitHub Actions workflow check; this skill does not touch it.
 - **Lock before dispatch.** The label flip in step 3 happens before the `TaskCreate` + `Agent` calls in step 4.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 3) and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers — the engineer / e2e-author handles its own terminal state (push + re-add `review:*-pending` + mark tracking task `completed`).

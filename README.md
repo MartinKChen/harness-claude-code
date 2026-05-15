@@ -1,6 +1,6 @@
 # harness-claude-code
 
-An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships pickup commands that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD (with bundled coding/frontend/backend/Docker references), git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
+An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships pickup / close-out lifecycle skills that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD (with bundled coding/frontend/backend/Docker references), git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
 
 ## Install from GitHub
 
@@ -20,15 +20,23 @@ Slash commands live in [`commands/`](commands/).
 | Command | Purpose |
 | --- | --- |
 | `/deep-dive-feature` | Two-phase feature deep-dive: product discovery with `product-owner`, then technical discovery with `architect`. Creates a feature branch, commits each teammate's artifacts, and opens a single PR at the end. |
-| `/pickup-slice-for-implement` | Promotes ready-and-unblocked slice issues to in-progress and appends `status:ready-to-implement` to every `kind:feature` task sub-issue underneath, priming them for `/pickup-task-for-implement`. Skips slices with open `Blocked by` dependencies. |
-| `/pickup-task-for-implement` | Dispatches a one-shot sub-agent for every `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open blockers (`type:e2e` → `e2e-author`; `type:backend` / `type:frontend` → `engineer` in Mode A). Loop via `/loop /pickup-task-for-implement`. |
-| `/pickup-task-for-review` | Scans in-progress tasks carrying `review:code-pending` or `review:security-pending`, flips the pending gate(s) to `-running`, and dispatches the matching reviewer (`code-reviewer` / `security-reviewer`). Reviews are now scoped to the task issue, not the slice PR. |
-| `/pickup-reviewed-task-for-fix` | For tasks carrying `review:*-need-fix` and no in-flight gate, dispatches `engineer` Mode C (`type:backend` / `type:frontend`) or `e2e-author` (`type:e2e`) to address the reviewer findings on the slice branch. |
-| `/pickup-failed-pr-for-fix` | Scans draft PRs for failing CI checks and/or merge conflicts; locks each with `status:fix-in-progress` and dispatches `engineer` Mode B with the scenario list (any non-empty subset of `{conflict, ci}`). |
-| `/close-task-issue` | Closes every in-progress task whose required review gates have all reached `*-passed` (backend / frontend need `code` + `security`; e2e needs only `code`). |
-| `/close-pr` | Promotes draft PRs that are `MERGEABLE` with all CI green, squash-merges them, and strips `status:in-progress` from the linked slice issue (closing the slice). |
+| `/implement-feature` | Drive one end-to-end pass through the lifecycle skills in order — `kickoff-slice-issue` → `implement-task-issue` → `review-task-issue` → `fix-task-issue` → `close-task-issue` → `create-draft-pr` → `fix-pr` → `close-pr`. Each skill self-skips when there's nothing eligible. Wrap with `/loop /implement-feature` for end-to-end shipping. |
 | `/create-agent` | Author a new Claude Code subagent under `.claude/agents/<name>.md` — walks through naming, model choice, role, and section content, then writes the file. |
 | `/create-skill` | Author a new Claude Code skill under `.claude/skills/<name>/SKILL.md` — walks through naming, summary, triggers, and which optional sections apply. |
+
+### Lifecycle skills
+
+The pickup / close-out lifecycle is now driven by skills under [`skills/`](skills/) — invoke each manually as `/<skill-name>`, or loop with `/loop /<skill-name>`.
+
+| Skill | Purpose |
+| --- | --- |
+| `/kickoff-slice-issue` | Promotes ready-and-unblocked slice issues to in-progress and appends `status:ready-to-implement` to every `kind:feature` task sub-issue underneath, priming them for `/implement-task-issue`. Skips slices with open `Blocked by` dependencies. |
+| `/implement-task-issue` | Dispatches a one-shot sub-agent for every `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open blockers (`type:e2e` → `e2e-author`; `type:backend` / `type:frontend` → `engineer` in Mode A). |
+| `/review-task-issue` | Scans in-progress tasks carrying `review:code-pending` or `review:security-pending`, flips the pending gate(s) to `-running`, and dispatches the matching reviewer (`code-reviewer` / `security-reviewer`). Reviews are scoped to the task issue, not the slice PR. |
+| `/fix-task-issue` | For tasks carrying `review:*-need-fix` and no in-flight gate, dispatches `engineer` Mode C (`type:backend` / `type:frontend`) or `e2e-author` (`type:e2e`) to address the reviewer findings on the slice branch. |
+| `/fix-pr` | Scans draft PRs for failing CI checks and/or merge conflicts; locks each with `status:fix-in-progress` and dispatches `engineer` Mode B with the scenario list (any non-empty subset of `{conflict, ci}`). |
+| `/close-task-issue` | Closes every in-progress task whose required review gates have all reached `*-passed` (backend / frontend need `code` + `security`; e2e needs only `code`). |
+| `/close-pr` | Promotes draft PRs that are `MERGEABLE` with all CI green, squash-merges them, and strips `status:in-progress` from the linked slice issue (closing the slice). |
 
 ## Agents
 
@@ -39,7 +47,7 @@ Subagents live in [`agents/`](agents/). Each one is scoped to a single role and 
 | `product-owner` | opus | Interviews the user to clarify a feature, then produces the PRD, Critical Path, and Glossary and updates `CLAUDE.md`. |
 | `architect` | opus | Designs a ship-ready architecture without over-engineering, generating an ADR, an implementation-detail document, per-entity data-model and api-contract files under `docs/PRDs/<feature>/`, and updating `CLAUDE.md` when high-level architecture shifts. |
 | `engineer` | sonnet | Always-fullstack implementer with three modes. **Mode A** drives one assigned `type:backend` / `type:frontend` task through strict outside-in TDD. **Mode B** fixes one open draft PR for `conflict` and/or `ci` scenarios. **Mode C** addresses reviewer `need-fix` findings on a task, propagating the fix across every equivalent site found in the codebase. Loads the full fullstack pattern set upfront in every mode, audits Dockerfile / compose against the runtime surface before every push, and pulls per-entity architecture context (data-models, api-contracts) on demand from `docs/PRDs/<feature>/` instead of bulk-loading. |
-| `e2e-author` | sonnet | Authors and extends Playwright E2E tests for a single task issue. Self-driven from an issue ID — sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits to the slice branch, pushes, and opens a draft PR. The full Playwright suite is validated by a GitHub Actions workflow on the PR. |
+| `e2e-author` | sonnet | Authors and extends Playwright E2E tests for a single task issue. Self-driven from an issue ID — sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits to the slice branch, pushes, and flips `review:code-pending` on the task. PR creation is owned outside this agent's lane. The full Playwright suite is validated by a GitHub Actions workflow on the PR. |
 | `code-reviewer` | sonnet | Read-only one-shot PR reviewer. Walks a quality/security checklist on the diff, posts a single structured comment with every finding, and flips the PR's `review:code-running` label to `review:code-passed` or `review:code-need-fix`. Fix work is delegated separately. |
 | `security-reviewer` | sonnet | Read-only validator that checks the codebase and built images against the `security-patterns` skill, posts findings to the PR, and flips the `review:security-running` label to `-passed` or `-need-fix`. Fix work is delegated separately. |
 

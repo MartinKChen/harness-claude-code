@@ -1,17 +1,27 @@
 ---
-description: Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open `Blocked by` dependencies. Lock each task with a label flip (`status:ready-to-implement` → `status:in-progress`); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. Slice promotion is owned by the sibling command `pickup-slice-for-implement`.
-argument-hint: "[optional: max number of tasks to pick up this run; default: all eligible]"
+name: implement-task-issue
+description: "Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open `Blocked by` dependencies. Lock each task with a label flip (`status:ready-to-implement` → `status:in-progress`); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. Slice promotion is owned by the sibling skill `kickoff-slice-issue`. Activate on phrases like 'implement the ready tasks', 'pick up task issues for implement', 'kick off task implementation', '/implement-task-issue', or whenever the orchestrator needs to fan out engineer / e2e-author agents against unblocked, ready task issues. Do NOT activate to start work on a single ad-hoc task without scanning the backlog, or to promote slice issues (use `kickoff-slice-issue`)."
 ---
 
-# pickup-task-for-implement
+# implement-task-issue
 
-Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The command never touches slice issues — slice promotion (`status:ready-to-implement` → `status:in-progress` on the slice + appending `status:ready-to-implement` to its task sub-issues) is the job of `pickup-slice-for-implement`.
+Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The skill never touches slice issues — slice promotion (`status:ready-to-implement` → `status:in-progress` on the slice + appending `status:ready-to-implement` to its task sub-issues) is the job of `kickoff-slice-issue`.
 
-The command never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
+The skill never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
+
+## When to activate
+
+Activate this skill whenever the user:
+
+- Types `/implement-task-issue` (with or without a numeric cap argument).
+- Asks to "pick up tasks to implement", "dispatch engineers / e2e-authors against ready tasks", or "kick off implementation on the unblocked task backlog".
+- Wants to fan out `engineer` / `e2e-author` sub-agents against every open task issue carrying `status:ready-to-implement` with zero open blockers.
+
+Do NOT activate when the user wants to promote slice issues (use `kickoff-slice-issue`), wants to ad-hoc start a single specific task without scanning the full backlog, or wants to fast-track a `kind:bug` / `kind:enhancement` task (this skill is `kind:feature` only).
 
 ## Arguments
 
-`$ARGUMENTS` — optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task. A positive integer N → stop after N tasks have been locked + dispatched; remaining eligible tasks are picked up on the next invocation.
+The skill accepts an optional positive integer cap on how many tasks to pick up this run. Empty / unset → process every eligible task. A positive integer N → stop after N tasks have been locked + dispatched; remaining eligible tasks are picked up on the next invocation.
 
 ## Workflow
 
@@ -125,7 +135,7 @@ Immediately follow the `Agent` call — in the **same batched response** — wit
 
 Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire.
 
-If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `pickup-task-for-review` / `close-task-issue` clear the GitHub-side labels once reviews pass).
+If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `review-task-issue` / `close-task-issue` clear the GitHub-side labels once reviews pass).
 
 Skeleton for the dispatch prompt:
 
@@ -139,7 +149,7 @@ Fetch any further context you need (body, labels, parent slice issue, parent bra
 
 ### 6. Honor the cap and report
 
-If `$ARGUMENTS` parses as a positive integer N, stop locking + dispatching new tasks once N have been dispatched in this run. Already-skipped tasks (blocked / malformed) do **not** count toward N.
+If the user passed a positive integer N, stop locking + dispatching new tasks once N have been dispatched in this run. Already-skipped tasks (blocked / malformed) do **not** count toward N.
 
 Print a one-line-per-candidate summary, one of these forms:
 
@@ -152,13 +162,13 @@ End with a single sentence: `Dispatched <X> task(s); skipped <Y>; <Z> remaining 
 
 ## Iron rules
 
-- **Tasks only — no slice promotion.** Slice issues are promoted by `pickup-slice-for-implement`, which is what populates `status:ready-to-implement` on the task sub-issues this command consumes. Do NOT touch slice issues here.
+- **Tasks only — no slice promotion.** Slice issues are promoted by `kickoff-slice-issue`, which is what populates `status:ready-to-implement` on the task sub-issues this skill consumes. Do NOT touch slice issues here.
 - **Lock before dispatch.** The label flip in step 4 happens before the `TaskCreate` + `Agent` calls in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
 - **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel candidates, and races the orchestrator's owner assignment against the sub-agent's own terminal task update.
 - **`type:*` label decides the agent type, never the body.** `create-issues` puts type info on the label only; do not parse type out of the sub-issue body.
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns exactly one issue — never batch multiple issues into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls (and parallel `TaskUpdate` owner-assignments) in the same message.
-- **`kind:feature` only.** This command does not handle `kind:bug` or `kind:enhancement` fast-track tasks. Add those as separate commands when the fast-track flow is wired up — do NOT silently widen the label filter.
+- **`kind:feature` only.** This skill does not handle `kind:bug` or `kind:enhancement` fast-track tasks. Add those as separate skills when the fast-track flow is wired up — do NOT silently widen the label filter.
 - **No worktree creation, no pre-fetched context, no role/mode in the dispatch.** The dispatched sub-agent does its own discovery off the issue ID and owns its full lifecycle (including its own tracking-task status transitions).
 - **Skip, don't fail, on benign outcomes.** "Blocked", "malformed labels", "lock race", "cap reached", "TaskCreate failed" are all expected — log them and continue, never abort the whole run.
