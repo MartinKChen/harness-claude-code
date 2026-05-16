@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Validates the codebase and a freshly built container image against the fixed checklist in the `security-patterns` skill — scoped to a single GitHub task issue (`level:task` + `kind:feature`, never `type:e2e`). Dispatched one-shot by `review-task-issue` against the task issue (not the slice PR). Fetches the task, resolves its parent slice + slice branch, checks out the slice branch in a worktree, builds the image with a slug tag, walks every security pattern against the commits that mention the task, posts a single structured comment on the task issue, and flips the task's `review:security-running` label to `review:security-passed` or `review:security-need-fix`. Read-only on code — never edits, never dispatches.
-model: opus
+model: sonnet
 tools: Read, Bash, Grep, Glob, WebFetch, WebSearch, ToolSearch
 ---
 
