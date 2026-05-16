@@ -13,6 +13,15 @@ In Claude Code:
 
 The first command registers this repo as a marketplace (it reads `.claude-plugin/marketplace.json`). The second installs the plugin defined in `.claude-plugin/plugin.json`. To update later, run `/plugin marketplace update martinchen-marketplace`.
 
+## Status
+
+**As-is — what the harness covers today:** end-to-end automation of the greenfield feature lifecycle. Spec / contract generation → planning → outside-in TDD implementation → code & security review → fix loop → draft PR → merge. GitHub issues are the source of truth; every lifecycle step is an idempotent skill the orchestrator can re-enter safely.
+
+**To-be — known gaps on the roadmap:**
+- **Design / UX as an upstream lane.** Today visual work backdoors in through the frontend task — there's no dedicated discovery or review phase before code lands.
+- **SRE in the workflow.** The agent exists; nothing dispatches it yet. CI/CD ownership is still manual.
+- **Enhancement and bug-fix lifecycles.** Only `kind:feature` slices get the full slice → task → review → merge treatment. `kind:bug` and `kind:enhancement` need their own (lighter) loop.
+
 ## Commands
 
 Slash commands live in [`commands/`](commands/).
@@ -108,3 +117,12 @@ commands/              # slash commands
 skills/                # auto-activating skills (one directory per skill)
 hooks/                 # PreToolUse hooks (engineer pre-push gate) + hooks.json
 ```
+
+## Prior art
+
+The skill / agent layout, lifecycle shape, and TDD discipline here draw on ideas from several public Claude Code repos. We reference them for *patterns and taste* — every skill, agent, command, and hook in this repo is authored ourselves, not imported. No `use skills from <other-repo>`; the surface area is ours, the influence is theirs.
+
+- [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills)
+- [obra/superpowers](https://github.com/obra/superpowers)
+- [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
+- [mattpocock/skills](https://github.com/mattpocock/skills)
