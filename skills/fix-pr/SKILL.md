@@ -1,6 +1,6 @@
 ---
 name: fix-pr
-description: "Scan **draft** PRs for failing GitHub Actions workflow checks on the head branch and/or merge conflicts against the base branch. Lock each affected PR with a `status:fix-in-progress` label flip, and dispatch a one-shot `engineer` sub-agent in Mode B with the list of fix scenarios it must handle (any non-empty subset of `conflict` / `ci`). Activate on phrases like 'fix the failing PRs', 'pick up draft PRs blocked by CI or conflicts', 'dispatch engineers against red PRs', '/fix-pr', or whenever the orchestrator needs to clear CI / merge-conflict blockers on draft slice PRs. Do NOT activate to merge a clean PR (use `close-pr`), to review code (use `review-task-issue`), or to fix reviewer findings on a task (use `fix-task-issue`)."
+description: "Scan **draft** PRs (excluding any carrying `status:fix-in-progress` or `status:need-attention`) for failing GitHub Actions workflow checks on the head branch and/or merge conflicts against the base branch. Lock each affected PR with a `status:fix-in-progress` label flip, and dispatch a one-shot `engineer` sub-agent in Mode B with the list of fix scenarios it must handle (any non-empty subset of `conflict` / `ci`). PRs labeled `status:need-attention` need human-in-the-loop (typically an E2E-spec rewrite the engineer bailed on) — they stay skipped until the user clears the label. Activate on phrases like 'fix the failing PRs', 'pick up draft PRs blocked by CI or conflicts', 'dispatch engineers against red PRs', '/fix-pr', or whenever the orchestrator needs to clear CI / merge-conflict blockers on draft slice PRs. Do NOT activate to merge a clean PR (use `close-pr`), to review code (use `review-task-issue`), or to fix reviewer findings on a task (use `fix-task-issue`)."
 ---
 
 # fix-pr
@@ -54,13 +54,13 @@ If the working dir isn't a GitHub repo, surface and stop.
 
 ### 2. Pull candidate PRs
 
-List every **draft** open PR and discard the ones that already carry the lock label `status:fix-in-progress` — a concurrent fire owns them.
+List every **draft** open PR. `list-candidates.sh` already excludes PRs carrying `status:fix-in-progress` (a concurrent fire owns them) or `status:need-attention` (a prior fix dispatch determined the failure needs human-in-the-loop — typically an E2E spec rewrite — and the PR stays skipped until the user clears the label):
 
 ```bash
 bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
 ```
 
-Filter on the orchestrator side: keep PRs whose `labels` array does **not** include `status:fix-in-progress`. The `--search` qualifier is GitHub-side; the orchestrator does not need to re-check `milestone` locally.
+Defense in depth on the orchestrator side: even though the search qualifier already filters, re-check each PR's `labels` array and drop any that still include either lock label (a `gh` cache could in theory hand back stale data). The `--search` qualifier is GitHub-side; the orchestrator does not need to re-check `milestone` locally.
 
 If the filtered list is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
@@ -179,6 +179,7 @@ Track dispatched / skipped counts internally per PR; do **not** print per-PR dec
 ## Iron rules
 
 - **Drafts only.** ready-to-review PRs are not in scope for this skill. The slice PR stays draft until `close-pr` promotes + merges it; an engineer fix dispatch never targets a ready PR.
+- **Skip `status:need-attention` PRs.** A prior engineer fix pass flagged these as needing human-in-the-loop (typically an E2E-spec rewrite). They stay skipped until the user clears the label — never relock them, never re-dispatch an engineer against them.
 - **No review handling, no merging.** This skill does not touch `review:*` labels (those live on task issues now) and does not call `gh pr merge` (that's `close-pr`'s job).
 - **Lock before dispatch.** `status:fix-in-progress` is added in step 4 before the `TaskCreate` + `Agent` calls in step 5. The label is the lock that prevents concurrent fires from picking up the same PR. The engineer removes it as the terminal step of its push.
 - **One orchestrator tracking task per dispatched engineer.** Every dispatched PR gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across PRs and never spawn an `Agent` without a paired tracking task.

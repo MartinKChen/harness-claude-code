@@ -23,7 +23,7 @@ Do NOT activate when the user is asking about git internals unrelated to our wor
 
 ## References and scripts
 
-When this skill is active, route to the asset that matches the task. Read references on demand; invoke scripts via `bash` (or directly — they are executable). The PR-body template ships with the `create-draft-pr` skill (at `create-draft-pr/templates/pr-body.md`), not here.
+When this skill is active, route to the asset that matches the task. Read references on demand; invoke scripts via `bash` (or directly — they are executable). The PR-body template ships with the `prepare-slice-pr` skill (at `prepare-slice-pr/templates/pr-body.md`), not here — `create-draft-pr` dispatches an `engineer` in its `prepare-slice-pr` mode, and that skill owns the body composition + draft-PR creation.
 
 | Asset | Type | When to use |
 |-------|------|-------------|
