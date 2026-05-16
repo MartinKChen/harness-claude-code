@@ -9,7 +9,7 @@ Orchestrate a two-phase deep-dive on a new feature. Phase 1 is product discovery
 
 You (the orchestrator) coordinate the phases, gate on explicit user confirmation between them, and ferry messages between the user and the active teammate. Do **not** answer product or architectural questions yourself — route them to the right teammate. Equally important: do **not** answer on behalf of the user when a teammate asks the user a question — always wait for the human's actual reply.
 
-Git flow at a glance: orchestrator creates a milestone and a worktree-backed feature branch after Phase 1 lock-in (Step 5). `product-owner` writes and commits its artifacts inside that worktree (Step 6). `architect` writes and commits its artifacts inside the same worktree (Step 10). Orchestrator pushes the branch and opens a `feature-lockin`-labeled PR linked to the milestone at the very end (Step 11).
+Git flow at a glance: orchestrator creates a milestone and a worktree-backed feature branch after Phase 1 lock-in (Step 5). `product-owner` writes and commits its artifacts inside that worktree (Step 6). `architect` writes and commits its docs artifacts inside the same worktree, then runs the structural scaffold gate (`scaffold-project`) which lands one `chore(scaffold): <surface>` commit per greenfield/first-time-needed surface on the same branch (Step 10). Orchestrator pushes the branch and opens a `feature-lockin`-labeled PR linked to the milestone at the very end (Step 11).
 
 ## Initial input
 
@@ -174,7 +174,9 @@ Once the user confirms lock-in, send `architect` a short message instructing it 
   git -C {worktree_path} commit -m "docs(adr): ADR-{NNNN} <short decision title>"
   ```
 
-The orchestrator MUST respect this gate: when `architect` asks the user to confirm the commit, surface the question and **wait for the human's actual yes** — do not approve on the user's behalf. When `architect` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to Step 11.
+- **After the docs commit lands, run the scaffold gate** (architect.md Workflow step 12). Invoke the detector that ships with the `scaffold-project` skill from inside `{worktree_path}`; on flagged surfaces, dispatch the `scaffold-project` skill, which materializes templates from `docs/ARDs/*.md` stack/topology choices and commits one `chore(scaffold): <surface>` per flagged surface on the same `docs/{feature-name}` branch. On a brand-new project this typically produces four scaffold commits (backend, frontend, compose, e2e); on a non-greenfield lockin the detector usually returns empty and the scaffold gate is a no-op. Report the scaffold result (surfaces scaffolded or "scaffold no-op") in the same final-status message as the docs commit hash.
+
+The orchestrator MUST respect the commit-confirmation gate: when `architect` asks the user to confirm the docs commit, surface the question and **wait for the human's actual yes** — do not approve on the user's behalf. The scaffold gate that fires *after* the docs commit does NOT require a separate user confirmation — it is structural, derives entirely from the locked-in ADR, and ships in the same lock-in PR. When `architect` reports both the docs commit and the scaffold outcome, surface the full file/commit list to the user in one short message and move on to Step 11.
 
 ---
 
@@ -201,9 +203,11 @@ gh pr create \
 - Per-entity data-models / api-contracts: ...
 - CLAUDE.md updates: ...
 - Superseded ADRs: ...
+- Scaffold commits (if any): `chore(scaffold): backend (...)`, `chore(scaffold): frontend (...)`, `chore(scaffold): compose topology (...)`, `chore(scaffold): e2e (...)` — list whichever surfaces were materialized; omit this bullet if the scaffold gate was a no-op.
 
 ## Test plan
-- [ ] documentation-only — no code changes
+- [ ] documentation + structural scaffold only — no feature code changes
+- [ ] (if scaffold commits landed) `docker compose up` brings every declared service online and the `e2e/tests/smoke.spec.ts` smoke test passes against the served frontend
 EOF
 )
 ```

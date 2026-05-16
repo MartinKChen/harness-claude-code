@@ -86,25 +86,11 @@ Resolve `<feature-name>` from the issue's milestone (captured in step 1's JSON).
 
 Read these files one at a time, by name. Do NOT `ls` the directory and bulk-read every entity. If the issue is pure plumbing (no persistence, no API surface), skip this step entirely. If a referenced entity file is missing, halt and surface it rather than guessing.
 
-### 6. Scaffold the worktree if needed
-
-Before invoking `tdd-workflow`, survey the worktree against what the task's implementation will need:
-
-- Package manifests (`pyproject.toml`, `package.json` and their lockfiles).
-- Source / test directory layout.
-- Test-runner config (`pytest.ini`, `vitest.config.ts`).
-- Linter / formatter config.
-- Framework entry points (FastAPI `app`, React root).
-- **Container artifacts (mandatory, not conditional on this task's surface):** every deployable application directory in the worktree (`backend/`, `frontend/`, or a single-package layout shipping code at the repo root) MUST have a `Dockerfile` and a `.dockerignore`. The worktree MUST also have a top-level `docker-compose.yaml` (or `compose.yaml`) wiring those services. If any is missing — even when the current task does not itself add a runtime dependency or port — scaffold it now via `docker-patterns` (multi-stage, pinned tags, non-root user, secrets via env, no `.venv` inside images). The first slice that touches the surface owns this creation; later slices inherit it.
-- `.env.example` with placeholder values for every env var the application reads at startup, when one does not already exist and the application reads any env vars.
-
-If a needed piece is missing, create it now as a discrete scaffolding step and commit each logically grouped piece using a `chore(scaffold): <what was created>` subject (format per `templates/commit-messages.md`) — or `build: <what>` when the piece is tooling/dependency work (new dev dep, lockfile bump, test runner install). One commit per piece, landed BEFORE the first RED in step 7. Do not bundle scaffolding into a `feat:` commit — scaffolding has no behavior to test, and bundling it pollutes the TDD trail. If the worktree already has everything the task needs, skip this step entirely.
-
-### 7. Drive implementation via TDD
+### 6. Drive implementation via TDD
 
 Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure is owned by `close-task-issue` once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
 
-### 8. Verify against acceptance criteria, then audit the container surface and `.env.example`
+### 7. Verify against acceptance criteria, then audit the container surface and `.env.example`
 
 Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 7 with a fresh RED — do not declare done. Then run the **two-part container-setup audit**:
 
@@ -113,7 +99,7 @@ Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a
 
 Then run the `.env.example` audit: if this task added, renamed, or removed any env var the app reads, update `.env.example` to match and commit using a `chore(env): <what>` (or `fix(env): <what>`) subject (format per `templates/commit-messages.md`). If no env vars changed, leave `.env.example` alone.
 
-### 9. Push the slice branch and open both review gates
+### 8. Push the slice branch and open both review gates
 
 Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `review-task-issue` dispatches the `code-reviewer` and `security-reviewer`:
 
@@ -128,6 +114,7 @@ This is the terminal action. Exit after the label add lands — do not close the
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
 - **Read `security-patterns` before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy its rules (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
 - **Pull architecture context per-entity, on demand — never bulk-load.** Read only the specific entity file(s) the change actually touches under `docs/PRDs/<feature-name>/data-models/<entity>.md` and `docs/PRDs/<feature-name>/api-contracts/<entity>.md`. If the change touches no persistence and exposes/consumes no API, skip those files entirely.
+- **Paths come from the api-contract doc, never from the keyboard.** Any URL this task introduces — route decorator, frontend `fetch` target, test assertion path, `curl` in a script or CI step — is sourced from `docs/PRDs/<feature-name>/api-contracts/<entity>.md`. Define the path once as a module constant near the route and have the test import the same constant; hand-typing the same string twice (once in the route, once in the test) is the failure mode that lets implementation and contract drift apart. If the contract is missing for a path the task needs, STOP and surface it — the architect owns contract authorship, not the engineer.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
 - **Always fullstack — load every language reference upfront.** Mode-A work always reads `references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, and `references/docker-patterns.md` via `tdd-workflow` before writing any code.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed or where a behavior lives.

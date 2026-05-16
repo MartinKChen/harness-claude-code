@@ -200,6 +200,37 @@ res.setHeader(
 );
 ```
 
+**The `Secure` and `SameSite` attributes come from an env knob, read at the call site — not from a fully-validated `Settings()` object.** Production sets `SECURE_COOKIES=true`; local dev and CI (which both run over plain HTTP because there's no TLS termination in the compose stack) set `SECURE_COOKIES=false`. The trap to avoid: gating the attribute on `Settings.secure_cookies` while `Settings()` requires `DATABASE_URL` / `APP_ORIGIN` / etc — every test fixture that builds the app without those env vars (which is most of them) crashes at `Settings()` instantiation before its assertion runs.
+
+```python
+# FAIL — crashes any test fixture that builds the app without a full env.
+# create_app() calls Settings() unconditionally just to resolve one boolean.
+def create_app() -> FastAPI:
+    settings = Settings()  # ValidationError: database_url / app_origin required
+    app = FastAPI()
+    app.add_middleware(SessionMiddleware, https_only=settings.secure_cookies)
+    return app
+
+
+# PASS — the cookie knob is readable independently of Settings.
+def _secure_cookies() -> bool:
+    return os.getenv("SECURE_COOKIES", "true").lower() != "false"
+
+
+def create_app(*, settings: Settings | None = None) -> FastAPI:
+    app = FastAPI()
+    app.add_middleware(SessionMiddleware, https_only=_secure_cookies())
+    # ... settings (when supplied) drives the rest of the wiring ...
+    return app
+```
+
+Two properties this shape protects:
+
+1. **Test isolation.** Fixtures can build the app with overrides (`create_app(settings=fake_settings)`) without populating the full `Settings` env. The cookie knob still resolves — defaulting to secure — without dragging the rest of `Settings` along.
+2. **Production safety.** The default when the env var is absent is `True` (secure cookies on). The only way to get insecure cookies is to explicitly set `SECURE_COOKIES=false`, which lives in `compose.yaml` for local/CI and is never set in production.
+
+`scaffold-project` does NOT add this knob — the auth feature task that first introduces session cookies owns adding the `SECURE_COOKIES` line to `.env.example`, the compose env block, and the `_secure_cookies()` helper.
+
 **Authorize before you act.** The auth check happens at the top of the handler, before the side effect.
 
 ```ts
@@ -231,6 +262,7 @@ CREATE POLICY "Users update own data"
 Verification checklist:
 
 - [ ] Session/auth tokens stored in `HttpOnly; Secure; SameSite=Strict` (or `Lax`) cookies. Never in `localStorage` or `sessionStorage`.
+- [ ] `Secure` / `SameSite` driven by a `SECURE_COOKIES` env var read at the call site (default `true`), not by instantiating a full `Settings()` that test fixtures can't satisfy.
 - [ ] Every handler that mutates state checks the caller's identity AND permission before doing the work.
 - [ ] Multi-tenant tables have RLS (or an equivalent enforced filter) so a missing handler check still can't leak data.
 - [ ] Role / permission checks happen server-side; the UI hint is not the source of truth.

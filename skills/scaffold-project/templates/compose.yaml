@@ -1,0 +1,61 @@
+# Topology skeleton — the scaffold-project skill fills in service names,
+# image targets, and dependency edges per the ADR.
+#
+# Placeholders to replace:
+#   <PRODUCT>  — short product slug, used as the compose project name
+#   <DB_NAME>  — application database name
+#   <DB_USER>  — application database user
+#
+# Conventions:
+# - Every host-exposed port goes through ${VAR:-default} indirection so slice
+#   workers can avoid collisions without editing this file.
+# - Backend talks to db over the compose network using the service name `db`.
+# - Frontend talks to backend over the compose network using the service name
+#   `backend`. A nginx reverse-proxy block to `backend` is NOT shipped here —
+#   that lands via frontend-patterns / docker-patterns when the first
+#   frontend->backend call ships.
+# - No `migrate` service here. It lands via database-patterns when the first
+#   migration ships.
+
+name: <PRODUCT>
+
+services:
+  backend:
+    build:
+      context: ./backend
+      target: final
+    image: <PRODUCT>-backend:${IMAGE_TAG:-dev}
+    environment:
+      DATABASE_URL: postgresql://<DB_USER>:<DB_USER>@db:5432/<DB_NAME>
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      target: final
+    image: <PRODUCT>-frontend:${IMAGE_TAG:-dev}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:16.3-alpine
+    environment:
+      POSTGRES_DB: <DB_NAME>
+      POSTGRES_USER: <DB_USER>
+      POSTGRES_PASSWORD: <DB_USER>
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U <DB_USER> -d <DB_NAME>"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db_data:

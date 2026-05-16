@@ -111,14 +111,53 @@ def test_upgrade_downgrade_roundtrip(alembic_runner):
 - Run the suite locally before opening the PR — a migration that can't downgrade is a rollback hazard.
 - If a migration is genuinely irreversible (e.g. dropping a column with data), document why in the revision file and skip the roundtrip test explicitly rather than letting it silently fail.
 
+### Migrations run as a dedicated compose service, not in the backend image's entrypoint
+
+The runtime contract is: when the compose stack comes up, **migrations run to completion in a sibling container before the backend process starts**. This is the only correct shape — bundling `alembic upgrade head` into the backend image's entrypoint or relying on a FastAPI `startup` hook lets the app accept traffic against a stale schema, surfaces as 500s on the first real request, and silently races N backend replicas against each other when the deployment scales.
+
+The first migration that ships in a slice adds this structure to `compose.yaml`:
+
+```yaml
+services:
+  migrate:
+    build:
+      context: ./backend
+      target: final
+    image: ${PRODUCT}-backend:${IMAGE_TAG:-dev}   # same image as backend; no separate Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://<DB_USER>:<DB_USER>@db:5432/<DB_NAME>
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"                                  # one-shot — exits 0 on success
+
+  backend:
+    # ... existing build / image / env / ports ...
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+```
+
+Properties this shape buys you:
+
+- **Loud failures.** `migrate` exits non-zero → `backend` never starts. The CI/E2E job sees the failure at the compose layer, not as a mystery 500 from `backend`.
+- **Concurrency of exactly one.** Scaling `backend` to N replicas never triggers N concurrent migration attempts; only the one-shot `migrate` container runs.
+- **Same image, no duplication.** `migrate` builds nothing new — it's the same backend image with a different `command:`. The Dockerfile stays a stateless application image.
+- **Backend stays a worker.** `backend`'s Dockerfile entrypoint is `uvicorn ...` exactly — no shell wrapper running migrations first. This makes the image safe to run in environments where migrations are managed out-of-band (e.g. a deploy pipeline running them ahead of the rollout).
+
+Scaffold-time note: `scaffold-project` does NOT ship the `migrate` service in its compose template. The migrate service lands with the first migration via this pattern; until then there are no migrations to run.
+
 ## Workflow
 
 1. **Edit the model.** Make the schema change in the ORM model file. Use plural table names, descriptive column names, and rely on the configured `MetaData` naming convention for constraint names.
 2. **Autogenerate the migration.** Run `alembic revision --autogenerate -m "<short-description>"`. Use a short imperative description (`add users table`, `add index on orders.created_at`).
 3. **Review the generated revision.** Open `alembic/versions/<revision>_<slug>.py`. Confirm: correct `upgrade()` and `downgrade()`, correct constraint names, no spurious diffs from unrelated models, data migrations added by hand if needed.
 4. **Test the migration.** Run the `pytest-alembic` suite (`pytest tests/test_migrations.py`). Verify upgrade → downgrade → upgrade round-trips.
-5. **Apply locally.** `alembic upgrade head` on the dev DB and smoke-test the app.
-6. **Commit model + migration together.** Same commit, same PR. Never ship a model change without its migration, and never ship a migration without the model change that motivated it.
+5. **Apply locally.** Run `docker compose up migrate` (the one-shot service above) to apply migrations against the dev DB, then bring `backend` up. If this is the first migration in the project and the `migrate` service is not yet in `compose.yaml`, add it now per the structure above and land it in the same slice as the migration itself.
+6. **Commit model + migration together.** Same commit, same PR. Never ship a model change without its migration, and never ship a migration without the model change that motivated it. If this slice introduces the `migrate` compose service for the first time, that compose edit belongs in the same slice (separate commit: `chore(docker): add migrate service to compose`).
 
 ## Command
 
