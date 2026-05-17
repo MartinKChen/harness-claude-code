@@ -32,6 +32,7 @@ Read the reference files under `references/` on demand. They are not auto-activa
 | `references/coding-patterns.md` | Always. Read at the start of every task — naming, KISS/DRY/YAGNI, immutability, error handling apply to every GREEN and REFACTOR step. |
 | `references/docker-patterns.md` | When the task is container-related — modifying `Dockerfile`, `docker-compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
 | `references/frontend-patterns.md` | When the task implements frontend code — React/TypeScript components, hooks, pages, forms, or anything under the frontend package. |
+| `references/observability-patterns.md` | When the task adds/edits instrumentation in any service — log statements, spans, metrics, trace-context propagation, OTel SDK bootstrap, Collector config, or any `OTEL_*` env var. Iron rule: OpenTelemetry is the only instrumentation API; vendor SDKs only appear in the Collector. |
 | `references/python-patterns.md` | When the task implements backend code in Python — `.py` files, FastAPI/Flask/Django handlers, SQLAlchemy models, pytest tests. |
 
 Other skills still apply (route to them as you would any skill, not as files under this one):
