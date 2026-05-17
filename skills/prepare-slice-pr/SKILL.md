@@ -1,6 +1,6 @@
 ---
 name: prepare-slice-pr
-description: "Prepare a draft slice PR for a single GitHub slice issue (`level:slice` + `kind:feature` + `status:in-progress` + `status:prepare-pr`) dispatched by `create-draft-pr`. Read the slice body, resolve the slice branch and its closed task sub-issue numbers, materialize the slice-scoped worktree, load the always-on security context and the full fullstack pattern set, rebase the slice branch onto the latest `origin/main` (resolving any conflicts by union before continuing — bail to `status:need-attention` if union resolution would require scope expansion), then identify every E2E spec that was created or modified on the slice branch since `origin/main`, run those specs against the slice's runtime, triage each failure as production-code bug (drive the fix via TDD with `rg`-driven pattern propagation, commit, re-run) or E2E-spec bug (stop and flip the slice to `status:need-attention`, dropping `status:prepare-pr`, with a diagnostic comment). Once every E2E spec is green, compose the PR body from `templates/pr-body.md` (with `Closes #<slice-#>` first, then `Closes #<task-#>` for every closed task sub-issue), force-with-lease push the rebased slice branch, open the draft PR with the slice's milestone, and remove `status:prepare-pr` from the slice. Activate when the dispatch prompt opens with `Prepare draft PR for slice issue #<n>`, or when the user types phrases like 'prepare the draft PR for slice #<n>', '/prepare-slice-pr'. Do NOT activate to implement task work (use `implement-feature-task`), to fix CI / merge-conflict on an open PR (use `fix-pr-blockers`), to address reviewer findings on a task (use `fix-task-feedback`), or to author E2E specs from scratch (use `author-e2e-tests`)."
+description: "Prepare a draft slice PR for a single GitHub slice issue (`level:slice` + `kind:feature` + `status:in-progress` + `status:prepare-pr`) dispatched by `create-draft-pr`. Read the slice body, resolve the slice branch and its closed task sub-issue numbers, materialize the slice-scoped worktree, load the always-on security context and the full fullstack pattern set, merge the latest `origin/main` into the slice branch (resolving any conflicts by union and finalizing with a merge commit — bail to `status:need-attention` if union resolution would require scope expansion), then identify every E2E spec that was created or modified on the slice branch since `origin/main`, run those specs against the slice's runtime, triage each failure as production-code bug (drive the fix via TDD with `rg`-driven pattern propagation, commit, re-run) or E2E-spec bug (stop and flip the slice to `status:need-attention`, dropping `status:prepare-pr`, with a diagnostic comment). Once every E2E spec is green, compose the PR body from `templates/pr-body.md` (with `Closes #<slice-#>` first, then `Closes #<task-#>` for every closed task sub-issue), push the slice branch, open the draft PR with the slice's milestone, and remove `status:prepare-pr` from the slice. Activate when the dispatch prompt opens with `Prepare draft PR for slice issue #<n>`, or when the user types phrases like 'prepare the draft PR for slice #<n>', '/prepare-slice-pr'. Do NOT activate to implement task work (use `implement-feature-task`), to fix CI / merge-conflict on an open PR (use `fix-pr-blockers`), to address reviewer findings on a task (use `fix-task-feedback`), or to author E2E specs from scratch (use `author-e2e-tests`)."
 ---
 
 # prepare-slice-pr
@@ -46,15 +46,15 @@ Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via 
 | `scripts/resolve-slice-branch.sh <slice-#>` | Print the slice branch attached to the slice issue (empty if none). |
 | `scripts/list-task-subissues.sh <slice-#>` | Print one-line-per-task-# of every closed `level:task` + `kind:feature` sub-issue under the slice (for the PR body's linked-issues block). |
 | `scripts/setup-worktree.sh <slice-branch>` | Create-or-reuse the worktree at `/tmp/git-worktree/<repo>/<slice-branch>` and hard-reset it to `origin/<slice-branch>`. Prints the worktree path. |
-| `scripts/rebase-onto-main.sh` | From the current worktree, fetch `origin/main` and rebase the slice branch onto it. Exits 0 on clean rebase; exits non-zero with the working tree mid-rebase when conflicts surface — caller resolves hunks by union, `git add`s, and `git rebase --continue`s until done. |
+| `scripts/merge-main.sh` | From the current worktree, fetch `origin/main` and merge it into the slice branch. Exits 0 on clean merge (fast-forward or a single merge commit); exits non-zero with the working tree mid-merge when conflicts surface — caller resolves hunks by union, `git add`s the resolved files, and `git commit --no-edit`s to finalize the merge. |
 | `scripts/list-touched-e2e-specs.sh` | From the current worktree, print every E2E spec file added or modified on the slice branch since `origin/main`. Empty output means the slice introduced no E2E coverage (rare — surface it). |
 | `scripts/open-draft-pr.sh <head-branch> <title> <body-file> [--milestone <name>]` | Create the draft PR; print the URL. |
-| `scripts/push-create-pr-clear-prepare.sh <slice-#> <slice-branch> <title> <body-file> [--milestone <name>]` | Force-with-lease push the rebased slice branch, open the draft PR, and remove `status:prepare-pr` from the slice. Terminal success action. |
+| `scripts/push-create-pr-clear-prepare.sh <slice-#> <slice-branch> <title> <body-file> [--milestone <name>]` | Push the slice branch (merge preserves history — no force flag needed), open the draft PR, and remove `status:prepare-pr` from the slice. Terminal success action. |
 | `scripts/mark-slice-need-attention.sh <slice-#> <comment-file>` | Remove `status:prepare-pr` from the slice, add `status:need-attention`, and post the diagnostic comment from `<comment-file>`. Terminal bail-out action. |
 
 ## Workflow
 
-Inputs from the orchestrator: a slice issue number. The orchestrator (`create-draft-pr`) already labeled the slice with `status:prepare-pr` as its lock and confirmed every task sub-issue is closed and no PR exists on the slice branch — do not re-check those pre-conditions. Everything else (slice branch, milestone, task sub-issue numbers, touched E2E specs, runtime command, conflicts surfaced by rebasing onto `origin/main`) you discover yourself.
+Inputs from the orchestrator: a slice issue number. The orchestrator (`create-draft-pr`) already labeled the slice with `status:prepare-pr` as its lock and confirmed every task sub-issue is closed and no PR exists on the slice branch — do not re-check those pre-conditions. Everything else (slice branch, milestone, task sub-issue numbers, touched E2E specs, runtime command, conflicts surfaced by merging `origin/main` into the slice branch) you discover yourself.
 
 ### 1. Fetch the slice body, resolve the slice branch, and gather closed task sub-issues
 
@@ -92,28 +92,30 @@ Invoke `security-patterns` before any code is written, even if no production fix
 
 A failing E2E spec can point at a bug in any layer of the slice. Instruct `tdd-workflow` to load `references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, and `references/docker-patterns.md` so the fix can land anywhere without a second round-trip.
 
-### 5. Rebase the slice branch onto `origin/main` and resolve any conflicts
+### 5. Merge `origin/main` into the slice branch and resolve any conflicts
 
-Before running any E2E specs, rebase the slice branch onto the latest `origin/main`. Two reasons:
+Before running any E2E specs, merge the latest `origin/main` into the slice branch. Two reasons:
 
 - E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree because of changes that landed on `main` while the slice was in flight — discovering that here is cheaper than discovering it after CI runs on an opened PR.
-- The PR opened in step 8 will already sit on top of the latest `main`, eliminating a `conflict` round-trip via `fix-pr-blockers`.
+- The PR opened in step 8 will already include `main`'s latest commits, eliminating a `conflict` round-trip via `fix-pr-blockers`.
+
+Merge (not rebase) is the intentional choice: it preserves the slice branch's commit history as-authored, avoids rewriting any commit the task sub-issues already reference by SHA, and lets the push in step 8 be a plain forward push — no force flag needed. When `main` hasn't diverged from the slice's base, `git merge` fast-forwards and produces no merge commit; when it has, exactly one merge commit lands at the tip of the slice branch.
 
 ```bash
-bash scripts/rebase-onto-main.sh
+bash scripts/merge-main.sh
 ```
 
-If the rebase completes cleanly (exit 0, no conflicts), continue to step 6.
+If the merge completes cleanly (exit 0, no conflicts), continue to step 6.
 
-If conflicts surface, the script exits non-zero with the working tree mid-rebase. Resolve every conflicting hunk by reading both sides and producing the **union** that preserves the slice's intended behavior **and** the base's incoming change — never blindly take one side. After resolving each conflict, `git add <path>` the resolved files and `git rebase --continue`. Repeat until the rebase completes. Do not amend the original slice commits with hand-edited authorship/messages; let `git` keep its rebase metadata.
+If conflicts surface, the script exits non-zero with the working tree mid-merge. Resolve every conflicting hunk by reading both sides and producing the **union** that preserves the slice's intended behavior **and** the base's incoming change — never blindly take one side. After resolving every conflict, `git add <path>` the resolved files and finalize the merge with `git commit --no-edit` (or `git commit` with a clarifying message that lists the unioned paths). Do not amend or rewrite the original slice commits; the merge commit is the only new commit this step should produce.
 
-If the rebase brings a new pattern in from `main` (a new safety helper, a renamed import, a new validation hook), `rg` the slice's other touched files for clearly equivalent sites still on the old pattern and bring them onto the new one in the same prep pass — per the pattern-propagation rule in *Iron rules*. Each such site gets its own RED → GREEN via `tdd-workflow` once the rebase completes.
+If the merge brings a new pattern in from `main` (a new safety helper, a renamed import, a new validation hook), `rg` the slice's other touched files for clearly equivalent sites still on the old pattern and bring them onto the new one in the same prep pass — per the pattern-propagation rule in *Iron rules*. Each such site gets its own RED → GREEN via `tdd-workflow` after the merge completes, and each lands as its own commit on top of the merge commit.
 
-If the rebase introduces test-visible regressions (existing unit/integration tests fail because of merged-in code), drop into a fresh RED → GREEN → REFACTOR cycle for each broken test via `tdd-workflow` **before** continuing to E2E execution in step 6.
+If the merge introduces test-visible regressions (existing unit/integration tests fail because of merged-in code), drop into a fresh RED → GREEN → REFACTOR cycle for each broken test via `tdd-workflow` **before** continuing to E2E execution in step 6.
 
-**If the conflict cannot be resolved without scope expansion** (e.g. `main` rewrote a module the slice also rewrites and the two intents are incompatible), `git rebase --abort` and route to the bail-out path in step 6c with a diagnostic listing every conflicting path, both incoming and slice-side intents per path, and a one-line explanation of why union resolution would require scope expansion. The user resolves the divergence and re-dispatches by clearing `status:need-attention`.
+**If the conflict cannot be resolved without scope expansion** (e.g. `main` rewrote a module the slice also rewrites and the two intents are incompatible), `git merge --abort` and route to the bail-out path in step 6c with a diagnostic listing every conflicting path, both incoming and slice-side intents per path, and a one-line explanation of why union resolution would require scope expansion. The user resolves the divergence and re-dispatches by clearing `status:need-attention`.
 
-Because the rebase rewrites the slice branch's history, the push in step 8 uses `--force-with-lease`. That is the **only** scenario in this skill where a force-style push is permitted; see *Iron rules*.
+Because the merge preserves history rather than rewriting it, the push in step 8 is a plain `git push` — no force flag needed and none permitted; see *Iron rules*.
 
 ### 6. Identify and run every E2E spec touched on the slice branch
 
@@ -168,12 +170,12 @@ Continue to step 7 (compose PR body) only after every touched spec is green and 
 
 This bail-out path serves **two distinct triggers**:
 
-1. **Unresolvable rebase conflict from step 5** — `main`'s changes and the slice's intent are fundamentally incompatible; union resolution would require scope expansion.
+1. **Unresolvable merge conflict from step 5** — `main`'s changes and the slice's intent are fundamentally incompatible; union resolution would require scope expansion.
 2. **E2E-spec bug from step 6a** — one or more touched specs encode a demand the slice cannot satisfy as authored.
 
 In either case, compose a diagnostic comment.
 
-For trigger (1) — rebase conflict — list every conflicting path with:
+For trigger (1) — merge conflict — list every conflicting path with:
 
 - The path.
 - A 2–6 line excerpt of the conflicting hunk (slice side `<<<<<<<` vs. base side `>>>>>>>`).
@@ -195,7 +197,7 @@ bash scripts/mark-slice-need-attention.sh <slice-#> "${comment_file}"
 rm -f "${comment_file}"
 ```
 
-The script removes `status:prepare-pr` from the slice, adds `status:need-attention`, and posts the comment. Stop immediately after the script returns — do not push any partial fixes, do not open a PR, do not loop. If the bail was triggered by a partially-completed rebase (some commits replayed, then a conflict halted progress), leave the local worktree mid-rebase — never push the half-rebased state; the worktree will be hard-reset to `origin/<slice-branch>` on the next dispatch via `setup-worktree.sh`. The user reviews the diagnostic and either rewrites the spec(s), resolves the divergence themselves, or pushes a fix, then clears `status:need-attention` so `create-draft-pr` can re-pick the slice on the next fire.
+The script removes `status:prepare-pr` from the slice, adds `status:need-attention`, and posts the comment. Stop immediately after the script returns — do not push any partial fixes, do not open a PR, do not loop. If the bail was triggered by a merge that halted on conflict, leave the local worktree mid-merge — never push the half-merged state; the worktree will be hard-reset to `origin/<slice-branch>` on the next dispatch via `setup-worktree.sh`. The user reviews the diagnostic and either rewrites the spec(s), resolves the divergence themselves, or pushes a fix, then clears `status:need-attention` so `create-draft-pr` can re-pick the slice on the next fire.
 
 ### 7. Compose the PR body
 
@@ -205,7 +207,7 @@ Order in the trailing block is load-bearing: **`Closes #<slice-#>` MUST be the f
 
 Using `Closes` (not `Refs`) for tasks is safe — every task sub-issue is already closed by the time this skill fires; the closing keyword is a no-op for them at merge time but is what populates the PR's Linked Issues / Development sidebar.
 
-Copy the template, fill in the prose sections (or drop sections that don't apply), then replace the trailing-block placeholders with the actual slice and task numbers — write the final body to a temp file for `push-create-pr-clear-prepare.sh`. Note that **rebase changes** brought in from `main` should NOT be itemized in the PR's What/How sections — the PR body documents the slice's intent; the rebase's purpose is to keep the branch current, not to ship `main`'s work:
+Copy the template, fill in the prose sections (or drop sections that don't apply), then replace the trailing-block placeholders with the actual slice and task numbers — write the final body to a temp file for `push-create-pr-clear-prepare.sh`. Note that **changes brought in from `main` by the merge** should NOT be itemized in the PR's What/How sections — the PR body documents the slice's intent; the merge's purpose is to keep the branch current, not to ship `main`'s work:
 
 ```bash
 body_file="$(mktemp)"
@@ -238,7 +240,7 @@ bash scripts/push-create-pr-clear-prepare.sh \
 rm -f "${body_file}"
 ```
 
-The script force-with-lease pushes the slice branch (the rebase in step 5 rewrote history, so a plain push would be rejected; `--force-with-lease` is the safe form that fails when the remote ref has moved since `setup-worktree.sh` reset it — protecting against a concurrent push from another agent). The pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 6b if any hook denies; never skip hooks. The script then opens the draft PR with the body file and milestone, and removes `status:prepare-pr` from the slice issue.
+The script does a plain `git push` of the slice branch — the merge in step 5 preserved history, so the push is a strict fast-forward over `origin/<slice-branch>` and no force flag is needed. The pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 6b if any hook denies; never skip hooks. The script then opens the draft PR with the body file and milestone, and removes `status:prepare-pr` from the slice issue.
 
 This is the terminal success action. Exit after the script returns — do not flip the PR to ready-to-review (that's `close-pr`'s lane), do not touch any `review:*` label, do not comment further, do not loop.
 
@@ -246,14 +248,14 @@ If `gh pr create` inside the script fails because a PR already raced into existe
 
 ## Iron rules
 
-- **`status:prepare-pr` is the lock — the engineer removes it on every terminal path.** Either step 8's success path (force-with-lease push + open PR + remove label) or step 6c's bail path (remove label + add `status:need-attention`) clears it. Leaving `status:prepare-pr` on a slice after exit would prevent `create-draft-pr` from ever re-picking it.
-- **Rebase the slice branch onto `origin/main` BEFORE running E2E specs (step 5).** E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree; opening a PR on a rebased branch also eliminates a `conflict` round-trip via `fix-pr-blockers`. Resolve every conflicting hunk by **union** — never blindly take one side. If union resolution would require scope expansion, `git rebase --abort` and route to step 6c with a rebase-conflict diagnostic; the user resolves the divergence and re-dispatches.
-- **`--force-with-lease` is the ONLY force-style push permitted in this skill, and only in step 8's `push-create-pr-clear-prepare.sh`.** The rebase in step 5 rewrote the slice branch's history, so a plain push would be rejected. `--force-with-lease` (not plain `--force`) is the safe form — it fails when the remote ref has moved since the worktree was set up, protecting against a concurrent push from another agent. Anywhere else, never force-push and never skip hooks.
+- **`status:prepare-pr` is the lock — the engineer removes it on every terminal path.** Either step 8's success path (push + open PR + remove label) or step 6c's bail path (remove label + add `status:need-attention`) clears it. Leaving `status:prepare-pr` on a slice after exit would prevent `create-draft-pr` from ever re-picking it.
+- **Merge `origin/main` into the slice branch BEFORE running E2E specs (step 5) — never rebase.** E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree; opening a PR on an up-to-date branch also eliminates a `conflict` round-trip via `fix-pr-blockers`. Merge (not rebase) preserves the slice branch's commit history as-authored, leaves task-sub-issue commit SHAs stable, and keeps the step 8 push as a plain fast-forward. Resolve every conflicting hunk by **union** — never blindly take one side — then `git add` and `git commit --no-edit` to finalize the merge. If union resolution would require scope expansion, `git merge --abort` and route to step 6c with a merge-conflict diagnostic; the user resolves the divergence and re-dispatches.
+- **No force-style push is permitted in this skill — step 8 uses a plain `git push`.** Because step 5 merges (rather than rebases) `origin/main` into the slice branch, the slice branch's history is never rewritten and the push is always a strict fast-forward over `origin/<slice-branch>`. Anywhere else, never force-push and never skip hooks.
 - **Failing E2E specs are the contract for production-code fixes — never duplicate the demand in a unit test.** The spec IS the RED test; the production change is what takes it to GREEN. A separate unit test for the same behavior locks the demand in twice and creates conflicting GREEN cycles.
 - **Bail the whole run on the first E2E-spec bug — do not partially fix production code.** A mixed exit (some production fixes committed, slice flipped to need-attention) leaves the slice branch with a non-green suite and forces the next dispatch to either revert or re-triage. Step 6a triages first, then step 6b or 6c runs — never both.
 - **Read `security-patterns` before writing any code**, even when the immediate fix looks innocuous.
-- **Always fullstack — load every language reference upfront.** A failing E2E spec or a rebase conflict can point at any layer; loading all four references upfront prevents a second round-trip.
-- **Treat each production-code fix as a *class* of issue, not a single instance — propagate via `rg`.** A failing spec exercises one site; the bug usually lives at every equivalent site. The same rule applies to patterns brought in by the step 5 rebase: when `main` ships a new helper / renamed import / new validation hook, `rg` the slice's touched files for clearly equivalent sites still on the old pattern and bring them onto the new one. Each additional site gets its own RED → GREEN. List the additional sites in the commit body. Only skip propagation when a search confirms isolation. This is not license to expand into unrelated refactors.
+- **Always fullstack — load every language reference upfront.** A failing E2E spec or a merge conflict can point at any layer; loading all four references upfront prevents a second round-trip.
+- **Treat each production-code fix as a *class* of issue, not a single instance — propagate via `rg`.** A failing spec exercises one site; the bug usually lives at every equivalent site. The same rule applies to patterns brought in by the step 5 merge: when `main` ships a new helper / renamed import / new validation hook, `rg` the slice's touched files for clearly equivalent sites still on the old pattern and bring them onto the new one. Each additional site gets its own RED → GREEN. List the additional sites in the commit body. Only skip propagation when a search confirms isolation. This is not license to expand into unrelated refactors.
 - **Re-run the full touched-spec set after every commit.** A fix can regress a previously-passing spec; finding that out after the PR opens wastes a review cycle.
 - **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `implement-feature-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string` pair, verify immediately after each Edit before issuing the next one on the same file.
 - **Container setup is a pre-push gate.** Run the two-part audit (presence + drift) before push; the pre-push hook enforces presence.

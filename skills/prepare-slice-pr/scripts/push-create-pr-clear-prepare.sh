@@ -52,7 +52,7 @@ if [[ ! -f "$body_file" ]]; then
   exit 1
 fi
 
-git push --force-with-lease origin "$slice_branch"
+git push origin "$slice_branch"
 
 create_args=(
   --draft
