@@ -236,17 +236,61 @@ with tracer.start_as_current_span("payments.charge_card") as span:
 
 If you find yourself wrapping every function in a span, stop — the auto-instrumentation already gave you a span per request, per query, per outbound call. Pick the 3–10 business operations per service that are worth a span, and stop there.
 
-### 7. The Collector is the seam — keep it thin in app code, thick in config
+### 7. The Collector is the seam — architecture, topology, ownership
 
-The OpenTelemetry Collector sits between your services and your backends. App code talks **only** to the Collector via OTLP. The Collector owns:
+The OpenTelemetry Collector is a small Go process that sits between every service and every backend. It is the **only** thing in the system that knows which backend(s) data actually lands in. App code talks to the Collector via OTLP; nothing else.
 
-- Backend fan-out (Datadog, Jaeger, Tempo, Loki, Prometheus, S3 archive, etc.) — each backend is a separate **exporter** in the Collector pipeline.
-- Tail-based sampling (`tail_sampling` processor) — keep all error traces, sample successful traces by rate.
-- Redaction / scrubbing (`attributes` / `transform` processors) — strip headers, PII keys, query strings.
-- Resource enrichment (`resource` processor) — add `host.name`, `k8s.pod.name`, region, AZ from the platform.
-- Batching, retries, and a queue-size budget so a backend outage doesn't backpressure the app.
+```
+[service A] ─ OTLP gRPC :4317 ─┐
+                                ├─► [OTel Collector] ──► Datadog / Tempo / Loki / Prometheus / S3 / ...
+[service B] ─ OTLP gRPC :4317 ─┘
+```
+
+This indirection is the entire payoff of the iron rule. Swapping backends, adding redaction, changing sampling, fanning out to two backends in parallel for a migration — all of that is a Collector-config change, never a code change in `src/`.
+
+#### Pipeline shape — receivers → processors → exporters
+
+Every Collector config has the same three-stage shape, wired into one **pipeline per signal** (traces / metrics / logs):
+
+- **Receivers** — accept incoming data. For OTLP this is `otlp` on `:4317` (gRPC, preferred) and `:4318` (HTTP, fallback).
+- **Processors** — transform / filter / sample in order. The order matters: `memory_limiter` first to refuse data when overloaded, `resourcedetection` to add platform attributes, `tail_sampling` for traces, `attributes/redact` for backstop secret-stripping, `batch` last before export.
+- **Exporters** — ship data out. One exporter per backend; each pipeline can fan to multiple exporters.
+
+The starter config lives at `../templates/observability/collector-config.yaml` — copy it, point the exporters at the real backends, and tune `tail_sampling` policies + redaction rules. Don't write this from scratch.
+
+#### What the Collector owns (not the app)
+
+- Backend fan-out — each backend is a separate **exporter** (`otlphttp/tempo`, `prometheusremotewrite`, `datadog`, etc.). Adding a backend is editing the Collector config.
+- **Tail-based sampling** (`tail_sampling` processor) — sees the full trace before deciding, so it can keep 100% of error/slow traces and sample successful traces at a fraction. App code MUST NOT head-sample with a fixed ratio "to save cost" (see anti-patterns).
+- **Redaction / scrubbing** (`attributes` / `transform` processors) — strip auth headers, cookie headers, PII keys. This is a **backstop**, not the rule — the app must still not log secrets in the first place.
+- **Resource enrichment** (`resourcedetection` processor) — add `host.name`, `k8s.pod.name`, `cloud.region`, `cloud.availability_zone` from the environment so dashboards can slice by infra.
+- **Batching, retries, queue budget** — so a backend outage doesn't backpressure the app. The Collector buffers; when its queue fills, it drops on the floor and increments `otelcol_processor_dropped_*` — which you alert on.
 
 When a "logging change" turns out to be a Collector-config change (redaction, additional backend, sampling adjustment), that PR touches the Collector deployment, not the service code.
+
+#### Deployment topology — pick one
+
+| Topology | Where it runs | App points at | When to pick it |
+|----------|---------------|---------------|------------------|
+| **Sidecar** | One Collector container per app pod | `localhost:4317` | Simplest network model; small fleets; per-app isolation. Costs ~30 MB RAM per pod. |
+| **Agent (DaemonSet)** | One Collector per node | `localhost:4317` (via node IP) | Cheaper than sidecar; needs node-level access policy. Common on Kubernetes. |
+| **Gateway** | A separate `Deployment` with 3–5 replicas behind a `Service` | `otel-collector.<ns>:4317` | Centralised tail-sampling + redaction; what most teams converge on. |
+| **Agent + Gateway** | Both layers — agent does lightweight batching close to the app, gateway does tail-sampling and backend fan-out | `localhost:4317` (agent forwards to gateway) | OTel-recommended production topology once traffic is non-trivial. |
+
+Tail-sampling only works correctly when **all spans of a trace** land on the same Collector instance — that's why the gateway layer typically has session-affinity routing (`trace_id`-hashed). A naïve round-robin gateway loses traces.
+
+#### Dev-mode story — no Collector required to boot
+
+The SDK bootstrap MUST not crash when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (invariant in the *Command* section at the bottom of this doc). Two viable local setups:
+
+- **Run a Collector in `docker-compose.yaml`** alongside the app, with the `debug` exporter (it prints OTLP payloads to stdout). Useful for "did this span/metric/log actually emit?" — costs ~30 MB. The starter config already has `debug:` defined; add it to a pipeline's `exporters:` list during local-only development.
+- **Leave the endpoint unset.** The SDK exporter logs a connection-refused warning every batch interval and the app boots fine. Cheap, but you lose visibility into what would have shipped.
+
+CI runs typically use the first option so E2E smoke tests can assert that spans / metrics / logs reach the in-Compose Collector (and through it, an in-Compose backend stub if the test cares).
+
+#### Ownership — which lane edits this
+
+The Collector deployment (manifest, config, scaling, alerts on its own self-telemetry) belongs to the **`sre` agent** — same lane as CI/CD and other shared infra. When a feature task needs a new backend, a redaction rule added, a sampling-percentage change, or a new processor, that's a change request to the Collector config, **not** an edit to `src/`. Application engineers own the SDK bootstrap and the spans/metrics/logs they emit; the Collector is downstream.
 
 ### 8. SLOs and alerts — derive from metrics, not logs
 

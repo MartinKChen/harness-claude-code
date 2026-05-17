@@ -1,0 +1,121 @@
+# OpenTelemetry Collector — config starter
+#
+# Copy this into the Collector deployment (sidecar / agent / gateway) and
+# adapt the exporters to the actual backends in use. The shape never changes:
+# receivers -> processors -> exporters wired into per-signal pipelines.
+#
+# Image: otel/opentelemetry-collector-contrib (NOT the core image — the
+# contrib distribution includes the processors and exporters this config
+# references; the core image does not).
+#
+# Wire endpoints into the app via:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://<collector-host>:4317
+# where <collector-host> is `localhost` for sidecar / DaemonSet agent, or
+# the Service DNS name for a gateway deployment.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Drop incoming data before the Collector OOMs. Tune `limit_mib` to ~75% of
+  # the container's memory request. The Collector will refuse OTLP writes
+  # when this fires — that's the right behaviour; the alternative is OOMKill.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1024
+    spike_limit_mib: 256
+
+  # Adds platform metadata (host.name, k8s.pod.name, k8s.namespace.name,
+  # cloud.region, cloud.availability_zone, etc.) from the environment. Keep
+  # this in every pipeline; dashboards expect these attributes.
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 2s
+
+  # Tail-sampling: keep 100% of error / slow traces, sample successful traces
+  # at the configured percentage. Replaces head-sampling in app code, which
+  # the iron rule forbids.
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    policies:
+      - name: errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: slow
+        type: latency
+        latency: { threshold_ms: 1000 }
+      - name: probabilistic
+        type: probabilistic
+        probabilistic: { sampling_percentage: 5 }
+
+  # Backstop redaction. The application MUST NOT log secrets in the first
+  # place (see references/observability-patterns.md section 4d); this is a
+  # second line of defence, not the rule.
+  attributes/redact:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: http.request.header.x-api-key
+        action: delete
+
+  # Batch records before export. Required — exporting one record at a time
+  # is what the synchronous-exporter anti-pattern is.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # Adapt this list to the backends actually in use. Examples below cover
+  # the OSS stack (Tempo / Mimir-or-Prometheus / Loki). For a managed
+  # backend (Datadog, Honeycomb, New Relic, Splunk), add the vendor's
+  # exporter here — that is the ONLY place vendor-specific code lives.
+
+  otlphttp/tempo:
+    endpoint: https://tempo.internal:4318
+    # tls: { insecure: false }
+
+  prometheusremotewrite:
+    endpoint: https://prom.internal/api/v1/write
+    resource_to_telemetry_conversion: { enabled: true }
+
+  otlphttp/loki:
+    endpoint: https://loki.internal/otlp
+
+  # Dev / debugging: dumps payloads to the Collector's stdout. Wire this
+  # into a pipeline locally to verify "did the SDK actually emit?" without
+  # standing up a real backend. Remove in production.
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, tail_sampling, attributes/redact, batch]
+      exporters: [otlphttp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection, attributes/redact, batch]
+      exporters: [otlphttp/loki]
+
+  telemetry:
+    # The Collector reports its own health on these endpoints. Scrape
+    # `:8888/metrics` with Prometheus and alert on `otelcol_processor_dropped_*`
+    # going non-zero — that means the Collector is dropping data the app sent.
+    metrics:
+      address: 0.0.0.0:8888
+    logs:
+      level: info
