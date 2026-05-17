@@ -623,6 +623,31 @@ function Dialog({ open, onClose, children }: DialogProps) {
 
 ### Styling: Tailwind + design tokens only
 
+The project's **design system is the source of truth for every visual value**. Before writing or editing any styling, check whether the project has a design system on disk:
+
+```bash
+ls docs/DESIGNs/ 2>/dev/null
+```
+
+If `docs/DESIGNs/` exists, read these files before touching styles — they were produced by the `ui-ux-designer` agent during `/deep-dive-feature` and are authoritative:
+
+- `docs/DESIGNs/tokens.md` — the canonical list of color, typography, spacing, radii, shadow, and motion tokens. Every visual value used in JSX or CSS must trace back to a token defined here.
+- `docs/DESIGNs/components.md` — the component inventory: variants, sizes, states, tokens each component consumes, and the focus-style + reduced-motion behaviour you must implement.
+- `docs/DESIGNs/accessibility.md` — the accessibility floor for every interactive component (keyboard interaction, focus style, ARIA roles/labels, motion fallback).
+- `docs/DESIGNs/overview.md` — the project-level visual style direction, density, and motion philosophy that constrains *how* you compose tokens (e.g. when a card uses `shadow/elevation-1` vs `shadow/elevation-2`).
+- `docs/DESIGNs/sample/*.html` — static reference renders. When in doubt about how a component should look, open the relevant sample page; every CSS custom property there matches a token name in `tokens.md`.
+
+Workflow when styling a component:
+
+1. Look up the component in `components.md`. If it's listed, use exactly the variants, sizes, states, tokens, and focus/reduced-motion rules that entry declares — don't invent a variant the design doesn't sanction.
+2. Look up every visual value (color, spacing, radius, etc.) in `tokens.md`. The token name maps 1:1 to the Tailwind class in `tailwind.config` (e.g. `color/brand/500` → `bg-brand-500`, `space/4` → `p-4`, `radius/md` → `rounded-md`).
+3. If the design system **doesn't have** the token or component variant the requirement demands, **stop and surface the gap** rather than inventing a one-off:
+   - For a task issue: post a comment on the slice issue describing what's missing and re-run `/deep-dive-feature` for that feature so `ui-ux-designer` can extend the system properly.
+   - For an ad-hoc fix where the gap is mechanical (e.g. a token alias was forgotten in `tailwind.config`): add the alias in a separate `chore(tokens): mirror <token> from docs/DESIGNs/tokens.md` commit so the linkage stays auditable.
+4. **Never let `tailwind.config` and `docs/DESIGNs/tokens.md` drift.** A token added to `tailwind.config` without a row in `tokens.md` is a bug; same the other way. Treat the design doc as the spec the config implements.
+
+If `docs/DESIGNs/` does not exist on this project, fall back to whatever tokens live in `tailwind.config` and flag the gap to the human — the project should be running `/deep-dive-feature` before further UI work to lock in a design system.
+
 Style exclusively with Tailwind CSS classes that map to design tokens. **No** hard-coded color values, **no** hard-coded pixel sizes, **no** ad-hoc inline styles for visual properties.
 
 ```tsx
