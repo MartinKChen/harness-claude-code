@@ -175,6 +175,132 @@ export function useDebounce<T>(value: T, delayMs: number): T {
 
 - Use for search inputs, resize handlers, and any high-frequency state that drives expensive work.
 
+### Route registration is part of the page task — App.tsx and its test must land in the same slice
+
+A page component that renders correctly in isolation is half a feature. The other half is wiring it into the app's router, plus a test in `App.test.tsx` that proves the page is reachable at its declared URL. Past reviews have caught pages shipped without a route entry, where every component test passed but the URL returned a 404 in the running app.
+
+```tsx
+// frontend/src/App.tsx
+import { Route, Routes } from "react-router-dom";
+import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/forgot" element={<ForgotPasswordPage />} />
+      {/* ... other routes ... */}
+    </Routes>
+  );
+}
+```
+
+```tsx
+// frontend/src/App.test.tsx
+test("/forgot renders the forgot-password page", () => {
+  render(<MemoryRouter initialEntries={["/forgot"]}><App /></MemoryRouter>);
+  expect(screen.getByRole("heading", { name: /forgot password/i })).toBeInTheDocument();
+});
+```
+
+- **Every new page lands with both edits in the same slice.** No route registration → the page is unreachable. No App.test.tsx test → the next slice can break the route silently.
+- **When editing `App.test.tsx`, never overwrite the file wholesale.** Shared test files accumulate tests for every page; a wholesale replacement loses pre-existing route coverage. `git diff` `App.test.tsx` before committing and confirm every test from the prior revision is still present.
+- **Cross-page navigation links are part of the page contract too.** If sibling pages link to this page (e.g. `/login` shows a "Forgot password?" link), the matching back-link from this page (e.g. "Back to login") is part of this task — not a follow-up.
+
+### Route-param queries guard with `enabled: !!param`
+
+A TanStack Query that depends on a route param (`groupId`, `taskId`, etc.) must not fire when the param is empty, `undefined`, or still parsing. Without the guard, the query fires `GET /api/v1/groups/` (or worse, `/groups/undefined`) on the very first render, polluting the cache and triggering 404 spam in CI logs.
+
+```tsx
+// Bad — fires with empty groupId on the first render
+export function useGroup(groupId: string) {
+  return useQuery({
+    queryKey: ["group", groupId],
+    queryFn: () => getGroup(groupId),
+  });
+}
+
+// Good — gated by a truthy param
+export function useGroup(groupId: string | undefined) {
+  return useQuery({
+    queryKey: ["group", groupId],
+    queryFn: () => getGroup(groupId!),
+    enabled: !!groupId,
+  });
+}
+```
+
+- The `queryFn` argument type stays non-null because `enabled: !!groupId` is the guarantee `getGroup` never runs with an empty value. The `!` non-null assertion is acceptable here because `enabled` is the invariant.
+- Pair with an `isLoading: true` initial-state test in the hook's unit test so the gate is covered by a regression test, not just an implementation detail.
+
+### Mutations: cache invalidation in `onSuccess`, referential stability in the return
+
+Two patterns that have repeatedly cost review rounds and belong on every mutation hook.
+
+**a. Invalidate the queries the mutation affects.** Every mutation that changes server state visible through another query must call `queryClient.invalidateQueries({ queryKey: <KEY> })` in `onSuccess`. The most common miss: a `useLogout` mutation that resolves before `useMe` refetches, leaving the stale `currentUser` visible in the cache for several frames.
+
+```tsx
+export function useLogout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => logoutRequest(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: GROUPS_QUERY_KEY });
+    },
+  });
+}
+```
+
+**b. Return the mutation's `mutate` directly — do not re-wrap in an arrow function.** A wrapper allocates a fresh function reference on every render, which silently breaks consumer `useEffect` / `useCallback` dependency arrays and triggers spurious re-runs in memoized children.
+
+```ts
+// Bad — fresh function every render; `login` and `logout` are referentially unstable
+return {
+  login: (...args) => loginMutation.mutate(...args),
+  logout: () => logoutMutation.mutate(),
+};
+
+// Good — stable references; consumer deps stay sane
+return {
+  login: loginMutation.mutate,
+  logout: logoutMutation.mutate,
+};
+```
+
+If the hook genuinely needs to transform args before calling `mutate`, wrap the result in `useCallback` with a stable dependency list — never a bare arrow function on every render.
+
+### Form idempotency-key rotation on 4xx
+
+Forms that submit with an `Idempotency-Key` header (per the project's idempotency ADR) must **rotate the key on a 4xx response** so the user can correct the input and re-submit. The trap: the form mints one key in a `useRef`, the user submits with a bad value, the server caches the 422 against the key, the user fixes the value and re-submits — and the server replays the cached 422 forever, surfacing as a permanent "unrecoverable" error state.
+
+```tsx
+const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+
+const onSubmit = async (values: FormValues) => {
+  try {
+    await createGroup(values, { idempotencyKey: idempotencyKeyRef.current });
+  } catch (err) {
+    if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+      idempotencyKeyRef.current = crypto.randomUUID(); // new key for the next attempt
+    }
+    throw err;
+  }
+};
+```
+
+- Server-side 2xx is the only state where the key is "spent" and the next user submit needs a fresh key (which `useRef` already gives them on remount).
+- 5xx never rotates the key — that's exactly the case retry was designed for.
+- 4xx is where the bug lives: the request reached the server, the server cached the response against the key, and the user must be able to re-submit with new data.
+
+### Sticky one-shot UI state needs an explicit reset path or an explicit decision not to reset
+
+Forms with a "submitted" / "success" UI state often hold the state forever after first submit. Decide on day one whether that's intentional:
+
+- **Intentional and documented** (e.g. `/forgot` shows the generic confirmation and never lets the user submit again from the same mount — by design, to slow enumeration attempts): write the comment that says so, and mark the state as `useState<"idle" | "submitted">` with no transition back. The component test should pin that invariant.
+- **Unintentional** (the user should be able to send another email, edit and re-submit, etc.): expose a reset path — a "Send another" button, an `onSuccess`-driven prop, or an unmount/remount via key change. The test should drive both transitions.
+
+The default in reviews has been to surface this as a finding; pick one or the other up front.
+
 ### API access: route everything through `src/lib/api`
 
 **Never** call `fetch` or `axios` directly inside component files. All backend calls — including those made from custom hooks, route loaders, and server components — go through the project's `src/lib/api` module.
@@ -543,7 +669,8 @@ Style exclusively with Tailwind CSS classes that map to design tokens. **No** ha
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
-    "noImplicitReturns": true
+    "noImplicitReturns": true,
+    "types": ["vitest/globals", "@testing-library/jest-dom"]
   }
 }
 ```
@@ -553,6 +680,7 @@ Style exclusively with Tailwind CSS classes that map to design tokens. **No** ha
 - Prefer `type` for unions/intersections, `interface` for object shapes you intend others to extend.
 - Use discriminated unions (`{ status: "success"; data: T } | { status: "error"; error: Error }`) instead of optional fields that "go together."
 - Type props explicitly — `function Component(props: Props)` — don't rely on inference for the public API.
+- **`compilerOptions.types` must include `@testing-library/jest-dom` (or the testing-library matcher package the project uses).** Without it, matchers like `toBeInTheDocument()` and `toHaveValue()` compile but produce `tsc --noEmit` errors that block the frontend Docker build — and the failure surfaces as "image build broken" in the security review, not "missing types" in the code review. Land the `types` entry alongside the first test file that uses jest-dom matchers, in the same commit as the matcher import or one chore-scoped commit before it. Same rule for `vitest/globals` if the project uses Vitest with globals enabled.
 
 ## Command
 

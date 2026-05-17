@@ -231,6 +231,23 @@ Two properties this shape protects:
 
 `scaffold-project` does NOT add this knob — the auth feature task that first introduces session cookies owns adding the `SECURE_COOKIES` line to `.env.example`, the compose env block, and the `_secure_cookies()` helper.
 
+**Constant-time auth paths — no timing oracles.** Login, password-reset, and other "does this account exist?" flows must return in **the same amount of time** regardless of whether the account exists. The default trap: the handler short-circuits on `user is None` (a single index lookup, ~1ms) but runs `argon2id.verify(...)` (~50–200ms) when the user exists. The timing delta is a perfect enumeration oracle — an attacker iterates emails and reads "exists" vs "doesn't exist" from the response time alone, regardless of the response body. Two mitigations stack:
+
+1. **Always run the password verify**, even when the user doesn't exist, against a fixed sentinel hash. The verify call's `False` result is what becomes the `LoginError`, not the missing-user branch.
+   ```python
+   SENTINEL_HASH = "$argon2id$v=19$m=65536,t=3,p=4$..."  # generated once at startup
+
+   def login(email: str, password: str) -> Session:
+       user = users.find_by_email(email)
+       hashed = user.password_hash if user else SENTINEL_HASH
+       if not argon2.verify(hashed, password) or user is None:
+           raise LoginError()
+       # ... issue session ...
+   ```
+2. **Pin the floor with a regression test.** Measure the elapsed time of `login(known_email, wrong_password)` and `login(unknown_email, wrong_password)` and assert both are above a minimum (e.g. 50ms) and within a configured ratio of each other. The threshold lives in one place — never duplicate it between the docstring and the assertion; past reviews have caught "docstring says ≥50ms, assertion says ≥10ms" drift.
+
+Same shape applies to forgot-password: the response, the response time, and the response body must be identical on hit and miss.
+
 **Authorize before you act.** The auth check happens at the top of the handler, before the side effect.
 
 ```ts
@@ -418,9 +435,19 @@ catch (error) {
 }
 ```
 
+**Log a sensitive value at exactly one layer — never twice.** A common review finding: a token prefix logged in the service module *and* the router module, or a request ID minted by the middleware *and* re-stamped by the handler. Double-logging doubles the surface area for redaction bugs and confuses log-trace correlation. Pick one layer (usually the outermost where the value is still in scope) and log there only.
+
+**Structured-log redaction is a key-name match, not a value match.** `structlog` (and most structured loggers) redact by **field name**. Adding a new PII field requires adding its key to the project's redaction allow-list — and verifying the key the production code emits is **exactly** the key the redaction rule matches. The trap: code emits `logger.info("...", token=token_value)` but the redaction rule was written against `tokenHash` (camelCase) or `token_prefix` (different field), so the field is logged in the clear. `rg` the redaction rule's key list before pushing a new PII field, and confirm the emitted key is in it.
+
+**Request-ID middleware must be registered first** (and therefore run first on the outbound rejection path). FastAPI middleware runs in reverse-registration order on the response, so the request-id middleware must be the **last** `app.add_middleware(...)` call — otherwise a request rejected by a rate-limit or auth middleware registered later returns its 429 / 401 body with `request_id: None`, breaking support's ability to correlate the rejection. Pin this with an explicit order test that walks `app.user_middleware` and asserts the request-id middleware is at the top.
+
 Verification checklist:
 
 - [ ] No passwords, tokens, secrets, full PANs, CVVs, full SSNs, or session IDs in logs. PII is logged only when necessary, with a documented retention window.
+- [ ] No raw user-supplied email addresses in logs, even on auth failure paths — log a user_id when one exists, or a hashed/prefix-only identifier when one doesn't. Plaintext emails in logs leak PII to anyone who reads them and degrade the enumeration-prevention posture on `/login` and `/forgot-password`.
+- [ ] Sensitive values are logged at **one** layer (service OR router, never both). Double-logging doubles the redaction-failure surface.
+- [ ] Redaction allow-list key names match the keys the code emits exactly (case-sensitive, no abbreviations).
+- [ ] Request-ID middleware is registered last so it runs first on rejection paths; every 4xx / 5xx body carries a non-null `request_id`.
 - [ ] 5xx responses return a generic message + correlation ID. Stack traces and internal exception messages stay server-side.
 - [ ] 4xx responses say what the client did wrong without revealing schema/table/column names or whether a user/email exists (for auth flows, prefer "if an account exists, we sent an email").
 - [ ] Structured logger has a redaction list (cookie headers, `authorization`, `password`, `token`, `secret`, etc.).
