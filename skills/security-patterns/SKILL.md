@@ -248,6 +248,52 @@ Two properties this shape protects:
 
 Same shape applies to forgot-password: the response, the response time, and the response body must be identical on hit and miss.
 
+**Password-reset completion must NOT auto-login the user.** A successful `POST /reset` (or `/password/reset/confirm`, etc.) consumes the reset token and updates the password hash — and STOPS. It MUST NOT:
+
+- issue a session cookie (no `Set-Cookie: session=...` on the response),
+- return a session token in the body,
+- have the SPA call `invalidateQueries(['me'])` / re-fetch the current user / navigate to the authenticated landing page.
+
+The correct shape: the server returns 200 (or 204) with no auth side-effect; the SPA navigates the user to `/login` so they re-authenticate with the new password. Two reasons stack:
+
+1. **A stolen reset token must not become a stolen session.** Reset tokens are emailed (a different trust boundary than the password) and have a longer lifetime than a fresh login. Granting a session on reset means an attacker who reads the email gets a logged-in browser without ever knowing the password — defeating the point of also requiring the password to be set.
+2. **The user just proved they didn't know their old password.** Re-prompting them with the new one in a fresh login form is the cheapest way to confirm the reset worked end-to-end and to bind the session to a real password-entry event for the audit log.
+
+```python
+# FAIL — reset endpoint silently logs the user in
+@router.post("/reset")
+def reset_password(body: ResetIn, response: Response, db: Session = Depends(get_db)):
+    user = consume_reset_token(db, body.token)
+    update_password_hash(db, user, body.new_password)
+    session = create_session(db, user.id)
+    response.set_cookie("session", session.id, httponly=True, secure=True)  # ← bug
+    return {"ok": True}
+
+# PASS — reset endpoint is auth-effect-free
+@router.post("/reset")
+def reset_password(body: ResetIn, db: Session = Depends(get_db)):
+    user = consume_reset_token(db, body.token)
+    update_password_hash(db, user, body.new_password)
+    return Response(status_code=204)
+```
+
+```tsx
+// FAIL — frontend invalidates /me, which causes the now-stale session to refetch
+// the user and land them on the authenticated route.
+const completeReset = useMutation({
+  mutationFn: postReset,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }), // ← bug
+});
+
+// PASS — navigate to /login on success; no /me invalidation.
+const completeReset = useMutation({
+  mutationFn: postReset,
+  onSuccess: () => navigate("/login", { state: { from: "reset" } }),
+});
+```
+
+Pin this with an E2E spec that asserts both the URL (`expect(page).toHaveURL(/\/login/)`) and the absence of an auth cookie on the response. The pre-push hook's Playwright run executes the spec against the smoke stack — a reset that silently logs the user in flips that spec red before the push leaves the worktree.
+
 **Authorize before you act.** The auth check happens at the top of the handler, before the side effect.
 
 ```ts

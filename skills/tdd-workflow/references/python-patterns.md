@@ -155,6 +155,48 @@ class UserDTO:
 - Don't put behavior on DTOs beyond trivial derived properties.
 - Keep DTOs at boundaries; don't pass them deep into the domain layer if a richer type fits.
 
+### Alembic migrations — chain, test, and constrain in both directions
+
+Every Alembic revision MUST do all three:
+
+1. **Chain to the current head.** Run `uv run alembic heads` before authoring the revision; the new revision's `down_revision` must equal that head. The trap to avoid: hand-editing `down_revision` (or autogenerating against a stale local DB) so the chain branches, then pushing — `alembic upgrade head` in CI applies the OTHER branch and the new table never gets created. Pin this with a migration-runner test that calls `upgrade("head")` and asserts every new table exists:
+   ```python
+   def test_groups_migration_applies_groups_table(alembic_engine, alembic_runner):
+       alembic_runner.migrate_up_to("head")
+       inspector = sa.inspect(alembic_engine)
+       assert "groups" in inspector.get_table_names()
+   ```
+
+2. **Test every CHECK / UNIQUE / FK constraint in BOTH directions.** Positive-case ("a valid row inserts") is half the test; without the negative case the regex / partial index / cascade rule never actually gets exercised. PR #167's `currency_iso4217` CHECK constraint shipped a regex that accepted `"1A2"` because the only test was a positive case. The shape that catches the failure:
+   ```python
+   # tests/database/test_groups_migration.py
+   def test_groups_currency_accepts_alphabetic_iso4217(db_session: Session) -> None:
+       db_session.execute(insert(groups).values(name="x", currency="USD"))  # PASSES
+
+   def test_groups_currency_rejects_digits(db_session: Session) -> None:
+       with pytest.raises(IntegrityError):  # FAILS at the DB layer
+           db_session.execute(insert(groups).values(name="x", currency="1A2"))
+
+   def test_groups_currency_rejects_lowercase(db_session: Session) -> None:
+       with pytest.raises(IntegrityError):
+           db_session.execute(insert(groups).values(name="x", currency="usd"))
+   ```
+   Author the negative test(s) BEFORE the constraint regex / index expression — the negative test is what proves the constraint is doing work, and authoring it second makes it too easy to write a regex that happens to accept whatever the test feeds.
+
+3. **Round-trip with `pytest-alembic`.** The runner walks every revision both up AND down against a real Postgres (use the same image tag as production). `migrate_up_one` / `migrate_down_one` per revision catches the "irreversible migration" trap (drops a column without re-adding it on downgrade) and the "data-loss migration" trap (renames via DROP+CREATE without preserving data).
+
+The pre-push hook runs `uv run pytest`, so any migration test that's red blocks the push. The hook does NOT verify chain hygiene structurally — if no migration test exists for a new revision, the push goes out and CI catches it. Write the migration test in the same commit as the revision.
+
+### Banned APIs — bandit will block these
+
+- **`urllib.request.urlopen` (bandit B310 — Medium severity).** Use `http.client.HTTPSConnection` for stdlib-only callers, or `httpx` for anything that wants connection pooling / timeouts / async. B310 fires because `urlopen` historically accepted `file://` and `ftp://` URLs, which becomes an SSRF vector when the URL comes from user input.
+- **`subprocess.Popen(..., shell=True)` (B602).** Pass `shell=False` (the default) with a list of args; if you genuinely need shell expansion, document the safe-input invariant and add `# nosec B602`.
+- **`xml.etree.ElementTree` on untrusted XML (B314).** Use `defusedxml` for any XML you didn't author yourself.
+- **`yaml.load(...)` without a `Loader` (B506).** Use `yaml.safe_load(...)` — the no-Loader form executes arbitrary Python.
+- **`assert` for runtime invariants in production code (B101).** Asserts strip out under `python -O`; raise an exception instead. Asserts in test code are fine.
+
+The pre-push hook's `backend:security` step runs `uv run bandit -r .` — anything above LOW severity blocks the push.
+
 ### Context managers
 
 Any acquired resource — files, sockets, locks, DB sessions, temp dirs, subprocess handles — must be released via `with`. Author your own context managers with `contextlib.contextmanager` or `__enter__`/`__exit__` when wrapping a resource.
