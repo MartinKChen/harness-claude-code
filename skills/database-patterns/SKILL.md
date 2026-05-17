@@ -95,7 +95,7 @@ Base = declarative_base(metadata=metadata)
 
 ### Test migrations with `pytest-alembic`
 
-Every migration must be testable: it has to apply cleanly on an empty DB, and `upgrade → downgrade → upgrade` must round-trip.
+Every migration must be testable: it has to apply cleanly on an empty DB, and `upgrade → downgrade → upgrade` must round-trip. "Round-trips without crashing" is **not** a sufficient assertion — past reviews have repeatedly caught migrations whose downgrade left tables, indexes, or extensions behind, or whose ORM models diverged in name from the migration's DDL. The bar is post-state assertion, not just exit code.
 
 ```python
 # tests/test_migrations.py
@@ -108,8 +108,25 @@ def test_upgrade_downgrade_roundtrip(alembic_runner):
     alembic_runner.migrate_up_one()
 ```
 
+#### Required assertions for every migration
+
+1. **Upgrade adds every promised artifact, by name.** After `migrate_up_to("head")`, query `information_schema` (or use SQLAlchemy's `inspect()`) and assert that every column lands with the right type and nullability, and that every constraint and index lands with the **explicit name** from the naming convention (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`). An anonymous constraint that "happens to work" today drifts the moment the ORM regenerates a name on a different SQLAlchemy version. Name-by-name assertion catches that drift in one test.
+
+2. **Downgrade removes every artifact it added — including extensions.** After `migrate_down_one()`, re-query the schema and assert the table is gone, the constraints/indexes are gone, **and any extension the upgrade installed (`citext`, `uuid-ossp`, `pgcrypto`, etc.) is dropped too.** Leaving an extension behind is a silent rollback failure: the next `upgrade` re-runs `CREATE EXTENSION IF NOT EXISTS`, hiding the gap, while a clean-clone deploy in a different environment trips on the missing extension. The downgrade body must `op.execute("DROP EXTENSION IF EXISTS <name>")` for every extension the upgrade added, and the test must assert it's gone.
+
+3. **ORM model ↔ migration parity.** For each model that lands in this revision, assert (in the same test file or a sibling) that the constraints declared on the ORM model carry **the same explicit names** as the migration creates. The trap to avoid: an `__table_args__ = (UniqueConstraint("email"),)` on the model generates an anonymous constraint; the migration creates `uq_users_email`; reflection at runtime sees both and silently lives with the divergence until a downgrade or a `--autogenerate` run flags spurious drift. Always pass `name=` explicitly on the model side, matching the migration:
+   ```python
+   __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
+   ```
+
+4. **Don't pre-create extensions in `conftest.py` that the migration is supposed to install.** A common footgun: `tests/conftest.py` issues `CREATE EXTENSION IF NOT EXISTS citext` on the shared test DB so unrelated tests can compile, which masks a migration that forgot to install the extension itself. The migration's upgrade must own the extension lifecycle; the conftest must not pre-warm anything the migration claims to add. If a non-migration test genuinely needs an extension before the migration runs, install it in that test's own fixture scope and tear it down — never in a shared session-scope fixture.
+
+5. **Test isolation: every migration test owns its teardown.** A test that runs `migrate_up_to("head")` and exits without `migrate_down_to("base")` (or an equivalent transactional rollback wrapped by the `alembic_runner` fixture configuration) leaves the DB dirty for the next test, which then sees a half-broken state and either passes spuriously or fails on stale rows. Use `pytest-alembic`'s built-in transactional fixture, or add an explicit `migrate_down_to("base")` in a `finally`/teardown so each test starts from a known baseline.
+
+#### Round-trip and rollback hygiene
+
 - Run the suite locally before opening the PR — a migration that can't downgrade is a rollback hazard.
-- If a migration is genuinely irreversible (e.g. dropping a column with data), document why in the revision file and skip the roundtrip test explicitly rather than letting it silently fail.
+- If a migration is genuinely irreversible (e.g. dropping a column with data), document why in the revision file body, raise `NotImplementedError("irreversible: data loss")` in `downgrade()`, and mark the roundtrip test with `@pytest.mark.skip(reason="irreversible — see <revision>")` so the skip is visible in the test run instead of being silent.
 
 ### Migrations run as a dedicated compose service, not in the backend image's entrypoint
 

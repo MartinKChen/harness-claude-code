@@ -50,9 +50,104 @@ CMD ["nginx", "-g", "daemon off;"]
 - **Pinned tags, never `:latest`**: use immutable tags like `node:20.11.1-alpine`, `python:3.12.4-slim`, `nginx:1.27.0-alpine`. Prefer digest pinning (`@sha256:…`) for production base images.
 - **Vet base images with `docker scout` before pinning**: run `docker scout cves <image>:<tag>` (or `docker scout quickview`) on every candidate base image. Reject any image that has CVEs at severity `MEDIUM` or above without an available fix. If a vulnerability is flagged but a fixed version exists, switch to that fixed tag/digest instead of accepting the risk. Re-run scout when bumping the base image.
 - **Run as non-root**: create a dedicated user/group in `final` and end with `USER <name>`. Root in containers is a foot-gun.
+- **Non-root means every writable path is user-writable.** Adding `USER app` is not enough — the process still needs to write a PID file, cache, temp scratch, and (for nginx) `*.tmp` upload bodies. The defaults for most upstream images point those paths at root-owned locations (`/run/nginx.pid`, `/var/cache/nginx`, `/var/run/...`). The container will start, then die the first time it tries to write — usually with `[emerg] open() "/run/nginx.pid" failed (13: Permission denied)` or the language equivalent. Two fixes, applied together:
+  1. **Redirect every writable path to `/tmp/...`** (or another path the non-root user owns) via the server's config — for nginx, `pid /tmp/nginx.pid;` at the top of `nginx.conf`, plus `client_body_temp_path /tmp/client_body`, `proxy_temp_path /tmp/proxy`, `fastcgi_temp_path /tmp/fastcgi`, etc., when the corresponding feature is used.
+  2. **Recursive chown the application directory** in the build stage, BEFORE `USER`: `RUN chown -R app:app /usr/share/nginx/html`. Chown does NOT follow symlinks, so any path the runtime touches via a symlink (or under a directory the image vendor created as root) still needs explicit redirection in config — chown alone never fixes upstream defaults.
 - **No virtual environments inside images**: the container itself is the isolation boundary, so language-level venvs add layers, indirection, and PATH gymnastics for zero gain. Install Python deps directly into the system site-packages (e.g. `uv pip install --system -r requirements.txt`, `pip install --no-cache-dir -r requirements.txt`); do not create a `.venv` or use `uv venv` inside a Dockerfile. Same rule for any other ecosystem's per-project virtualenv tooling.
 - **`.dockerignore` is mandatory**: exclude `.git`, `node_modules`, `.env*`, `dist/`, `build/`, `coverage/`, `*.log`, IDE folders. Keeps the build context small and prevents secrets from leaking into the image.
 - **Layer ordering**: copy dependency manifests and install deps *before* copying source, so dep layers cache across source edits.
+
+### Backend entrypoint — run migrations before serving
+
+A backend image that owns its DB schema MUST run `alembic upgrade head` (or the framework equivalent: `prisma migrate deploy`, `rails db:migrate`, `python manage.py migrate`, `flyway migrate`) **before** exec'ing the server. The first slice that introduces a migration discovers this the hard way: the container starts, the first authenticated request hits the DB, and the response is `relation "users" does not exist`. Two parts must both land:
+
+1. **Copy the migration CLI into the final stage.** A common shape is to install dev deps in `build` and only the runtime deps in `final` — which means `alembic` (or `prisma`, etc.) is present in the build stage and *missing* in the runtime image. The entrypoint then fails with `command not found: alembic`. Either install the CLI into the final stage explicitly, or copy the migration tool's binary from the build stage:
+   ```dockerfile
+   # final stage
+   COPY --from=build /app/.venv /app/.venv
+   ENV PATH="/app/.venv/bin:${PATH}"
+   COPY alembic.ini ./
+   COPY alembic ./alembic
+   ```
+
+2. **Wire the migration call into the entrypoint, not the CMD.** The CMD is the *server*; migrations belong in the entrypoint so the server doesn't try to serve traffic against an unmigrated DB:
+   ```sh
+   #!/usr/bin/env sh
+   # docker-entrypoint.sh
+   set -e
+   alembic upgrade head
+   exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+   ```
+   ```dockerfile
+   COPY --chown=app:app docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+   RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+   USER app
+   ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+   CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+   ```
+   `exec` is mandatory in the last line so PID 1 is the server (not the shell) and SIGTERM is forwarded for graceful shutdown.
+
+The pre-push hook's `container:smoke-health` probe will catch a missing migration step — the `/health` endpoint can pass without DB, but anything that touches a table (signup, login, `/me`) will 500 the moment the smoke tests hit it.
+
+### Health endpoint — every backend exposes one
+
+Every backend container MUST expose an HTTP `/health` route that:
+- returns **200** on a normal boot,
+- requires **no authentication**,
+- does NOT touch the database, an external API, or any other slow / failable dependency,
+- returns within **<100ms** under no load.
+
+The `/health` route is what CI's "wait for backend to be ready" loop polls, what the pre-push hook smokes against, and what Kubernetes / ECS / Fly will use as a liveness probe. Without it the engineer agent has no way to assert "the container started cleanly" in any environment.
+
+```python
+# FastAPI
+@router.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+```
+
+A separate `/ready` (or `/readiness`) endpoint that *does* check the DB / external deps is fine — but it MUST be a different URL from `/health` so the liveness probe doesn't flap during routine dependency hiccups.
+
+### Frontend nginx — SPA fallback first, API proxy first
+
+A reverse-proxy nginx that fronts both a React/Vite SPA and a backend API needs two blocks, and they must be in the right order. The trap to avoid: putting `try_files $uri $uri/ /index.html;` at the top of the server block catches `/api/v1/auth/signup` too, and the backend POST gets `index.html` as its response body — every E2E test then fails because the SPA stayed on the form instead of navigating. The order that works:
+
+```nginx
+server {
+  listen 80;
+  server_name _;
+
+  # 1. Liveness — straight through, no auth, no proxy.
+  location = /health {
+    proxy_pass http://backend:8000/health;
+    proxy_set_header Host $host;
+  }
+
+  # 2. API — every backend path prefix gets an explicit proxy_pass BEFORE
+  #    the SPA catch-all. If you add a new prefix (e.g. /admin, /webhooks),
+  #    add a `location` block for it HERE, above try_files.
+  location /api/ {
+    proxy_pass http://backend:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # 3. SPA — every other request falls through to index.html so React
+  #    Router can take over. MUST be last; MUST include `$uri/` to handle
+  #    the case where the path is a directory.
+  root /usr/share/nginx/html;
+  index index.html;
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}
+```
+
+- **`try_files $uri $uri/ /index.html` is mandatory** for any SPA — without it, `/signup`, `/groups/123`, etc. all 404 because there's no `signup` file on disk.
+- **Every backend path prefix needs its own `location` block ABOVE the SPA fallback.** If a new backend route lives outside `/api/` (e.g. `/webhooks/stripe`, `/health`, `/auth/callback`), add a sibling `location` for it. Do NOT collapse them into a single `/` catch-all that conditionally proxies — order is easier to read and reason about.
+- The pre-push hook's `container:smoke-api-proxy` probe detects this exact misconfig by checking the `Content-Type` of the API probe response: if it's `text/html`, the SPA catch-all is intercepting the request.
 
 ### Secrets — runtime env vars, never baked in
 

@@ -231,6 +231,69 @@ Two properties this shape protects:
 
 `scaffold-project` does NOT add this knob — the auth feature task that first introduces session cookies owns adding the `SECURE_COOKIES` line to `.env.example`, the compose env block, and the `_secure_cookies()` helper.
 
+**Constant-time auth paths — no timing oracles.** Login, password-reset, and other "does this account exist?" flows must return in **the same amount of time** regardless of whether the account exists. The default trap: the handler short-circuits on `user is None` (a single index lookup, ~1ms) but runs `argon2id.verify(...)` (~50–200ms) when the user exists. The timing delta is a perfect enumeration oracle — an attacker iterates emails and reads "exists" vs "doesn't exist" from the response time alone, regardless of the response body. Two mitigations stack:
+
+1. **Always run the password verify**, even when the user doesn't exist, against a fixed sentinel hash. The verify call's `False` result is what becomes the `LoginError`, not the missing-user branch.
+   ```python
+   SENTINEL_HASH = "$argon2id$v=19$m=65536,t=3,p=4$..."  # generated once at startup
+
+   def login(email: str, password: str) -> Session:
+       user = users.find_by_email(email)
+       hashed = user.password_hash if user else SENTINEL_HASH
+       if not argon2.verify(hashed, password) or user is None:
+           raise LoginError()
+       # ... issue session ...
+   ```
+2. **Pin the floor with a regression test.** Measure the elapsed time of `login(known_email, wrong_password)` and `login(unknown_email, wrong_password)` and assert both are above a minimum (e.g. 50ms) and within a configured ratio of each other. The threshold lives in one place — never duplicate it between the docstring and the assertion; past reviews have caught "docstring says ≥50ms, assertion says ≥10ms" drift.
+
+Same shape applies to forgot-password: the response, the response time, and the response body must be identical on hit and miss.
+
+**Password-reset completion must NOT auto-login the user.** A successful `POST /reset` (or `/password/reset/confirm`, etc.) consumes the reset token and updates the password hash — and STOPS. It MUST NOT:
+
+- issue a session cookie (no `Set-Cookie: session=...` on the response),
+- return a session token in the body,
+- have the SPA call `invalidateQueries(['me'])` / re-fetch the current user / navigate to the authenticated landing page.
+
+The correct shape: the server returns 200 (or 204) with no auth side-effect; the SPA navigates the user to `/login` so they re-authenticate with the new password. Two reasons stack:
+
+1. **A stolen reset token must not become a stolen session.** Reset tokens are emailed (a different trust boundary than the password) and have a longer lifetime than a fresh login. Granting a session on reset means an attacker who reads the email gets a logged-in browser without ever knowing the password — defeating the point of also requiring the password to be set.
+2. **The user just proved they didn't know their old password.** Re-prompting them with the new one in a fresh login form is the cheapest way to confirm the reset worked end-to-end and to bind the session to a real password-entry event for the audit log.
+
+```python
+# FAIL — reset endpoint silently logs the user in
+@router.post("/reset")
+def reset_password(body: ResetIn, response: Response, db: Session = Depends(get_db)):
+    user = consume_reset_token(db, body.token)
+    update_password_hash(db, user, body.new_password)
+    session = create_session(db, user.id)
+    response.set_cookie("session", session.id, httponly=True, secure=True)  # ← bug
+    return {"ok": True}
+
+# PASS — reset endpoint is auth-effect-free
+@router.post("/reset")
+def reset_password(body: ResetIn, db: Session = Depends(get_db)):
+    user = consume_reset_token(db, body.token)
+    update_password_hash(db, user, body.new_password)
+    return Response(status_code=204)
+```
+
+```tsx
+// FAIL — frontend invalidates /me, which causes the now-stale session to refetch
+// the user and land them on the authenticated route.
+const completeReset = useMutation({
+  mutationFn: postReset,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["me"] }), // ← bug
+});
+
+// PASS — navigate to /login on success; no /me invalidation.
+const completeReset = useMutation({
+  mutationFn: postReset,
+  onSuccess: () => navigate("/login", { state: { from: "reset" } }),
+});
+```
+
+Pin this with an E2E spec that asserts both the URL (`expect(page).toHaveURL(/\/login/)`) and the absence of an auth cookie on the response. The pre-push hook's Playwright run executes the spec against the smoke stack — a reset that silently logs the user in flips that spec red before the push leaves the worktree.
+
 **Authorize before you act.** The auth check happens at the top of the handler, before the side effect.
 
 ```ts
@@ -418,9 +481,19 @@ catch (error) {
 }
 ```
 
+**Log a sensitive value at exactly one layer — never twice.** A common review finding: a token prefix logged in the service module *and* the router module, or a request ID minted by the middleware *and* re-stamped by the handler. Double-logging doubles the surface area for redaction bugs and confuses log-trace correlation. Pick one layer (usually the outermost where the value is still in scope) and log there only.
+
+**Structured-log redaction is a key-name match, not a value match.** `structlog` (and most structured loggers) redact by **field name**. Adding a new PII field requires adding its key to the project's redaction allow-list — and verifying the key the production code emits is **exactly** the key the redaction rule matches. The trap: code emits `logger.info("...", token=token_value)` but the redaction rule was written against `tokenHash` (camelCase) or `token_prefix` (different field), so the field is logged in the clear. `rg` the redaction rule's key list before pushing a new PII field, and confirm the emitted key is in it.
+
+**Request-ID middleware must be registered first** (and therefore run first on the outbound rejection path). FastAPI middleware runs in reverse-registration order on the response, so the request-id middleware must be the **last** `app.add_middleware(...)` call — otherwise a request rejected by a rate-limit or auth middleware registered later returns its 429 / 401 body with `request_id: None`, breaking support's ability to correlate the rejection. Pin this with an explicit order test that walks `app.user_middleware` and asserts the request-id middleware is at the top.
+
 Verification checklist:
 
 - [ ] No passwords, tokens, secrets, full PANs, CVVs, full SSNs, or session IDs in logs. PII is logged only when necessary, with a documented retention window.
+- [ ] No raw user-supplied email addresses in logs, even on auth failure paths — log a user_id when one exists, or a hashed/prefix-only identifier when one doesn't. Plaintext emails in logs leak PII to anyone who reads them and degrade the enumeration-prevention posture on `/login` and `/forgot-password`.
+- [ ] Sensitive values are logged at **one** layer (service OR router, never both). Double-logging doubles the redaction-failure surface.
+- [ ] Redaction allow-list key names match the keys the code emits exactly (case-sensitive, no abbreviations).
+- [ ] Request-ID middleware is registered last so it runs first on rejection paths; every 4xx / 5xx body carries a non-null `request_id`.
 - [ ] 5xx responses return a generic message + correlation ID. Stack traces and internal exception messages stay server-side.
 - [ ] 4xx responses say what the client did wrong without revealing schema/table/column names or whether a user/email exists (for auth flows, prefer "if an account exists, we sent an email").
 - [ ] Structured logger has a redaction list (cookie headers, `authorization`, `password`, `token`, `secret`, etc.).

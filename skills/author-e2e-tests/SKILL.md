@@ -107,6 +107,18 @@ This is the terminal action in implement mode. Exit after the label add lands �
 - **E2E tests start from the UI, always.** Every test case drives the browser through the frontend. Never author E2E tests that call backend HTTP endpoints directly. API-level coverage is the backend's integration-test responsibility. Using Playwright's `request` fixture purely as a setup/teardown shortcut (e.g. seeding a fixture user) is acceptable when unavoidable, but the assertions must be on UI state.
 - **Prefer semantic selectors.** Default to `getByRole`, `getByLabel`, `getByText`, `getByPlaceholder`. Reach for `data-testid` only when the DOM offers no stable accessible name, and note the justification in a one-line comment on that locator.
 - **Pin locators to a single node.** Every locator MUST resolve to exactly one element by construction — Playwright's strict mode treats multi-node matches as failures. The trap to avoid is broad chains like `page.getByRole('main').getByText(/copy/i)` that match a heading AND a paragraph (both descendants of `<main>`). Prefer the role of the single element you want (`getByRole('heading', { name: 'Copy' })`) over a text-only match inside a container. If multiple matches are unavoidable, terminate with `.first()` and a one-line comment justifying why "any of these" is the right semantics for the assertion.
+- **Every spec generates its own fixture identity — never a shared constant.** The smoke stack runs against a real Postgres that persists across tests within a run, so a spec that signs up with a hard-coded email (`alice@example.com`) will land on the *empty state* the first time it runs and on the *"already used"* error the second time — flaky-by-construction. Mint a unique identifier per test from `test.info()` so reruns and parallel workers don't collide:
+  ```ts
+  test("first signup lands on empty groups state", async ({ page }, testInfo) => {
+    const email = `signup-${testInfo.testId}-${Date.now()}@example.com`;
+    await page.goto("/signup");
+    await page.getByLabel(/email/i).fill(email);
+    // ...
+  });
+  ```
+  - `testInfo.testId` is unique per test invocation; `Date.now()` makes it unique across reruns of the same test against a long-lived DB. Use both.
+  - Use the same pattern for group names, expense descriptions, and anything else the spec inserts into the DB. The shared constant is fine ONLY for read-only fixture data that the spec doesn't mutate.
+  - When a spec asserts an empty-state ("no groups yet"), generate the fresh user inside that test — don't reuse a `beforeAll` user that previous specs already created groups under.
 - **Extend, don't fragment.** If the issue's test cases advance an existing critical-path flow (e.g. existing test covers `a→b→c`, new criterion covers `c→d`), extend the existing spec to `a→b→c→d`. Create a new file only when the flow is genuinely independent.
 - **Scope strictly to the issue's acceptance criteria.** The task issue body lists the test cases to write; the parent slice issue carries the matching Gherkin / EARS scenarios. Anything outside those is out of scope — skip it.
 - **Red is expected; broken is not.** A test that fails because the feature is unimplemented is correct output. A test that fails to *load* (syntax error, bad import, wrong locator API) is not. Smoke-run each new/edited spec once and confirm the failure is an assertion failure, not a parse/load/locator error, before committing.
