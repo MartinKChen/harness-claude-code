@@ -604,16 +604,20 @@ function Dialog({ open, onClose, children }: DialogProps) {
     }
   }, [open]);
 
-  return open ? (
-    <div ref={dialogRef} role="dialog" aria-modal="true" tabIndex={-1}>
+  // Prefer the native <dialog> element over role="dialog" on a generic
+  // container — Biome's lint/a11y/useSemanticElements blocks the latter.
+  return (
+    <dialog ref={dialogRef as React.RefObject<HTMLDialogElement>} open={open}>
       {children}
-    </div>
-  ) : null;
+    </dialog>
+  );
 }
 ```
 
 - On route change, move focus to the page's `<h1>` (or a skip-link target) so screen-reader users don't lose context.
 - Inside dialogs, drawers, and command palettes: trap focus, close on Escape, restore focus on close.
+- **Use the native semantic element, never `role="X"` on a generic tag.** Biome's `lint/a11y/useSemanticElements` blocks `<div role="dialog">`, `<form role="dialog">`, `<div role="button">`, `<div role="navigation">`, `<span role="heading">`, etc. — every one of those has a native HTML equivalent (`<dialog>`, `<button>`, `<nav>`, `<h1>`–`<h6>`) that ships with the right keyboard semantics, focus behavior, and screen-reader output for free. Reach for `role` only when no native element fits AND no parent component already provides the role (e.g. `role="tablist"` on a wrapper that contains real `<button>` tabs).
+- **Empty-state copy lives inside the semantic landmark E2E asserts against.** A page's empty state ("No groups yet — create one to get started") MUST render inside `<main>` so a Playwright spec can pin its assertion to `getByRole('main').getByRole('heading', { name: /no groups yet/i })`. Rendering it outside `<main>` (above the header, in a sidebar, in a floating overlay) breaks the role-scoped query without ever touching the user-visible UI, which is the worst kind of E2E flake — the test fails for a reason that looks unrelated to the change. Same rule applies to error states, loading skeletons, and "no results" panels: they all render inside the same landmark the loaded state would.
 
 ## Key principles
 
@@ -680,6 +684,7 @@ Style exclusively with Tailwind CSS classes that map to design tokens. **No** ha
 - Prefer `type` for unions/intersections, `interface` for object shapes you intend others to extend.
 - Use discriminated unions (`{ status: "success"; data: T } | { status: "error"; error: Error }`) instead of optional fields that "go together."
 - Type props explicitly — `function Component(props: Props)` — don't rely on inference for the public API.
+- **Don't hand-order imports.** Biome's `organizeImports` owns the order — it groups by source (stdlib → third-party → `@/...` aliases → relative), then sorts within each group. Manually reordering imports (in particular: putting `@/components/Foo` before `react` because "the local thing matters more here") fights the formatter and trips `lint/correctness/organizeImports` in CI. Run `npx biome check --write .` after any non-trivial set of edits so the import block is in the shape the formatter expects before commit.
 - **`compilerOptions.types` must include `@testing-library/jest-dom` (or the testing-library matcher package the project uses).** Without it, matchers like `toBeInTheDocument()` and `toHaveValue()` compile but produce `tsc --noEmit` errors that block the frontend Docker build — and the failure surfaces as "image build broken" in the security review, not "missing types" in the code review. Land the `types` entry alongside the first test file that uses jest-dom matchers, in the same commit as the matcher import or one chore-scoped commit before it. Same rule for `vitest/globals` if the project uses Vitest with globals enabled.
 
 ## Command
