@@ -279,6 +279,51 @@ When a "logging change" turns out to be a Collector-config change (redaction, ad
 
 Tail-sampling only works correctly when **all spans of a trace** land on the same Collector instance — that's why the gateway layer typically has session-affinity routing (`trace_id`-hashed). A naïve round-robin gateway loses traces.
 
+#### Deployment boundary — observability is a separate stack in production
+
+The Collector-placement table above is about *where the Collector runs*. This is about *where the observability backends* (Tempo, Loki, Prometheus/Mimir, Grafana, Alertmanager) run relative to the app. The rule:
+
+- **Production: separate stack.** Different cluster / different cloud account / different VPC from the app — whichever isolation boundary is the strongest one your platform offers.
+- **Local dev and CI: one stack.** `docker-compose.yaml` with the app + Collector + a backend stub (or just the Collector's `debug` exporter) is correct — Compose exists to make the whole thing bootable in one command.
+
+```
+[ App stack — owned by `architect` + feature engineers ]   [ Observability stack — owned by `sre` ]
+  service A ─┐                                                Collector gateway (3–5 replicas,
+  service B ─┼─ OTLP ─► Collector agents ───── OTLP ────────► trace_id-hashed affinity)
+  service C ─┘            (DaemonSet/sidecar)                         │
+                                                                      ├──► Tempo   (traces)
+                                                                      ├──► Mimir/Prom (metrics)
+                                                                      ├──► Loki    (logs)
+                                                                      └──► Grafana + Alertmanager
+```
+
+The only wire across the boundary is **OTLP outbound from the app side**. The observability side never reaches back into the app side — no Prometheus scraping app endpoints across the boundary, no shared databases, no shared service accounts.
+
+**Why separate in production:**
+
+| Reason | What breaks when they share a stack |
+|--------|--------------------------------------|
+| **Blast radius** | When the app cluster falls over, you lose the dashboards and traces that explain *why* — at the exact moment you need them. The canonical postmortem. |
+| **Resource isolation** | Prometheus eats RAM, Loki eats disk, Tempo eats object-store IO. Co-located with latency-sensitive app workloads → noisy-neighbor problems on CPU / memory / disk / network. |
+| **Lifecycle** | Observability infra changes monthly once stable; the app changes daily. Coupling makes every Grafana upgrade a release gate on the app. |
+| **Multi-tenant fan-in** | One observability stack should serve every service in every environment. Per-app stacks → N independent backends, no unified dashboards, quadratic operational cost. |
+| **Security + compliance** | Logs and metrics carry regulatory retention rules (90 days / 1 year / 7 years), different SSO/IAM groups, different network perimeter. Sharing a stack means one boundary has to satisfy both rule-sets. |
+
+**When one stack is acceptable:**
+
+- **Local dev.** The Compose file from `scaffold-project` is the right place for the Collector and any local backend stub. Dev ergonomics > deployment hygiene at this layer.
+- **CI.** Same as dev — E2E smoke tests bring up the whole thing in one Compose, assert spans/metrics reach the in-network Collector, tear down.
+- **Earliest greenfield.** One app, one team, low traffic, no compliance constraints — namespaced co-location in a single cluster is fine. The blast-radius cost exists but is not fatal yet.
+
+**Triggers to split** (any one of these means it's time):
+
+- The first "we lost visibility during an incident because the same outage took down observability" postmortem.
+- The first regulated data class (PII, payment data, health data) the logs / traces could contain.
+- The second team or environment that wants to consume the same dashboards.
+- Traffic high enough that observability-backend resource contention shows up in app p95 latency.
+
+**Managed shortcut.** Using Grafana Cloud / Datadog / Honeycomb / New Relic / Splunk Observability is "separate stack" by construction — the backend runs in the vendor's account, the app side only knows the Collector gateway endpoint. The decision becomes *managed vs self-host*, and managed is the right default for teams under ~50 engineers. Either way, the app stack is unchanged: it speaks OTLP to a gateway and doesn't know what's on the other side.
+
 #### Dev-mode story — no Collector required to boot
 
 The SDK bootstrap MUST not crash when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (invariant in the *Command* section at the bottom of this doc). Two viable local setups:
@@ -288,9 +333,16 @@ The SDK bootstrap MUST not crash when `OTEL_EXPORTER_OTLP_ENDPOINT` is unset (in
 
 CI runs typically use the first option so E2E smoke tests can assert that spans / metrics / logs reach the in-Compose Collector (and through it, an in-Compose backend stub if the test cares).
 
-#### Ownership — which lane edits this
+#### Ownership — which lane edits what
 
-The Collector deployment (manifest, config, scaling, alerts on its own self-telemetry) belongs to the **`sre` agent** — same lane as CI/CD and other shared infra. When a feature task needs a new backend, a redaction rule added, a sampling-percentage change, or a new processor, that's a change request to the Collector config, **not** an edit to `src/`. Application engineers own the SDK bootstrap and the spans/metrics/logs they emit; the Collector is downstream.
+| Surface | Owner | Examples |
+|---------|-------|----------|
+| **App-side SDK bootstrap + emitted spans/metrics/logs** | `architect` (initial scaffold) + feature engineers (the signals their code emits) | `observability.py` / `observability.ts` bootstrap; business spans like `payments.charge_card`; route-level histograms |
+| **App-stack Compose Collector** (dev / CI only) | `architect` via `scaffold-project` | The Collector service in the project's `docker-compose.yaml` |
+| **Production Collector deployment** (gateway + agents) | `sre` | Helm/manifest, scaling, autoscaler, alerts on `otelcol_processor_dropped_*` |
+| **Production observability backends** (Tempo / Mimir / Loki / Grafana, or the wire-up to a managed vendor) | `sre` | Backend deploys, retention policy, IAM, on-call dashboards |
+
+When a feature task needs a new backend, a redaction rule added, a sampling-percentage change, or a new processor, that's a change request against the Collector config in the `sre` lane — **not** an edit to `src/`. Application engineers own what their code emits; the Collector and the backends are downstream.
 
 ### 8. SLOs and alerts — derive from metrics, not logs
 
