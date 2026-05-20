@@ -1,0 +1,153 @@
+# Per-entity data contract — Open Data Contract Standard (ODCS) v3.1.
+# Repo-wide: one file per persistence entity under `docs/data-model/`. Not feature-bounded — features
+# that touch this entity reference it from their `implement-detail.md`.
+#
+# Spec reference: https://bitol-io.github.io/open-data-contract-standard/v3.1.0/
+# Full example:    https://bitol-io.github.io/open-data-contract-standard/v3.1.0/examples/all/full-example/
+#
+# Conventions:
+#   - One file per persistence entity (table, collection, or aggregate root).
+#   - `schema[].physicalName` is plural-noun, snake_case (e.g. `order_items`).
+#   - Column / property names are descriptive snake_case.
+#   - Constraint / index identifiers use the `pk_ / fk_ / idx_ / uq_ / vw_` prefixes.
+#   - Code-first: this contract describes the schema the application's model layer is the source of
+#     truth for. Migrations are generated from the model, never the reverse.
+apiVersion: v3.0.2
+kind: DataContract
+
+id: <entity-name>
+name: <Entity Name>
+version: 0.1.0
+status: draft
+
+domain: <bounded-context / domain>
+tenant: <tenant-or-team>
+
+description:
+  purpose: |
+    <1-2 sentences: what this entity represents in the domain and why it exists.>
+  usage: |
+    <How downstream consumers use it. Who reads, who writes.>
+  limitations: |
+    <Known limits — retention, granularity, eventual consistency, etc.>
+
+tags:
+  - <domain>
+
+# Logical schema. ODCS allows multiple logical objects per contract, but per this skill's
+# convention we keep one entity per file — extra objects belong in their own data-model file.
+schema:
+  - name: <entity_name>
+    physicalName: <plural_snake_case>          # e.g. `order_items`
+    physicalType: table                        # or `view`, `collection`, etc.
+    description: <one-line role of this entity in the feature>
+
+    # Primary key columns — kept in sync with the `pk_<entity>` constraint below.
+    primaryKey:
+      - id
+
+    properties:
+      - name: id
+        logicalType: string
+        physicalType: uuid
+        required: true
+        unique: true
+        primaryKey: true
+        description: Surrogate primary key.
+
+      # Repeat for each column:
+      # - name: <descriptive_snake_case>
+      #   logicalType: <string | integer | number | boolean | date | timestamp | object | array>
+      #   physicalType: <db-specific type, e.g. text / varchar(255) / bigint / numeric(12,2) / timestamptz>
+      #   required: <true | false>
+      #   unique:   <true | false>
+      #   description: <one-line note>
+      #   classification: <public | internal | confidential | pii>     # security tagging when applicable
+      #   examples: ["<example value>"]
+
+      - name: created_at
+        logicalType: timestamp
+        physicalType: timestamptz
+        required: true
+        description: Row creation timestamp (UTC).
+
+      - name: updated_at
+        logicalType: timestamp
+        physicalType: timestamptz
+        required: true
+        description: Last-modification timestamp (UTC). Updated by application or trigger.
+
+    # Quality rules — invariants the application or database must enforce. ODCS treats these as
+    # first-class contract clauses; downstream tooling can wire them into test suites.
+    quality:
+      - name: <descriptive-rule-name>
+        type: businessRule
+        severity: error
+        description: <invariant — e.g. "exactly one row per (user_id, day) pair">
+        rule: |
+          <plain-language predicate, or SQL fragment / expression that evaluates the rule>
+
+    # Indexes and constraints. ODCS doesn't strictly require this section, but we capture it so
+    # the generated migration matches the contract one-to-one. Names follow the
+    # `pk_ / fk_ / idx_ / uq_` prefixes from `database-patterns`.
+    customProperties:
+      - property: constraints
+        value:
+          - name: pk_<entity_name>
+            type: primaryKey
+            columns: [id]
+          - name: uq_<entity_name>_<columns>
+            type: unique
+            columns: [<column>]
+            description: <why this uniqueness rule>
+          - name: fk_<entity_name>_<referenced>
+            type: foreignKey
+            columns: [<column>]
+            references:
+              table:   <other_table>
+              columns: [id]
+            onDelete: CASCADE          # or RESTRICT / SET NULL
+            onUpdate: CASCADE          # or RESTRICT
+            description: <why this rule>
+          - name: idx_<entity_name>_<columns>
+            type: index
+            indexType: btree           # or hash / gin / unique
+            columns: [<col_a>, <col_b>]
+            description: <query pattern this serves>
+
+      - property: migrations
+        value: |
+          <New table? Altering an existing one? Backfill required? State the migration order and
+           any zero-downtime concerns. If this entity already exists and is unchanged, write
+           "No migration — entity already exists.">
+
+# Servers / physical placement. The architecture-context section of CLAUDE.md and the relevant
+# ADR identify the canonical datastore for this entity.
+servers:
+  - server: <env-name>           # e.g. `primary-postgres`
+    type: postgresql              # or mysql / mongodb / dynamodb / redis / etc.
+    description: <which logical environment this points to>
+    database: <db-name>
+    schema: <schema-name>
+
+# Ownership and support. Filled in when known; an architecture lockin may leave these as TODO and
+# the implementing team's PR fills them.
+team:
+  - username: <owning-team-or-codeowner>
+    role: owner
+
+support:
+  - channel: <slack-channel-or-mailing-list>
+    tool: <slack | email | github>
+
+slaProperties:
+  - property: latency
+    value: <e.g. "p99 read < 50ms">
+  - property: availability
+    value: <e.g. "99.9% monthly">
+
+# Free-form notes that don't belong in any other ODCS section.
+customProperties:
+  - property: openQuestions
+    value: |
+      <Anything unresolved about this entity. Empty is fine.>
