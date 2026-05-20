@@ -1,11 +1,11 @@
 ---
-name: prepare-slice-pr
-description: "Prepare a draft slice PR for a single GitHub slice issue (`level:slice` + `kind:feature` + `status:in-progress` + `status:prepare-pr`) dispatched by `create-draft-pr`. Read the slice body, resolve the slice branch and its closed task sub-issue numbers, materialize the slice-scoped worktree, load the always-on security context and the full fullstack pattern set, merge the latest `origin/main` into the slice branch (resolving any conflicts by union and finalizing with a merge commit — bail to `status:need-attention` if union resolution would require scope expansion), then identify every E2E spec that was created or modified on the slice branch since `origin/main`, run those specs against the slice's runtime, triage each failure as production-code bug (drive the fix via TDD with `rg`-driven pattern propagation, commit, re-run) or E2E-spec bug (stop and flip the slice to `status:need-attention`, dropping `status:prepare-pr`, with a diagnostic comment). Once every E2E spec is green, compose the PR body from `templates/pr-body.md` (with `Closes #<slice-#>` first, then `Closes #<task-#>` for every closed task sub-issue), push the slice branch, open the draft PR with the slice's milestone, and remove `status:prepare-pr` from the slice. Activate when the dispatch prompt opens with `Prepare draft PR for slice issue #<n>`, or when the user types phrases like 'prepare the draft PR for slice #<n>', '/prepare-slice-pr'. Do NOT activate to implement task work (use `implement-feature-task`), to fix CI / merge-conflict on an open PR (use `fix-pr-blockers`), to address reviewer findings on a task (use `fix-task-feedback`), or to author E2E specs from scratch (use `author-e2e-tests`)."
+name: workflow-orchestrator-prepare-slice-pr
+description: "Prepare a draft slice PR for one `status:prepare-pr` slice (dispatched by `workflow-orchestrator-create-draft-pr`). Merge `origin/main` in (union on conflicts), run touched E2E specs, fix prod bugs via TDD, push, open the PR, drop `status:prepare-pr`. Bail to `status:need-attention` on scope-expanding conflicts or E2E-spec bugs. Activate on `Prepare draft PR for slice issue #<n>` / '/workflow-orchestrator-prepare-slice-pr'. Skip for tasks, PR fixes, E2E authoring."
 ---
 
-# prepare-slice-pr
+# workflow-orchestrator-prepare-slice-pr
 
-Prepare the draft slice PR for a single slice issue dispatched by `create-draft-pr`. The orchestrator added `status:prepare-pr` to the slice as a lock; this skill removes that label as part of its terminal action — either by opening the draft PR (success path) or by flipping the slice to `status:need-attention` (E2E-spec needs human editing).
+Prepare the draft slice PR for a single slice issue dispatched by `workflow-orchestrator-create-draft-pr`. The orchestrator added `status:prepare-pr` to the slice as a lock; this skill removes that label as part of its terminal action — either by opening the draft PR (success path) or by flipping the slice to `status:need-attention` (E2E-spec needs human editing).
 
 This is the engineer's only mode that performs **production-code fixes driven by E2E test failures rather than reviewer findings or CI logs**, and the only engineer mode that **creates** a PR (every other mode operates on a slice branch whose PR either already exists or is created later).
 
@@ -14,14 +14,14 @@ This is the engineer's only mode that performs **production-code fixes driven by
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Prepare draft PR for slice issue #<n>` and the slice carries `level:slice` + `kind:feature` + `status:in-progress` + `status:prepare-pr` (the orchestrator added the prepare-pr label as its lock before dispatching).
-- The user types `/prepare-slice-pr`, or phrases like 'prepare the draft PR for slice #<n>', 'run the slice E2E and open the PR', 'verify the slice's E2E and create the draft PR'.
+- The user types `/workflow-orchestrator-prepare-slice-pr`, or phrases like 'prepare the draft PR for slice #<n>', 'run the slice E2E and open the PR', 'verify the slice's E2E and create the draft PR'.
 
 Do NOT activate when:
 
-- The task is a `level:task` issue — use `implement-feature-task` (backend/frontend) or `author-e2e-tests` (e2e).
-- The unit of work is an open PR (`conflict` / `ci`) — use `fix-pr-blockers`.
+- The task is a `level:task` issue — use `workflow-engineer-implement-task` (backend/frontend) or `workflow-e2e-author` (e2e).
+- The unit of work is an open PR (`conflict` / `ci`) — use `workflow-engineer-fix-pr`.
 - The slice is missing `status:prepare-pr` — the orchestrator did not pick this slice for prep; do not race the orchestrator by self-flipping the label.
-- The slice's task sub-issues are not all closed yet — `create-draft-pr` is the only place that may dispatch this skill, and it only dispatches once every sub-issue is closed.
+- The slice's task sub-issues are not all closed yet — `workflow-orchestrator-create-draft-pr` is the only place that may dispatch this skill, and it only dispatches once every sub-issue is closed.
 
 ## References
 
@@ -54,7 +54,7 @@ Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via 
 
 ## Workflow
 
-Inputs from the orchestrator: a slice issue number. The orchestrator (`create-draft-pr`) already labeled the slice with `status:prepare-pr` as its lock and confirmed every task sub-issue is closed and no PR exists on the slice branch — do not re-check those pre-conditions. Everything else (slice branch, milestone, task sub-issue numbers, touched E2E specs, runtime command, conflicts surfaced by merging `origin/main` into the slice branch) you discover yourself.
+Inputs from the orchestrator: a slice issue number. The orchestrator (`workflow-orchestrator-create-draft-pr`) already labeled the slice with `status:prepare-pr` as its lock and confirmed every task sub-issue is closed and no PR exists on the slice branch — do not re-check those pre-conditions. Everything else (slice branch, milestone, task sub-issue numbers, touched E2E specs, runtime command, conflicts surfaced by merging `origin/main` into the slice branch) you discover yourself.
 
 ### 1. Fetch the slice body, resolve the slice branch, and gather closed task sub-issues
 
@@ -97,7 +97,7 @@ A failing E2E spec can point at a bug in any layer of the slice. Instruct `tdd-w
 Before running any E2E specs, merge the latest `origin/main` into the slice branch. Two reasons:
 
 - E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree because of changes that landed on `main` while the slice was in flight — discovering that here is cheaper than discovering it after CI runs on an opened PR.
-- The PR opened in step 8 will already include `main`'s latest commits, eliminating a `conflict` round-trip via `fix-pr-blockers`.
+- The PR opened in step 8 will already include `main`'s latest commits, eliminating a `conflict` round-trip via `workflow-engineer-fix-pr`.
 
 Merge (not rebase) is the intentional choice: it preserves the slice branch's commit history as-authored, avoids rewriting any commit the task sub-issues already reference by SHA, and lets the push in step 8 be a plain forward push — no force flag needed. When `main` hasn't diverged from the slice's base, `git merge` fast-forwards and produces no merge commit; when it has, exactly one merge commit lands at the tip of the slice branch.
 
@@ -197,13 +197,13 @@ bash scripts/mark-slice-need-attention.sh <slice-#> "${comment_file}"
 rm -f "${comment_file}"
 ```
 
-The script removes `status:prepare-pr` from the slice, adds `status:need-attention`, and posts the comment. Stop immediately after the script returns — do not push any partial fixes, do not open a PR, do not loop. If the bail was triggered by a merge that halted on conflict, leave the local worktree mid-merge — never push the half-merged state; the worktree will be hard-reset to `origin/<slice-branch>` on the next dispatch via `setup-worktree.sh`. The user reviews the diagnostic and either rewrites the spec(s), resolves the divergence themselves, or pushes a fix, then clears `status:need-attention` so `create-draft-pr` can re-pick the slice on the next fire.
+The script removes `status:prepare-pr` from the slice, adds `status:need-attention`, and posts the comment. Stop immediately after the script returns — do not push any partial fixes, do not open a PR, do not loop. If the bail was triggered by a merge that halted on conflict, leave the local worktree mid-merge — never push the half-merged state; the worktree will be hard-reset to `origin/<slice-branch>` on the next dispatch via `setup-worktree.sh`. The user reviews the diagnostic and either rewrites the spec(s), resolves the divergence themselves, or pushes a fix, then clears `status:need-attention` so `workflow-orchestrator-create-draft-pr` can re-pick the slice on the next fire.
 
 ### 7. Compose the PR body
 
 Reached only when every touched E2E spec is green (or the slice had no touched specs and step 6 was a no-op). Start from `templates/pr-body.md`, which ships the standard PR-body sections (What / Why / How / Testing / Screenshots / Checklist) plus a trailing linked-issues block with three placeholders: `<slice-#>`, `<task-#-1>` … `<task-#-N>`.
 
-Order in the trailing block is load-bearing: **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body** so `close-pr`'s `closingIssuesReferences[0]` reads the slice issue (and not a task) when it later strips `status:in-progress` and closes the slice.
+Order in the trailing block is load-bearing: **`Closes #<slice-#>` MUST be the first closing-keyword reference in the body** so `workflow-orchestrator-close-pr`'s `closingIssuesReferences[0]` reads the slice issue (and not a task) when it later strips `status:in-progress` and closes the slice.
 
 Using `Closes` (not `Refs`) for tasks is safe — every task sub-issue is already closed by the time this skill fires; the closing keyword is a no-op for them at merge time but is what populates the PR's Linked Issues / Development sidebar.
 
@@ -242,14 +242,14 @@ rm -f "${body_file}"
 
 The script does a plain `git push` of the slice branch — the merge in step 5 preserved history, so the push is a strict fast-forward over `origin/<slice-branch>` and no force flag is needed. The pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 6b if any hook denies; never skip hooks. The script then opens the draft PR with the body file and milestone, and removes `status:prepare-pr` from the slice issue.
 
-This is the terminal success action. Exit after the script returns — do not flip the PR to ready-to-review (that's `close-pr`'s lane), do not touch any `review:*` label, do not comment further, do not loop.
+This is the terminal success action. Exit after the script returns — do not flip the PR to ready-to-review (that's `workflow-orchestrator-close-pr`'s lane), do not touch any `review:*` label, do not comment further, do not loop.
 
 If `gh pr create` inside the script fails because a PR already raced into existence on the branch (`422 "A pull request already exists"`), surface as benign — also remove `status:prepare-pr` from the slice (the slice no longer needs prep) and exit; the orchestrator's `find-existing-pr.sh` pre-check filters this out, so a race here means a sibling fire opened the PR while this engineer was running.
 
 ## Iron rules
 
-- **`status:prepare-pr` is the lock — the engineer removes it on every terminal path.** Either step 8's success path (push + open PR + remove label) or step 6c's bail path (remove label + add `status:need-attention`) clears it. Leaving `status:prepare-pr` on a slice after exit would prevent `create-draft-pr` from ever re-picking it.
-- **Merge `origin/main` into the slice branch BEFORE running E2E specs (step 5) — never rebase.** E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree; opening a PR on an up-to-date branch also eliminates a `conflict` round-trip via `fix-pr-blockers`. Merge (not rebase) preserves the slice branch's commit history as-authored, leaves task-sub-issue commit SHAs stable, and keeps the step 8 push as a plain fast-forward. Resolve every conflicting hunk by **union** — never blindly take one side — then `git add` and `git commit --no-edit` to finalize the merge. If union resolution would require scope expansion, `git merge --abort` and route to step 6c with a merge-conflict diagnostic; the user resolves the divergence and re-dispatches.
+- **`status:prepare-pr` is the lock — the engineer removes it on every terminal path.** Either step 8's success path (push + open PR + remove label) or step 6c's bail path (remove label + add `status:need-attention`) clears it. Leaving `status:prepare-pr` on a slice after exit would prevent `workflow-orchestrator-create-draft-pr` from ever re-picking it.
+- **Merge `origin/main` into the slice branch BEFORE running E2E specs (step 5) — never rebase.** E2E specs running against a stale base can pass on the slice tree yet fail on the merged tree; opening a PR on an up-to-date branch also eliminates a `conflict` round-trip via `workflow-engineer-fix-pr`. Merge (not rebase) preserves the slice branch's commit history as-authored, leaves task-sub-issue commit SHAs stable, and keeps the step 8 push as a plain fast-forward. Resolve every conflicting hunk by **union** — never blindly take one side — then `git add` and `git commit --no-edit` to finalize the merge. If union resolution would require scope expansion, `git merge --abort` and route to step 6c with a merge-conflict diagnostic; the user resolves the divergence and re-dispatches.
 - **No force-style push is permitted in this skill — step 8 uses a plain `git push`.** Because step 5 merges (rather than rebases) `origin/main` into the slice branch, the slice branch's history is never rewritten and the push is always a strict fast-forward over `origin/<slice-branch>`. Anywhere else, never force-push and never skip hooks.
 - **Failing E2E specs are the contract for production-code fixes — never duplicate the demand in a unit test.** The spec IS the RED test; the production change is what takes it to GREEN. A separate unit test for the same behavior locks the demand in twice and creates conflicting GREEN cycles.
 - **Bail the whole run on the first E2E-spec bug — do not partially fix production code.** A mixed exit (some production fixes committed, slice flipped to need-attention) leaves the slice branch with a non-green suite and forces the next dispatch to either revert or re-triage. Step 6a triages first, then step 6b or 6c runs — never both.
@@ -257,11 +257,11 @@ If `gh pr create` inside the script fails because a PR already raced into existe
 - **Always fullstack — load every language reference upfront.** A failing E2E spec or a merge conflict can point at any layer; loading all four references upfront prevents a second round-trip.
 - **Treat each production-code fix as a *class* of issue, not a single instance — propagate via `rg`.** A failing spec exercises one site; the bug usually lives at every equivalent site. The same rule applies to patterns brought in by the step 5 merge: when `main` ships a new helper / renamed import / new validation hook, `rg` the slice's touched files for clearly equivalent sites still on the old pattern and bring them onto the new one. Each additional site gets its own RED → GREEN. List the additional sites in the commit body. Only skip propagation when a search confirms isolation. This is not license to expand into unrelated refactors.
 - **Re-run the full touched-spec set after every commit.** A fix can regress a previously-passing spec; finding that out after the PR opens wastes a review cycle.
-- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `implement-feature-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string` pair, verify immediately after each Edit before issuing the next one on the same file.
+- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `workflow-engineer-implement-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string` pair, verify immediately after each Edit before issuing the next one on the same file.
 - **Container setup is a pre-push gate.** Run the two-part audit (presence + drift) before push; the pre-push hook enforces presence.
 - **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads.
-- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `implement-feature-task`.
-- **`Closes #<slice-#>` MUST be the first closing-keyword reference in the PR body.** `close-pr` reads `closingIssuesReferences[0]` to find the slice issue it strips `status:in-progress` from. Putting a task ahead of the slice would point `close-pr` at the wrong issue.
+- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `workflow-engineer-implement-task`.
+- **`Closes #<slice-#>` MUST be the first closing-keyword reference in the PR body.** `workflow-orchestrator-close-pr` reads `closingIssuesReferences[0]` to find the slice issue it strips `status:in-progress` from. Putting a task ahead of the slice would point `workflow-orchestrator-close-pr` at the wrong issue.
 - **Milestone inherits from the slice issue.** If the slice has no milestone, open the PR without one — never fabricate.
 - **Commit on the cadence prescribed by `tdd-workflow` and format every commit per `templates/commit-messages.md`.** Never skip hooks.
-- **Stop and exit after the terminal action.** Do not flip the PR to ready-to-review (that's `close-pr`), do not touch `review:*` labels (those live on tasks), do not comment further, do not loop.
+- **Stop and exit after the terminal action.** Do not flip the PR to ready-to-review (that's `workflow-orchestrator-close-pr`), do not touch `review:*` labels (those live on tasks), do not comment further, do not loop.

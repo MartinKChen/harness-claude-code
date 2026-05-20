@@ -1,9 +1,9 @@
 ---
-name: review-task-issue
-description: "Find every open `level:task` + `kind:feature` + `status:in-progress` task carrying a `review:code-pending` or `review:security-pending` label, flip the pending gate(s) to `-running`, and dispatch the matching one-shot reviewer sub-agent (`review:code-running` → `code-reviewer`, `review:security-running` → `security-reviewer`). Reviews are scoped to the task issue itself, not the slice PR. Activate on phrases like 'review the task issues', 'pick up pending reviews', 'kick off code/security review', '/review-task-issue', or whenever the orchestrator needs to fan out reviewer agents against task issues whose review gates are pending. Do NOT activate to review a slice PR — `review:*` labels live on task issues now."
+name: workflow-orchestrator-review-task-issue
+description: "Find every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-pending`/`review:security-pending`, flip the gate(s) to `-running`, and dispatch the reviewer (`code-running`→`code-reviewer`, `security-running`→`security-reviewer`). Reviews are scoped to the task, not the slice PR. Activate on 'review the task issues', 'kick off code/security review', '/workflow-orchestrator-review-task-issue'. Skip for slice-PR review."
 ---
 
-# review-task-issue
+# workflow-orchestrator-review-task-issue
 
 Scan task issues that have finished implementation and are waiting on review, lock each pending gate by flipping `review:<gate>-pending` → `review:<gate>-running` so concurrent fires don't double-pick the same gate, then dispatch the matching reviewer sub-agent. Handles the **code** and **security** gates only — the e2e gate has been retired from the label scheme (`review:e2e-*` is no longer used); the slice PR's GitHub Actions workflow check is the e2e signal.
 
@@ -13,7 +13,7 @@ The skill never checks out, edits, or pushes to any branch; the dispatched sub-a
 
 Activate this skill whenever the user:
 
-- Types `/review-task-issue` (with or without a numeric cap argument).
+- Types `/workflow-orchestrator-review-task-issue` (with or without a numeric cap argument).
 - Asks to "pick up reviews", "dispatch reviewers", "review pending task issues", or "kick off code/security review on task issues".
 - Wants to fan out `code-reviewer` / `security-reviewer` sub-agents against every open task issue carrying a `review:*-pending` label.
 

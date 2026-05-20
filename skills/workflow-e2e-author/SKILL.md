@@ -1,9 +1,9 @@
 ---
-name: author-e2e-tests
-description: "Author Playwright E2E test cases for a single GitHub task issue (`type:e2e`) in implement mode. Resolve the parent slice issue, fetch the slice branch attached to that parent, set up (or reuse) a slice-scoped worktree rebased onto `origin/main`, translate the task's test cases into Playwright specs that drive the UI through the critical path with semantic selectors, smoke-run each touched spec to confirm it reaches a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and flip `review:code-pending` onto the task issue so `review-task-issue` dispatches the `code-reviewer`. Activate when the dispatch prompt opens with `Implement GitHub task issue #<n>` and the issue carries `type:e2e`, or when the user types phrases like 'author E2E tests for #<n>', 'write the E2E specs for this task', '/author-e2e-tests'. Do NOT activate to address reviewer findings on a `type:e2e` task (use `fix-e2e-tests`), to author E2E tests outside the slice-task lifecycle, or to author production code (that is `engineer`'s lane via `implement-feature-task`)."
+name: workflow-e2e-author
+description: "Author Playwright E2E tests for a single `type:e2e` GitHub task on the parent slice branch — translate the task's test cases into specs, smoke-run, commit, push, and add `review:code-pending` so `workflow-orchestrator-review-task-issue` dispatches the reviewer. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:e2e` issue, or on '/workflow-e2e-author'. Skip for fixing reviewer findings (`workflow-e2e-fix`) or production code (`workflow-engineer-implement-task`)."
 ---
 
-# author-e2e-tests
+# workflow-e2e-author
 
 Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is owned outside this lane — the push updates the remote slice branch and the label flip is enough to trigger `code-reviewer`.
 
@@ -12,13 +12,13 @@ Translate a single `type:e2e` GitHub task issue into Playwright specs in impleme
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Implement GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`.
-- The user types `/author-e2e-tests`, or phrases like 'author E2E tests for #<n>', 'write the Playwright specs for this task', 'translate the test cases on this task into specs'.
+- The user types `/workflow-e2e-author`, or phrases like 'author E2E tests for #<n>', 'write the Playwright specs for this task', 'translate the test cases on this task into specs'.
 - The labels on the task disagree with the prompt: presence of `review:code-need-fix` (and absence of `review:code-pending`/`review:code-running`) means a fix is in flight — stop and surface the disagreement rather than authoring fresh tests.
 
 Do NOT activate when:
 
-- The dispatched gate is `code` returning `need-fix` — use `fix-e2e-tests` instead.
-- The task carries `type:backend` or `type:frontend` — those are `engineer`'s lane via `implement-feature-task`.
+- The dispatched gate is `code` returning `need-fix` — use `workflow-e2e-fix` instead.
+- The task carries `type:backend` or `type:frontend` — those are `engineer`'s lane via `workflow-engineer-implement-task`.
 - The user wants to write production code to make a red E2E test pass — production fixes belong to `engineer`.
 
 ## Templates
@@ -89,11 +89,11 @@ Bring up the docker-compose stack if needed and run only the touched specs (`npx
 
 ### 6. Commit the changes directly on the slice branch
 
-Format commit messages per `templates/commit-messages.md` (Conventional Commits) — one commit per logical test addition/extension. The commit message is the report; it must clearly state which test cases were authored and which acceptance criteria they map to. **Every commit MUST mention the task issue — include a `Refs #<task-#>` trailer (use `Refs`, not `Closes`, so the PR merge does not auto-close the task issue — closure is owned by `close-task-issue` once `review:code-passed` lands).** All commits land on `${slice_branch}` inside the worktree. Do not flip `status:in-progress` here — the label stays in place until `close-task-issue` clears it after the review gate passes.
+Format commit messages per `templates/commit-messages.md` (Conventional Commits) — one commit per logical test addition/extension. The commit message is the report; it must clearly state which test cases were authored and which acceptance criteria they map to. **Every commit MUST mention the task issue — include a `Refs #<task-#>` trailer (use `Refs`, not `Closes`, so the PR merge does not auto-close the task issue — closure is owned by `workflow-orchestrator-close-task-issue` once `review:code-passed` lands).** All commits land on `${slice_branch}` inside the worktree. Do not flip `status:in-progress` here — the label stays in place until `workflow-orchestrator-close-task-issue` clears it after the review gate passes.
 
 ### 7. Push the slice branch and add `review:code-pending` to the task issue
 
-Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so `review-task-issue` dispatches the `code-reviewer` against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is owned outside this lane.
+Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `code-reviewer` against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is owned outside this lane.
 
 ```bash
 bash scripts/push-and-request-code-review.sh <task-#> "${slice_branch}"

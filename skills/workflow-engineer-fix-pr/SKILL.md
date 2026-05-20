@@ -1,24 +1,24 @@
 ---
-name: fix-pr-blockers
-description: "Fix one or more `{conflict, ci}` scenarios on a single open draft slice PR dispatched by `fix-pr`. Read the dispatched scenarios from the prompt; before touching evidence, resolve the slice branch's last commit and read every PR-issue comment newer than that commit as binding user directives that override default fix paths. Pull only the dispatched channel's evidence (failing CI logs for `ci`; conflicting paths surface during merge for `conflict`), materialize the PR's head ref as a worktree, load the always-on security context and the full fullstack pattern set, address each scenario (`conflict` first if both are dispatched — merge base into slice, resolve conflicts by union, drop into RED→GREEN if regressions surface; `ci` keeps the failing test failing, drives minimum production change to GREEN, propagates the fix to clearly equivalent sites via `rg`). When a `ci` failure is confirmed to require modifying an E2E spec rather than production code, STOP, drop the `status:fix-in-progress` lock, flip the PR to `status:need-attention` with a diagnostic comment, and exit — the user owns the spec rewrite. Otherwise audit the container surface and `.env.example` for drift, push, and remove the `status:fix-in-progress` lock label from the PR. Activate when the dispatch prompt opens with `Fix PR #<n> in Mode B` and lists a non-empty subset of `{conflict, ci}`, or when the user types phrases like 'fix the failing CI on PR #<n>', 'resolve the merge conflict on this PR', '/fix-pr-blockers'. Do NOT activate to merge a clean PR (that is `close-pr`'s lane), to address reviewer findings on a task (use `fix-task-feedback`), or to fix issues outside an open PR."
+name: workflow-engineer-fix-pr
+description: "Fix `{conflict, ci}` blockers on one open draft slice PR (dispatched by `workflow-orchestrator-fix-pr`) — work in a PR-head worktree, resolve conflicts by union (TDD on regressions), drive CI to GREEN, push, clear `status:fix-in-progress`. Bail to `status:need-attention` when CI needs an E2E-spec rewrite. Activate on `Fix PR #<n> in Mode B` / '/workflow-engineer-fix-pr'. Skip for merging, task reviewer fixes."
 ---
 
-# fix-pr-blockers
+# workflow-engineer-fix-pr
 
-Fix the `conflict` and/or `ci` scenarios on a single open draft slice PR dispatched by `fix-pr`. The orchestrator added `status:fix-in-progress` to the PR as a lock; this skill removes that label as its terminal action once the push lands. Reviewer feedback no longer flows through PRs — the retired `review` scenario lives in `fix-task-feedback` against the task issue.
+Fix the `conflict` and/or `ci` scenarios on a single open draft slice PR dispatched by `workflow-orchestrator-fix-pr`. The orchestrator added `status:fix-in-progress` to the PR as a lock; this skill removes that label as its terminal action once the push lands. Reviewer feedback no longer flows through PRs — the retired `review` scenario lives in `workflow-engineer-fix-task` against the task issue.
 
 ## When to activate
 
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Fix PR #<n> in Mode B` and lists scenarios from the set `{conflict, ci}`.
-- The user types `/fix-pr-blockers`, or phrases like 'fix the failing CI on PR #<n>', 'resolve the merge conflict on this PR', 'unblock this draft PR'.
+- The user types `/workflow-engineer-fix-pr`, or phrases like 'fix the failing CI on PR #<n>', 'resolve the merge conflict on this PR', 'unblock this draft PR'.
 
 Do NOT activate when:
 
-- The PR is clean and green — merging is `close-pr`'s lane.
-- The dispatched scenario includes `review` — that scenario was retired; reviewer findings now live on the task issue via `fix-task-feedback`.
-- The unit of work is a task issue (not a PR) — use `implement-feature-task` or `fix-task-feedback`.
+- The PR is clean and green — merging is `workflow-orchestrator-close-pr`'s lane.
+- The dispatched scenario includes `review` — that scenario was retired; reviewer findings now live on the task issue via `workflow-engineer-fix-task`.
+- The unit of work is a task issue (not a PR) — use `workflow-engineer-implement-task` or `workflow-engineer-fix-task`.
 
 ## References
 
@@ -48,7 +48,7 @@ Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via 
 
 ## Workflow
 
-Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. The orchestrator (`fix-pr`) added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths, user directives) you discover yourself.
+Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. The orchestrator (`workflow-orchestrator-fix-pr`) added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths, user directives) you discover yourself.
 
 ### 1. Read user directives newer than the last commit (binding overrides)
 
@@ -128,7 +128,7 @@ bash scripts/flip-need-attention.sh <pr-#> "${comment_file}"
 rm -f "${comment_file}"
 ```
 
-The script removes `status:fix-in-progress` from the PR, adds `status:need-attention`, and posts the diagnostic comment. Stop immediately after the script returns — do not push any partial fixes, do not run the container / env audit, do not loop. The user reviews the diagnostic, rewrites the spec(s) or clears the demand, then clears `status:need-attention` so `fix-pr` can re-pick the PR on a later fire.
+The script removes `status:fix-in-progress` from the PR, adds `status:need-attention`, and posts the diagnostic comment. Stop immediately after the script returns — do not push any partial fixes, do not run the container / env audit, do not loop. The user reviews the diagnostic, rewrites the spec(s) or clears the demand, then clears `status:need-attention` so `workflow-orchestrator-fix-pr` can re-pick the PR on a later fire.
 
 If both scenarios were dispatched and the `conflict` scenario is already committed when the `ci` triage routes here, leave the merge commit in place — that work is independent of the spec rewrite and the user benefits from the up-to-date base. The bail still applies.
 
@@ -141,13 +141,13 @@ Then run the `.env.example` audit: a `ci` failure can surface a missing env-var 
 
 ### 7. Push the slice branch and clear the lock label
 
-Push to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — running them locally beforehand is no longer required; if a hook denies the push, drop back into step 6 with a fresh red/green/refactor cycle; never force-push, never skip hooks), then remove the `status:fix-in-progress` lock from the PR so the next sweep can re-classify it (and `close-pr` can pick it up if it's now mergeable + green):
+Push to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — running them locally beforehand is no longer required; if a hook denies the push, drop back into step 6 with a fresh red/green/refactor cycle; never force-push, never skip hooks), then remove the `status:fix-in-progress` lock from the PR so the next sweep can re-classify it (and `workflow-orchestrator-close-pr` can pick it up if it's now mergeable + green):
 
 ```bash
 bash scripts/push-and-clear-lock.sh <pr-#> "${slice_branch}"
 ```
 
-This is the terminal success action. Do **not** flip the PR back to ready-to-review (it stays draft until `close-pr` promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
+This is the terminal success action. Do **not** flip the PR back to ready-to-review (it stays draft until `workflow-orchestrator-close-pr` promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
 
 ## Iron rules
 
@@ -159,9 +159,9 @@ This is the terminal success action. Do **not** flip the PR back to ready-to-rev
 - **Do `conflict` before `ci` when both are dispatched.** The merge changes the working tree's baseline, so `ci` fixes layered on top stay clean.
 - **Resolve conflicts by union — never blindly take one side.** Read both sides and produce the merge that preserves the slice's intended behavior **and** the base's incoming change. If the conflict can't be resolved without scope expansion, abort the merge and surface.
 - **Treat each fix as a *class* of issue, not a single instance — propagate via `rg`.** A reviewer / CI failure / merge-import almost never points at the only vulnerable site. After identifying the fix, search the codebase for the same anti-pattern and apply the fix at every clearly equivalent site — each additional site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body so the reviewer can audit the scope. Only skip the propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors: a site qualifies only when it exhibits the same anti-pattern, not when it merely lives nearby.
-- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `implement-feature-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string`, verify immediately after each Edit before issuing the next one on the same file.
+- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `workflow-engineer-implement-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string`, verify immediately after each Edit before issuing the next one on the same file.
 - **Container setup is a pre-push gate, not optional polish.** Run the two-part audit (presence + drift) before push; the pre-push hook enforces presence. Update container files only when the runtime surface actually drifted — never as routine cleanup. Skip the audit entirely when bailing via step 6a — the run is incomplete by design.
 - **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads. Never commit a real `.env`; never put real secrets in `.env.example`.
-- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `implement-feature-task`.
+- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `workflow-engineer-implement-task`.
 - **Commit on the cadence prescribed by `tdd-workflow` and format every commit per `templates/commit-messages.md`.** Never skip hooks; never force-push.
-- **Stop and exit after the terminal action.** Success path: push and remove `status:fix-in-progress`. Bail path: `flip-need-attention.sh` removes `status:fix-in-progress` and adds `status:need-attention`. Either way: do not flip the PR back to ready-to-review (that's `close-pr`'s lane), do not touch `review:*` labels on the PR, do not comment further, do not loop.
+- **Stop and exit after the terminal action.** Success path: push and remove `status:fix-in-progress`. Bail path: `flip-need-attention.sh` removes `status:fix-in-progress` and adds `status:need-attention`. Either way: do not flip the PR back to ready-to-review (that's `workflow-orchestrator-close-pr`'s lane), do not touch `review:*` labels on the PR, do not comment further, do not loop.

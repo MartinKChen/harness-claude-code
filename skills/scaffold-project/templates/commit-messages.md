@@ -19,4 +19,4 @@ Scaffold writes exactly these subjects, one per surface, in this order:
 `<stack>` and `<services>` are filled in from the ADR — never invented.
 
 Scaffold never produces `feat:` commits. Feature behavior lands later via
-`implement-feature-task` and its pattern skills.
+`workflow-engineer-implement-task` and its pattern skills.

@@ -1,9 +1,9 @@
 ---
-name: close-task-issue
-description: "Close every open `level:task` + `kind:feature` + `status:in-progress` task whose required review gates have all reached `*-passed`. `type:backend` / `type:frontend` need both `review:code-passed` and `review:security-passed`; `type:e2e` needs only `review:code-passed` (test cases skip the security gate). Activate on phrases like 'close out the green task issues', 'close passed tasks', 'close task issues whose reviews passed', '/close-task-issue', or whenever the orchestrator needs to finalize task issues that have green review gates. Do NOT activate to dispatch reviewers (use `review-task-issue`), merge a PR (use `close-pr`), or close a slice issue (handled implicitly by `close-pr`)."
+name: workflow-orchestrator-close-task-issue
+description: "Close every open `level:task`+`kind:feature`+`status:in-progress` task whose required review gates are `*-passed`. Backend/frontend need `review:code-passed` + `review:security-passed`; `type:e2e` needs only `review:code-passed`. Activate on 'close passed tasks', 'close the green task issues', '/workflow-orchestrator-close-task-issue'. Skip for dispatching reviewers (`workflow-orchestrator-review-task-issue`), merging (`workflow-orchestrator-close-pr`), closing slices (handled by close-pr)."
 ---
 
-# close-task-issue
+# workflow-orchestrator-close-task-issue
 
 The terminal step of the task lifecycle. When every required review gate on a task has flipped to `-passed`, the task is done — strip `status:in-progress` and close the issue. This skill is the *only* place a task issue gets closed; engineers and reviewers leave the lifecycle to this skill.
 
@@ -21,10 +21,10 @@ The skill never checks out, edits, or pushes to any branch. It mutates GitHub is
 
 Activate this skill whenever the user:
 
-- Types `/close-task-issue` (with or without a numeric cap argument).
+- Types `/workflow-orchestrator-close-task-issue` (with or without a numeric cap argument).
 - Asks to "close out the green tasks", "close task issues with passed reviews", or "finalize tasks whose review gates are all `*-passed`".
 
-Do NOT activate when the user wants to dispatch reviewers (use `review-task-issue`), wants to merge a slice PR (use `close-pr`), or wants to close a slice issue directly (slice issues close as a side effect of `close-pr`).
+Do NOT activate when the user wants to dispatch reviewers (use `workflow-orchestrator-review-task-issue`), wants to merge a slice PR (use `workflow-orchestrator-close-pr`), or wants to close a slice issue directly (slice issues close as a side effect of `workflow-orchestrator-close-pr`).
 
 ## Arguments
 
@@ -96,5 +96,5 @@ Track closed / skipped counts internally per task; do **not** print per-task dec
 - **Required gates differ by `type:*`.** `type:e2e` skips the security gate by design — test cases have no production attack surface to validate. Do NOT widen or narrow the required-passed set without updating the rule table above.
 - **Race-safe by re-check.** Step 3 re-reads each candidate's labels after the step-2 list call, so a task that picked up a fresh `*-need-fix` or `*-pending` between list and close is correctly skipped.
 - **No reopening of closed tasks.** This skill only closes; reviewers/engineers reopen when they need to drive a fresh fix cycle.
-- **No slice or PR mutation.** Closing the last task on a slice does **not** merge the slice PR — that's `close-pr`'s job, driven independently off the slice PR's check + mergeability state.
+- **No slice or PR mutation.** Closing the last task on a slice does **not** merge the slice PR — that's `workflow-orchestrator-close-pr`'s job, driven independently off the slice PR's check + mergeability state.
 - **Skip, don't fail, on benign outcomes.** Already-removed labels, already-closed issues, missing gates, and cap-reached are all expected — track internally and continue, never surface per-task.

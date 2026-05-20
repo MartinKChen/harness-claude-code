@@ -1,9 +1,9 @@
 ---
-name: implement-feature-task
-description: "Implement a single GitHub task issue (`type:backend` or `type:frontend`, never `type:e2e`) end-to-end via strict outside-in TDD. Read the issue, resolve the parent slice issue and its slice branch, materialize a slice-scoped worktree, load the always-on security context and the full fullstack pattern set, pull per-entity architecture context only when the change actually touches that entity, scaffold any missing worktree structure (manifests, configs, Dockerfile/compose/.dockerignore, .env.example) in discrete `chore(scaffold):` / `build:` commits before the first RED, drive implementation via `tdd-workflow` at the prescribed RED/GREEN/REFACTOR cadence with a `Refs #<task-#>` trailer on every commit, audit the container surface and `.env.example` for drift, push the slice branch, and add `review:code-pending` + `review:security-pending` to the task issue. Activate when the dispatch prompt opens with `Implement GitHub task issue #<n>` and the issue carries `type:backend` or `type:frontend`, or when the user types phrases like 'implement #<n>', 'work on the next task issue', '/implement-feature-task'. Do NOT activate to fix CI / merge-conflict scenarios on an open PR (use `fix-pr-blockers`), to address reviewer findings on a task (use `fix-task-feedback`), to implement a `type:e2e` task (use `author-e2e-tests`), or to start ad-hoc work outside the slice-task lifecycle."
+name: workflow-engineer-implement-task
+description: "Implement one `type:backend`/`type:frontend` GitHub task end-to-end via outside-in TDD on the slice branch — slice-scoped worktree, scaffold missing structure first, RED/GREEN/REFACTOR via `tdd-workflow` with `Refs #<task-#>` trailers, push, add `review:code-pending` + `review:security-pending`. Activate on `Implement GitHub task issue #<n>` / '/workflow-engineer-implement-task'. Skip for `type:e2e`, PR blockers, reviewer fixes."
 ---
 
-# implement-feature-task
+# workflow-engineer-implement-task
 
 Take one assigned GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Apply the full fullstack pattern set upfront and the always-on security context — even when the task only touches one side of the stack — so a follow-up cycle that crosses the boundary doesn't pay a re-read tax. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
 
@@ -12,13 +12,13 @@ Take one assigned GitHub task issue and ship it through strict outside-in TDD on
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Implement GitHub task issue #<n>` and the issue carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`).
-- The user types `/implement-feature-task`, or phrases like 'implement #<n>', 'pick up the next ready task', 'work on this task issue', 'ship task #<n>'.
+- The user types `/workflow-engineer-implement-task`, or phrases like 'implement #<n>', 'pick up the next ready task', 'work on this task issue', 'ship task #<n>'.
 
 Do NOT activate when:
 
-- The issue carries `type:e2e` — that is `author-e2e-tests`'s lane; a `type:e2e` dispatch arriving here is a routing bug, surface and stop.
-- The dispatched unit of work is an open PR with `conflict` and/or `ci` scenarios — use `fix-pr-blockers`.
-- The dispatched unit of work is a task with reviewer `need-fix` verdicts — use `fix-task-feedback`.
+- The issue carries `type:e2e` — that is `workflow-e2e-author`'s lane; a `type:e2e` dispatch arriving here is a routing bug, surface and stop.
+- The dispatched unit of work is an open PR with `conflict` and/or `ci` scenarios — use `workflow-engineer-fix-pr`.
+- The dispatched unit of work is a task with reviewer `need-fix` verdicts — use `workflow-engineer-fix-task`.
 - The issue is closed, missing `Delivery` / `Done criteria`, or carries no `type:*` label — surface and stop.
 
 ## References
@@ -31,7 +31,7 @@ Do NOT activate when:
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure is owned by `close-task-issue`) is spelled out in step 7 below. |
+| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure is owned by `workflow-orchestrator-close-task-issue`) is spelled out in step 7 below. |
 
 ## Scripts
 
@@ -55,7 +55,7 @@ Pull the full sub-issue so the rest of the work has its `Delivery`, `Done criter
 gh issue view <issue-#> --json number,title,body,labels,milestone,state,url
 ```
 
-Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, carries no `type:<type>` label, or carries `type:e2e` (a `type:e2e` dispatch is a routing bug — e2e tasks go to `author-e2e-tests`). Do not invent acceptance criteria.
+Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, carries no `type:<type>` label, or carries `type:e2e` (a `type:e2e` dispatch is a routing bug — e2e tasks go to `workflow-e2e-author`). Do not invent acceptance criteria.
 
 ### 2. Materialize the slice branch in a worktree
 
@@ -96,7 +96,7 @@ If the index doesn't mention an axis the task touches, **halt and surface** "no 
 
 ### 6. Drive implementation via TDD
 
-Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure is owned by `close-task-issue` once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
+Invoke `tdd-workflow` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure is owned by `workflow-orchestrator-close-task-issue` once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
 
 ### 7. Verify against acceptance criteria, then audit the container surface and `.env.example`
 
@@ -109,13 +109,13 @@ Then run the `.env.example` audit: if this task added, renamed, or removed any e
 
 ### 8. Push the slice branch and open both review gates
 
-Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `review-task-issue` dispatches the `code-reviewer` and `security-reviewer`:
+Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `code-reviewer` and `security-reviewer`:
 
 ```bash
 bash scripts/push-and-open-reviews.sh <issue-#> "${slice_branch}"
 ```
 
-This is the terminal action. Exit after the label add lands — do not close the task (that's `close-task-issue`'s job once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is owned outside this lane), do not message reviewers, do not loop.
+This is the terminal action. Exit after the label add lands — do not close the task (that's `workflow-orchestrator-close-task-issue`'s job once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is owned outside this lane), do not message reviewers, do not loop.
 
 ## Iron rules
 

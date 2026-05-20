@@ -1,11 +1,11 @@
 ---
-name: implement-task-issue
-description: "Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:ready-to-implement` task with zero open `Blocked by` dependencies. Lock each task with a label flip (`status:ready-to-implement` → `status:in-progress`); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. Slice promotion is owned by the sibling skill `kickoff-slice-issue`. Activate on phrases like 'implement the ready tasks', 'pick up task issues for implement', 'kick off task implementation', '/implement-task-issue', or whenever the orchestrator needs to fan out engineer / e2e-author agents against unblocked, ready task issues. Do NOT activate to start work on a single ad-hoc task without scanning the backlog, or to promote slice issues (use `kickoff-slice-issue`)."
+name: workflow-orchestrator-implement-task-issue
+description: "Dispatch a one-shot sub-agent for every `level:task`+`kind:feature`+`status:ready-to-implement` task with no open `Blocked by` deps. Lock via label flip (`ready-to-implement`→`in-progress`). Map `type:e2e`→`e2e-author`, backend/frontend→`engineer`. Slice promotion belongs to `workflow-orchestrator-kickoff-slice-issue`. Activate on 'implement the ready tasks', '/workflow-orchestrator-implement-task-issue'. Skip for ad-hoc tasks or slice promotion."
 ---
 
-# implement-task-issue
+# workflow-orchestrator-implement-task-issue
 
-Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The skill never touches slice issues — slice promotion (`status:ready-to-implement` → `status:in-progress` on the slice + appending `status:ready-to-implement` to its task sub-issues) is the job of `kickoff-slice-issue`.
+Scan open task issues that are ready to implement and unblocked, lock each one with a label flip so concurrent fires don't double-pick, and dispatch the right one-shot sub-agent. The skill never touches slice issues — slice promotion (`status:ready-to-implement` → `status:in-progress` on the slice + appending `status:ready-to-implement` to its task sub-issues) is the job of `workflow-orchestrator-kickoff-slice-issue`.
 
 The skill never checks out, edits, or pushes to any branch; code-changing work is delegated to the dispatched sub-agent.
 
@@ -13,11 +13,11 @@ The skill never checks out, edits, or pushes to any branch; code-changing work i
 
 Activate this skill whenever the user:
 
-- Types `/implement-task-issue` (with or without a numeric cap argument).
+- Types `/workflow-orchestrator-implement-task-issue` (with or without a numeric cap argument).
 - Asks to "pick up tasks to implement", "dispatch engineers / e2e-authors against ready tasks", or "kick off implementation on the unblocked task backlog".
 - Wants to fan out `engineer` / `e2e-author` sub-agents against every open task issue carrying `status:ready-to-implement` with zero open blockers.
 
-Do NOT activate when the user wants to promote slice issues (use `kickoff-slice-issue`), wants to ad-hoc start a single specific task without scanning the full backlog, or wants to fast-track a `kind:bug` / `kind:enhancement` task (this skill is `kind:feature` only).
+Do NOT activate when the user wants to promote slice issues (use `workflow-orchestrator-kickoff-slice-issue`), wants to ad-hoc start a single specific task without scanning the full backlog, or wants to fast-track a `kind:bug` / `kind:enhancement` task (this skill is `kind:feature` only).
 
 ## Arguments
 
@@ -108,7 +108,7 @@ The lock MUST happen **before** the sub-agent dispatch in step 5. If the dispatc
 bash scripts/unlock-task.sh "${task_number}"
 ```
 
-so the next fire can retry. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it adds `review:*-pending` labels and exits, leaving `status:in-progress` for `close-task-issue` to clear once reviews pass).
+so the next fire can retry. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it adds `review:*-pending` labels and exits, leaving `status:in-progress` for `workflow-orchestrator-close-task-issue` to clear once reviews pass).
 
 ### 5. Create an orchestrator tracking task, then dispatch the right one-shot sub-agent
 
@@ -154,7 +154,7 @@ Immediately follow the `Agent` call — in the **same batched response** — wit
 
 Independent candidates within the same fire are dispatched in parallel: emit all the `Agent` calls AND their matching `TaskUpdate(owner)` calls together in one batched response. The `TaskCreate` calls in step 5a may be batched the same way per fire. Note: "independent" here is enforced by step 3b's `slice-in-flight.sh` gate — multiple candidates from **different** slices can fan out at once (each lives in its own worktree), but within a single slice the gate guarantees at most one agent is dispatched per fire.
 
-If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `review-task-issue` / `close-task-issue` clear the GitHub-side labels once reviews pass).
+If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the orchestrator task via `TaskUpdate({ taskId, status: "deleted" })`. Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle (it sets the tracking task's status, then `workflow-orchestrator-review-task-issue` / `workflow-orchestrator-close-task-issue` clear the GitHub-side labels once reviews pass).
 
 Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<task-#>`, `<task-title>`, `<task-url>`, `<taskId>`) and pass the resulting text as the `Agent` call's `prompt`.
 
@@ -168,11 +168,11 @@ Track dispatched / skipped counts internally per task; do **not** print per-task
 
 ## Iron rules
 
-- **Tasks only — no slice promotion.** Slice issues are promoted by `kickoff-slice-issue`, which is what populates `status:ready-to-implement` on the task sub-issues this skill consumes. Do NOT touch slice issues here.
+- **Tasks only — no slice promotion.** Slice issues are promoted by `workflow-orchestrator-kickoff-slice-issue`, which is what populates `status:ready-to-implement` on the task sub-issues this skill consumes. Do NOT touch slice issues here.
 - **One agent per slice worktree at any moment.** Step 3b's `slice-in-flight.sh` gate enforces this: a slice with any sibling task in the `status:in-progress` + no `review:*` label state has a sub-agent actively editing its worktree, and no second agent may be dispatched into it. Skipped candidates stay eligible — they're picked up automatically once the in-flight agent's terminal label-add (`review:*-pending`) lands.
 - **Lock before dispatch.** The label flip in step 4 happens before the `TaskCreate` + `Agent` calls in step 5. The flip is the lock that prevents concurrent fires from picking up the same task.
 - **One orchestrator tracking task per dispatched sub-agent.** Every dispatched candidate gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across candidates and never spawn an `Agent` without a paired tracking task.
-- **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
+- **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, restore the labels (per step 4) and call `TaskUpdate({ taskId, status: "deleted" })` so the row doesn't dangle. Once the sub-agent is running, ownership transfers — the agent's terminal action adds review-pending labels on the GitHub issue and marks the tracking task `completed`, and `workflow-orchestrator-close-task-issue` later clears `status:in-progress` on a green review verdict. Do NOT speculatively unlock.
 - **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel candidates, and races the orchestrator's owner assignment against the sub-agent's own terminal task update.
 - **`type:*` label decides the agent type, never the body.** `create-issues` puts type info on the label only; do not parse type out of the sub-issue body.
 - **One GitHub task issue per dispatched sub-agent.** Each `Agent` call owns exactly one issue — never batch multiple issues into one dispatch. Independent tasks within a fire go out as parallel `Agent` calls (and parallel `TaskUpdate` owner-assignments) in the same message.

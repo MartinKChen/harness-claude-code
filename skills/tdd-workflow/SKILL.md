@@ -5,7 +5,7 @@ description: "Strictly enforce Test-Driven Development whenever implementing, bu
 
 # tdd-workflow
 
-Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller skill's local `templates/commit-messages.md` (e.g. `implement-feature-task/templates/commit-messages.md`, `fix-task-feedback/templates/commit-messages.md`).
+Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller skill's local `templates/commit-messages.md` (e.g. `workflow-engineer-implement-task/templates/commit-messages.md`, `workflow-engineer-fix-task/templates/commit-messages.md`).
 
 ## When to activate
 
@@ -44,7 +44,7 @@ Other skills still apply (route to them as you would any skill, not as files und
 | `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema shape and table/column/constraint naming. |
 | `pattern-engineer-database` | When the contract test or fixture has to ship an Alembic migration — for autogenerate, `pytest-alembic` assertions, and the `migrate` compose service. |
 
-Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `implement-feature-task`, `fix-pr-blockers`, `fix-task-feedback`, `author-e2e-tests`, or `fix-e2e-tests`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
+Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `workflow-engineer-implement-task`, `workflow-engineer-fix-pr`, `workflow-engineer-fix-task`, `workflow-e2e-author`, or `workflow-e2e-fix`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 
 ## Workflow
 

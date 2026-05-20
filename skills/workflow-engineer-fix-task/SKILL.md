@@ -1,23 +1,23 @@
 ---
-name: fix-task-feedback
-description: "Fix reviewer findings on a single GitHub task issue (`type:backend` or `type:frontend`, never `type:e2e`) per the gates dispatched by `fix-task-issue`. Read the task body, resolve the parent slice issue and its slice branch, locate the slice branch's most recent commit, read every non-reviewer comment newer than that commit first (user directives in that window override reviewer suggestions / ADRs / default conventions), then scope reviewer comment(s) to those created strictly after the last commit so previously-addressed rounds aren't re-processed, materialize the slice-scoped worktree, load the always-on security context and the full fullstack pattern set, address each must-fix finding with `rg`-driven pattern propagation (each equivalent site gets its own RED → GREEN), audit the container surface and `.env.example` for drift, push, and flip every `review:{code,security}-passed` / `review:{code,security}-need-fix` back to `review:{code,security}-pending` so a fresh review cycle picks up the fix. Activate when the dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `type:backend` or `type:frontend`, or when the user types phrases like 'address the reviewer findings on #<n>', '/fix-task-feedback'. Do NOT activate to implement fresh work on a task (use `implement-feature-task`), to fix CI / merge-conflict on a PR (use `fix-pr-blockers`), or to fix reviewer findings on a `type:e2e` task (use `fix-e2e-tests`)."
+name: workflow-engineer-fix-task
+description: "Fix reviewer findings on one `type:backend`/`type:frontend` task (dispatched by `workflow-orchestrator-fix-task-issue`) — address must-fix items with `rg`-driven pattern propagation (RED→GREEN per site), push, reset `review:{code,security}-*` to `-pending`. Activate on `Fix the review feedback on GitHub task issue #<n>` / '/workflow-engineer-fix-task'. Skip for fresh impl, PR blockers, e2e fixes."
 ---
 
-# fix-task-feedback
+# workflow-engineer-fix-task
 
-Address reviewer findings on a single `type:backend` / `type:frontend` GitHub task issue dispatched by `fix-task-issue`. The orchestrator has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` as its lock, so scope is read from the dispatch prompt verbatim, not from labels. User directives posted as comments between review rounds **override** reviewer suggestions, ADRs, and default conventions — read those before reading the reviewer findings.
+Address reviewer findings on a single `type:backend` / `type:frontend` GitHub task issue dispatched by `workflow-orchestrator-fix-task-issue`. The orchestrator has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` as its lock, so scope is read from the dispatch prompt verbatim, not from labels. User directives posted as comments between review rounds **override** reviewer suggestions, ADRs, and default conventions — read those before reading the reviewer findings.
 
 ## When to activate
 
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`), with at least one of `review:code-need-fix` or `review:security-need-fix` (the orchestrator may have flipped these to `review:*-pending` as its lock).
-- The user types `/fix-task-feedback`, or phrases like 'address the reviewer findings on #<n>', 'fix the code review on this task', 'address the security findings on this task'.
+- The user types `/workflow-engineer-fix-task`, or phrases like 'address the reviewer findings on #<n>', 'fix the code review on this task', 'address the security findings on this task'.
 
 Do NOT activate when:
 
-- The task is `type:e2e` — that's `fix-e2e-tests`'s lane.
-- The unit of work is an open PR (`conflict` / `ci`) — use `fix-pr-blockers`.
+- The task is `type:e2e` — that's `workflow-e2e-fix`'s lane.
+- The unit of work is an open PR (`conflict` / `ci`) — use `workflow-engineer-fix-pr`.
 - No `# Code Review` / `# Security Review` comment newer than the slice branch's last commit exists on the task — stop and surface "fix dispatched but no reviewer comment newer than the last commit".
 
 ## References
@@ -47,7 +47,7 @@ Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via 
 
 ## Workflow
 
-Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator (`fix-task-issue`) has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) you discover yourself.
+Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator (`workflow-orchestrator-fix-task-issue`) has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) you discover yourself.
 
 ### 1. Fetch the task body, resolve the slice branch's last commit, and pull only the reviewer comments newer than that commit
 
@@ -102,7 +102,7 @@ Invoke `security-patterns` before any code is written.
 
 ### 4. Load the full fullstack pattern set via `tdd-workflow`
 
-Same as `implement-feature-task` step 4 — load every reference upfront (`references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, `references/docker-patterns.md`).
+Same as `workflow-engineer-implement-task` step 4 — load every reference upfront (`references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, `references/docker-patterns.md`).
 
 **Then read the ADR index, and the ADR detail(s) the reviewer's findings touch.** Reviewer findings on this codebase routinely flag deviations from project-specific architecture decisions (error-envelope shape, rate-limit keying, idempotency-key lifecycle, storage backend, config loader, sessions/cookies, atomic-token consumption, enumeration-prevention rules) — but the ADR numbers and detail-file names vary per project. Open `docs/ADRs/README.md` first to learn which detail file covers each axis the reviewer flagged, then read those detail files to ground the fix in what the project has actually decided. If the reviewer cites an ADR by number, follow the index to the matching detail file rather than trusting the number across projects. If a reviewer finding points at an axis with no ADR row in the index, halt and surface — the user needs to either add the decision or rescope the fix.
 
@@ -125,7 +125,7 @@ Push to remote (the pre-push hooks gate the fullstack lint/format/type/test set 
 bash scripts/push-and-reset-all-reviews.sh <task-#> "${slice_branch}"
 ```
 
-This is the terminal action. Exit after the label flip lands — do not close the task (that's `close-task-issue`'s job once the next review cycle returns `*-passed`), do not touch `status:in-progress`, do not message reviewers, do not loop.
+This is the terminal action. Exit after the label flip lands — do not close the task (that's `workflow-orchestrator-close-task-issue`'s job once the next review cycle returns `*-passed`), do not touch `status:in-progress`, do not message reviewers, do not loop.
 
 ## Iron rules
 
@@ -133,13 +133,13 @@ This is the terminal action. Exit after the label flip lands — do not close th
 - **Scope is read from the dispatch prompt verbatim — never from labels.** The orchestrator's lock flipped `review:*-need-fix` to `review:*-pending`, so the labels alone can't tell you which gates returned `need-fix`. Read the gates list from the dispatch prompt.
 - **Skip previously-addressed rounds.** Only consider reviewer comments created **strictly after** the slice branch's last commit timestamp. Earlier comments are previous rounds — the fixes they demanded are already in `git log`, and re-reading them would re-do completed work.
 - **Read `security-patterns` before writing any code.**
-- **Always fullstack — load every language reference upfront.** Same as `implement-feature-task`.
+- **Always fullstack — load every language reference upfront.** Same as `workflow-engineer-implement-task`.
 - **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the reviewer's findings touch.** Project-specific decisions (error envelope, rate-limit keying, idempotency, storage backend, sessions/cookies, config, atomic-token, enumeration prevention) live in the per-project ADR files behind the index — never trust an ADR number across projects, never re-derive the rule from memory. If a finding cites an axis with no ADR row, halt and surface.
 - **Treat each finding as a *class* of issue, not a single instance — propagate via `rg` before declaring the fix done.** Each additional equivalent site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body. Only skip propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors.
 - **Each must-fix finding starts with a failing test.** Security findings: a regression test proving the fix prevents the documented attack vector. Code findings: a unit/integration test asserting the corrected behavior. Drive GREEN with the minimum production change; REFACTOR under green.
-- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `implement-feature-task`.
+- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `workflow-engineer-implement-task`.
 - **Container setup is a pre-push gate.** Run the two-part audit (presence + drift) after the last must-fix finding is GREEN; the pre-push hook enforces presence.
 - **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads.
 - **Reset *every* `review:*` gate to `*-pending` after push.** A fix can invalidate a previously-passed gate, so the terminal flip removes all four terminal labels and adds both pending labels. `gh issue edit` ignores `--remove-label` targets that aren't currently set, so the idempotent call is safe.
-- **Format every commit per `templates/commit-messages.md` with a `Refs #<task-#>` trailer.** Never use `Closes` — closure is owned by `close-task-issue` once the next review cycle returns `*-passed`.
+- **Format every commit per `templates/commit-messages.md` with a `Refs #<task-#>` trailer.** Never use `Closes` — closure is owned by `workflow-orchestrator-close-task-issue` once the next review cycle returns `*-passed`.
 - **Stop and exit after the terminal label flip.** Do not close the task, do not touch `status:in-progress`, do not message reviewers, do not loop.

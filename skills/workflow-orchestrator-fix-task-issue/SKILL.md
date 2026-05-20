@@ -1,13 +1,13 @@
 ---
-name: fix-task-issue
-description: "Dispatch a one-shot sub-agent for every open `level:task` + `kind:feature` + `status:in-progress` task carrying at least one `review:code-need-fix` or `review:security-need-fix` label (and no `review:*-pending` / `review:*-running` — those mean a review cycle is still mid-flight). Lock each task by **stripping** every `review:{code,security}-need-fix` and every `review:{code,security}-passed` label (the absence of those terminal labels is the lock); map `type:e2e` → `e2e-author`, `type:backend` / `type:frontend` → `engineer`. The dispatched agent owns re-adding `review:*-pending` as its terminal action once the fix is pushed. Activate on phrases like 'fix the reviewed tasks', 'pick up tasks needing fix', 'dispatch fix agents for need-fix tasks', '/fix-task-issue', or whenever the orchestrator needs to fan out engineer / e2e-author agents against task issues whose reviewer verdict came back as `need-fix`. Do NOT activate while a review cycle is still in flight on the task."
+name: workflow-orchestrator-fix-task-issue
+description: "Dispatch a one-shot sub-agent for every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-need-fix`/`review:security-need-fix` and no `review:*-pending`/`-running`. Lock by stripping every `review:{code,security}-{passed,need-fix}`. Map `type:e2e`→`e2e-author`, backend/frontend→`engineer`; the agent re-adds `review:*-pending` last. Activate on 'fix the reviewed tasks', '/workflow-orchestrator-fix-task-issue'. Skip mid-review."
 ---
 
-# fix-task-issue
+# workflow-orchestrator-fix-task-issue
 
 Scan open task issues that have at least one reviewer verdict back as `*-need-fix`, lock each task by stripping the terminal review labels, and dispatch the right one-shot sub-agent to fix the implementation. The agent reads the reviewer's findings (PR-style structured comment posted on the task issue) and produces a fix commit on the slice branch.
 
-The lock mechanic is **strip only**: this skill removes every `review:{code,security}-need-fix` and `review:{code,security}-passed` label on the task and leaves the gate labels absent. The engineer / e2e-author re-adds `review:*-pending` as its terminal step once the fix is pushed — this is what triggers `review-task-issue` to dispatch a fresh review (a fix can invalidate a previously-passed gate, so both gates must re-review).
+The lock mechanic is **strip only**: this skill removes every `review:{code,security}-need-fix` and `review:{code,security}-passed` label on the task and leaves the gate labels absent. The engineer / e2e-author re-adds `review:*-pending` as its terminal step once the fix is pushed — this is what triggers `workflow-orchestrator-review-task-issue` to dispatch a fresh review (a fix can invalidate a previously-passed gate, so both gates must re-review).
 
 The e2e gate is **not** part of this label family. E2e signal comes from the slice PR's GitHub Actions workflow check, not from a `review:e2e-*` label.
 
@@ -17,10 +17,10 @@ The skill never checks out, edits, or pushes to any branch; code-changing work i
 
 Activate this skill whenever the user:
 
-- Types `/fix-task-issue` (with or without a numeric cap argument).
+- Types `/workflow-orchestrator-fix-task-issue` (with or without a numeric cap argument).
 - Asks to "fix tasks that came back as need-fix", "dispatch fix agents", "pick up reviewed tasks for fix", or "address reviewer findings on task issues".
 
-Do NOT activate when the user wants to fix a draft PR's CI/conflict blockers (that's `fix-pr`), wants to dispatch a fresh review (that's `review-task-issue`), or wants to start a brand-new implementation (that's `implement-task-issue`).
+Do NOT activate when the user wants to fix a draft PR's CI/conflict blockers (that's `workflow-orchestrator-fix-pr`), wants to dispatch a fresh review (that's `workflow-orchestrator-review-task-issue`), or wants to start a brand-new implementation (that's `workflow-orchestrator-implement-task-issue`).
 
 ## Arguments
 
@@ -101,8 +101,8 @@ bash scripts/unlock-task.sh "${task_number}" ${snapshot}
 Do NOT roll back on internal sub-agent failure — once the sub-agent is running, it owns the lifecycle.
 
 The lock works because both downstream queries are negative on the stripped state:
-- `fix-task-issue` (this skill) requires at least one `review:*-need-fix` label, so the stripped task no longer matches its filter.
-- `review-task-issue` requires at least one `review:*-pending` label, so the stripped task doesn't get picked up for review either — until the engineer's terminal flip adds `review:*-pending` back.
+- `workflow-orchestrator-fix-task-issue` (this skill) requires at least one `review:*-need-fix` label, so the stripped task no longer matches its filter.
+- `workflow-orchestrator-review-task-issue` requires at least one `review:*-pending` label, so the stripped task doesn't get picked up for review either — until the engineer's terminal flip adds `review:*-pending` back.
 
 ### 4. Create an orchestrator tracking task, then dispatch the matching sub-agent
 
@@ -164,7 +164,7 @@ Track dispatched / skipped counts internally per task; do **not** print per-task
 
 ## Iron rules
 
-- **Strip only — the orchestrator does not add `review:*-pending`.** The dispatched engineer / e2e-author re-adds `review:*-pending` after pushing the fix. Re-adding here would race `review-task-issue`, which could dispatch reviewers against an unfinished tree.
+- **Strip only — the orchestrator does not add `review:*-pending`.** The dispatched engineer / e2e-author re-adds `review:*-pending` after pushing the fix. Re-adding here would race `workflow-orchestrator-review-task-issue`, which could dispatch reviewers against an unfinished tree.
 - **Strip both `need-fix` and `passed`.** A fix can invalidate a previously-passed gate; both must re-review once the engineer's terminal flip adds the pending labels back. Never selectively leave a `*-passed` label in place when locking.
 - **Skip when a review cycle is in flight.** `review:*-pending` or `review:*-running` on the task means a reviewer is mid-pass; dispatching a fix now would race the reviewer's read of the slice branch. Wait for the cycle to land (terminate at `*-passed` or `*-need-fix`).
 - **One agent per slice worktree at any moment.** Step 2's `slice-in-flight.sh` gate enforces this: a slice with any sibling task in the `status:in-progress` + no `review:*` label state has a sub-agent actively editing its worktree, and no second agent (engineer, e2e-author, or fix-agent) may be dispatched into it. Skipped candidates stay eligible — they're picked up automatically once the in-flight agent's terminal label-add lands. Cross-slice fan-out is unaffected (each slice has its own worktree).

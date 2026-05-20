@@ -1,9 +1,9 @@
 ---
-name: fix-e2e-tests
-description: "Fix Playwright E2E test cases on a single GitHub task issue (`type:e2e`) per the code reviewer's findings. Resolve the parent slice issue and its slice branch, set up (or reuse) a slice-scoped worktree rebased onto `origin/main`, read the most recent `# Code Review` comment on the task, address each must-fix finding against the cited test files, smoke-run each touched spec to confirm it still reaches a real assertion, commit using the Conventional Commits format from `templates/commit-messages.md`, push, and flip `review:code-passed` / `review:code-need-fix` back to `review:code-pending` so `review-task-issue` dispatches a fresh `code-reviewer`. Activate when the dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `type:e2e`, or when the user types phrases like 'address the E2E reviewer findings on #<n>', 'fix the code-review on this E2E task', '/fix-e2e-tests'. Do NOT activate to author fresh E2E specs from scratch (use `author-e2e-tests`), or to fix production code (that is `engineer`'s lane via `fix-task-feedback`)."
+name: workflow-e2e-fix
+description: "Fix Playwright E2E specs on a single `type:e2e` GitHub task per the latest `# Code Review` comment — patch the cited files, smoke-run, commit, push, and reset `review:code-*` back to `review:code-pending` so a fresh reviewer is dispatched. Activate when dispatched with `Fix the review feedback on GitHub task issue #<n>` for a `type:e2e` issue, or on '/workflow-e2e-fix'. Skip for authoring fresh specs (`workflow-e2e-author`) or fixing production code (`workflow-engineer-fix-task`)."
 ---
 
-# fix-e2e-tests
+# workflow-e2e-fix
 
 Address the `code-reviewer`'s findings on a single `type:e2e` GitHub task issue. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, read the most recent `# Code Review` comment as the source-of-truth fix list, edit only test code (never production code), smoke-run each touched spec, commit using the Conventional Commits format from `templates/commit-messages.md`, push, and reset the `review:code-*` label back to `review:code-pending` so a fresh review cycle picks up the fix.
 
@@ -12,14 +12,14 @@ Address the `code-reviewer`'s findings on a single `type:e2e` GitHub task issue.
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`, with `review:code-need-fix` present (or already flipped to `review:code-pending` by the orchestrator's lock).
-- The user types `/fix-e2e-tests`, or phrases like 'address the E2E reviewer findings on #<n>', 'rework the Playwright specs per the code review', 'fix the code-review on this E2E task'.
+- The user types `/workflow-e2e-fix`, or phrases like 'address the E2E reviewer findings on #<n>', 'rework the Playwright specs per the code review', 'fix the code-review on this E2E task'.
 
 Do NOT activate when:
 
 - The task has no `# Code Review` comment newer than the slice branch's last commit — stop and surface "fix dispatched but no reviewer comment newer than the last commit on the task".
 - The task labels are inconsistent (e.g. `review:code-passed` present alongside `review:code-need-fix`) — stop and surface the disagreement.
-- The dispatch is for fresh authoring without reviewer findings — use `author-e2e-tests`.
-- The task is `type:backend` / `type:frontend` — those fixes go through `fix-task-feedback` under `engineer`.
+- The dispatch is for fresh authoring without reviewer findings — use `workflow-e2e-author`.
+- The task is `type:backend` / `type:frontend` — those fixes go through `workflow-engineer-fix-task` under `engineer`.
 
 ## Templates
 
@@ -86,7 +86,7 @@ Format commit messages per `templates/commit-messages.md` — one commit per log
 
 ### 7. Push the slice branch and reset `review:code-*` to pending
 
-Push the new commits to the remote slice branch and idempotently reset the task's `review:code-*` gate to `review:code-pending` so `review-task-issue` will dispatch a fresh `code-reviewer` against the fix:
+Push the new commits to the remote slice branch and idempotently reset the task's `review:code-*` gate to `review:code-pending` so `workflow-orchestrator-review-task-issue` will dispatch a fresh `code-reviewer` against the fix:
 
 ```bash
 bash scripts/push-and-reset-code-review.sh <task-#> "${slice_branch}"
