@@ -1,20 +1,20 @@
 ---
-name: agent-product-owner-interview
-description: "Drive a depth-first product-requirement discovery interview for a single feature. Walks a one-question-per-turn conversation with a recommendation plus 1–2 alternatives, surfaces unstated assumptions, tracks glossary terms as they appear, classifies the new flow against existing critical paths (extend / supersede / brand new), requests explicit approval (lock requirements), then composes one scoped dispatch prompt for a writer teammate (named by the orchestrator at invocation time) to materialize the artifacts. Writes nothing. Activate on '/agent-product-owner-interview'."
+name: workflow-product-owner-interview
+description: "Drive a depth-first product-requirement discovery interview for a single feature. Walks a one-question-per-turn conversation with a recommendation plus 1–2 alternatives, surfaces unstated assumptions, tracks glossary terms as they appear, classifies the new flow against existing critical paths (extend / supersede / brand new), requests explicit approval (lock requirements), then composes one scoped dispatch prompt for a writer teammate (named by the orchestrator at invocation time) to materialize the artifacts. Writes nothing. Activate on '/workflow-product-owner-interview'."
 ---
 
-# agent-product-owner-interview
+# workflow-product-owner-interview
 
 Drive a depth-first product-requirement discovery interview against a single feature request. Walk a one-question-at-a-time conversation with the user until the feature's user, problem, scope boundaries, success metric, primary critical path, and domain vocabulary are all clarified. Once the user approves and the new flow has been classified against the existing critical paths, the interview is finished — a separate publisher skill materializes the artifacts.
 
-This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 5) and the approval request (step 6) are bookkeeping in conversation context only; the artifacts themselves are written downstream by `agent-product-owner-publish`.
+This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 5) and the approval request (step 6) are bookkeeping in conversation context only; the artifacts themselves are written downstream by `workflow-writer-publish-requirement`.
 
 ## When to activate
 
 Activate this skill whenever:
 
 - A new feature/product requirement needs to be clarified before any artifact is written.
-- The user types `/agent-product-owner-interview`, or phrases like 'interview me on this requirement', 'start the product-owner interview', 'walk me through the PRD discovery for <feature>', 'help me clarify what we're actually building'.
+- The user types `/workflow-product-owner-interview`, or phrases like 'interview me on this requirement', 'start the product-owner interview', 'walk me through the PRD discovery for <feature>', 'help me clarify what we're actually building'.
 - A re-entry: the user wants to extend or revise an in-flight requirement before approval has been given.
 
 Do NOT activate when:

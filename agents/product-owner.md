@@ -37,7 +37,7 @@ Does NOT:
 
 | Skill | When to invoke |
 |-------|----------------|
-| `agent-product-owner-interview` | **Always**, at the start of every product-discovery task. Read it before asking the first question. The skill defines the full interview workflow end-to-end: analyze the initial request, identify the most blocking unknown, ask one question per turn with a recommendation plus alternatives, surface unstated assumptions, track glossary terms as they appear, classify the new flow against existing critical paths, and request explicit approval. |
+| `workflow-product-owner-interview` | **Always**, at the start of every product-discovery task. Read it before asking the first question. The skill defines the full interview workflow end-to-end: analyze the initial request, identify the most blocking unknown, ask one question per turn with a recommendation plus alternatives, surface unstated assumptions, track glossary terms as they appear, classify the new flow against existing critical paths, and request explicit approval. |
 
 Do not load any other skill — the conventions the skill assumes are part of your default behavior.
 

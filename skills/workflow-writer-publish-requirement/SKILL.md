@@ -1,13 +1,13 @@
 ---
-name: agent-product-owner-publish
-description: "Materialize and commit every artifact for an approved product requirement: the PRD at `docs/product-requirement-document/<feature-name>/requirement.md`, the critical-path file under `docs/critical-path/` (extend / supersede / new), glossary updates in `docs/GLOSSARY.md`, and the optional product-context section of `CLAUDE.md`. Commits on the current branch; no PR. Activate on '/agent-product-owner-publish'."
+name: workflow-writer-publish-requirement
+description: "Materialize and commit every artifact for an approved product requirement: the PRD at `docs/product-requirement-document/<feature-name>/requirement.md`, the critical-path file under `docs/critical-path/` (extend / supersede / new), glossary updates in `docs/GLOSSARY.md`, and the optional product-context section of `CLAUDE.md`. Commits on the current branch; no PR. Activate on '/workflow-writer-publish-requirement'."
 ---
 
-# agent-product-owner-publish
+# workflow-writer-publish-requirement
 
 Materialize every output of an approved product-requirement interview and commit them on the current branch. Owns: the feature's PRD, the critical-path file (newly created, edited-in-place, or written-and-superseded), glossary updates, the optional `CLAUDE.md` product-context update, and the inline commit on the current branch.
 
-This skill **assumes the requirement is already clarified and approved** with the user via `agent-product-owner-interview` (or an equivalent explicit lock-in). It does not run a discovery interview, does not push, and does not open a PR.
+This skill **assumes the requirement is already clarified and approved** with the user via `workflow-product-owner-interview` (or an equivalent explicit lock-in). It does not run a discovery interview, does not push, and does not open a PR.
 
 ## When to activate
 
@@ -15,7 +15,7 @@ Activate this skill whenever:
 
 - The dispatch prompt opens with `Publish product requirement for <feature-name>` and the conversation history (or referenced interview notes) already carries a clarified, approved requirement plus a critical-path classification.
 - The user has explicitly approved a clarified requirement in this conversation and asks to write it out.
-- The user types `/agent-product-owner-publish`, or phrases like 'generate the PRD and critical-path for this requirement', 'write the product artifacts', 'commit the requirement we just clarified'.
+- The user types `/workflow-writer-publish-requirement`, or phrases like 'generate the PRD and critical-path for this requirement', 'write the product artifacts', 'commit the requirement we just clarified'.
 
 Do NOT activate when:
 

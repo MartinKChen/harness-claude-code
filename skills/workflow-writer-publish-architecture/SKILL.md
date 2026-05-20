@@ -1,9 +1,9 @@
 ---
-name: agent-architect-publish
-description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md` under `docs/product-requirement-document/<feature-name>/`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`. Commits on the current branch; no PR, no scaffold. Activate on '/agent-architect-publish'."
+name: workflow-writer-publish-architecture
+description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md` under `docs/product-requirement-document/<feature-name>/`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`. Commits on the current branch; no PR, no scaffold. Activate on '/workflow-writer-publish-architecture'."
 ---
 
-# agent-architect-publish
+# workflow-writer-publish-architecture
 
 Materialize every output of an approved architectural design and commit them on the current branch. Owns: ADRs, the ADR index, the feature's implementation-detail doc, the C4-PlantUML diagrams, per-resource OpenAPI 3.1 contracts, per-entity ODCS v3.1 data models, the optional `CLAUDE.md` architecture-context update, and the inline commit on the current branch.
 
@@ -15,7 +15,7 @@ Activate this skill whenever:
 
 - The dispatch prompt opens with `Publish architecture artifacts for <feature-name>` and the conversation history (or a referenced design note) already carries a settled, approved design.
 - The user has explicitly approved a settled design in this conversation and asks to write it out.
-- The user types `/agent-architect-publish`, or phrases like 'generate the ADRs and implement-detail for this design', 'write the architecture artifacts', 'commit the architecture decisions we just settled'.
+- The user types `/workflow-writer-publish-architecture`, or phrases like 'generate the ADRs and implement-detail for this design', 'write the architecture artifacts', 'commit the architecture decisions we just settled'.
 
 Do NOT activate when:
 

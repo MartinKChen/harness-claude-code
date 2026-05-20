@@ -1,9 +1,9 @@
 ---
-name: agent-architect-interview
-description: "Drive a depth-first architectural design interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and the existing architecture context, walk a one-question-per-turn conversation with a recommendation plus alternatives and a trade-off block, surface unstated assumptions, request approval, partition decisions into ADR IDs, then emit a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/agent-architect-interview'."
+name: workflow-architect-interview
+description: "Drive a depth-first architectural design interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and the existing architecture context, walk a one-question-per-turn conversation with a recommendation plus alternatives and a trade-off block, surface unstated assumptions, request approval, partition decisions into ADR IDs, then emit a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/workflow-architect-interview'."
 ---
 
-# agent-architect-interview
+# workflow-architect-interview
 
 Drive a depth-first architectural design interview against a single requirement. Read the requirement and the existing architecture context, then walk a one-question-at-a-time conversation with the user until the system is ship-ready. Once the user approves, partition the settled decisions into ADR identifiers and compose a dispatch prompt for the publisher agent that will materialize the artifacts.
 
@@ -14,7 +14,7 @@ This skill **writes nothing** — no ADRs, no implement-detail doc, no per-entit
 Activate this skill whenever:
 
 - A requirement file at `docs/product-requirement-document/<feature-name>/requirement.md` needs an architectural design and the design has not yet been settled with the user.
-- The user types `/agent-architect-interview`, or phrases like 'design the architecture for this PRD', 'interview me on the architecture for <feature>', 'start the architect interview', 'walk me through the architecture decisions for this requirement'.
+- The user types `/workflow-architect-interview`, or phrases like 'design the architecture for this PRD', 'interview me on the architecture for <feature>', 'start the architect interview', 'walk me through the architecture decisions for this requirement'.
 - A re-entry: the user wants to extend or revise an in-flight architectural decision before approval has been given.
 
 Do NOT activate when:

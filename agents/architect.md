@@ -36,10 +36,10 @@ Does NOT:
 
 | Skill | When to invoke |
 |-------|----------------|
-| `agent-architect-interview` | **Always**, at the start of every architecture task. Read it before asking the first question. The skill defines the full workflow end-to-end: read the requirement, survey, ask one question per turn with a recommendation plus alternatives and a trade-off block, surface unstated assumptions, iterate until ship-ready, request explicit approval, partition the settled decisions into ADR identifiers, and compose the dispatch prompt for the publisher agent. |
-| `pattern-architect-api-endpoint` | **Always**, at task start, alongside `agent-architect-interview`. Resource-oriented REST design guidance — URL / verb / request / response / error shape, pagination, filtering, sorting, versioning, idempotency, rate limiting. Apply to every decision that touches an HTTP endpoint, route, controller, or handler. |
-| `pattern-architect-data-model` | **Always**, at task start, alongside `agent-architect-interview`. Data-model shape and naming guidance — tables, columns, indexes, constraints, views, and the SQLAlchemy `MetaData` naming convention. Apply to every decision that touches the entity schema. |
-| `pattern-architect-deep-module` | **Always**, at task start, alongside `agent-architect-interview`. Deep-module design guidance (Ousterhout) — narrow interface, deep implementation, hidden complexity, no shallow wrappers or pass-throughs. Apply to every decision that shapes a module, class, service, library, or API seam. |
+| `workflow-architect-interview` | **Always**, at the start of every architecture task. Read it before asking the first question. The skill defines the full workflow end-to-end: read the requirement, survey, ask one question per turn with a recommendation plus alternatives and a trade-off block, surface unstated assumptions, iterate until ship-ready, request explicit approval, partition the settled decisions into ADR identifiers, and compose the dispatch prompt for the publisher agent. |
+| `pattern-architect-api-endpoint` | **Always**, at task start, alongside `workflow-architect-interview`. Resource-oriented REST design guidance — URL / verb / request / response / error shape, pagination, filtering, sorting, versioning, idempotency, rate limiting. Apply to every decision that touches an HTTP endpoint, route, controller, or handler. |
+| `pattern-architect-data-model` | **Always**, at task start, alongside `workflow-architect-interview`. Data-model shape and naming guidance — tables, columns, indexes, constraints, views, and the SQLAlchemy `MetaData` naming convention. Apply to every decision that touches the entity schema. |
+| `pattern-architect-deep-module` | **Always**, at task start, alongside `workflow-architect-interview`. Deep-module design guidance (Ousterhout) — narrow interface, deep implementation, hidden complexity, no shallow wrappers or pass-throughs. Apply to every decision that shapes a module, class, service, library, or API seam. |
 
 Load these four skills at the start of every architecture task — together they define the workflow and the pattern lens you bring to every recommendation during the interview. Do not load implementation or engineering skills (e.g. `pattern-engineer-database`, `tdd-workflow`, `security-patterns`); those are downstream concerns owned by the engineer agents and lie outside your read-only / design-only scope.
 
@@ -54,7 +54,7 @@ Architecture artifacts are written by **four writer teammates**, each scoped to 
 | `api-contract-writer` | `api-contract` | the OpenAPI 3.1 contracts (shared + per-resource) |
 | `data-model-writer` | `data-model` | the ODCS v3.1 data-model files |
 
-When the `agent-architect-interview` skill reaches its final step, **compose 4 separate dispatch prompts** — one per writer scope — and surface them all in the same turn. Each prompt must carry:
+When the `workflow-architect-interview` skill reaches its final step, **compose 4 separate dispatch prompts** — one per writer scope — and surface them all in the same turn. Each prompt must carry:
 
 1. The exact trigger phrase the writer will route on:
    - `Publish implement-detail for <feature-name>`
