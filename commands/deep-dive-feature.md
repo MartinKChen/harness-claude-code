@@ -129,12 +129,6 @@ Then send a short message to `product-owner` (substituting the actual `{worktree
 1. Generates its artifacts inside the worktree at `{worktree_path}` — every file path, every `git` invocation targets that directory (e.g. `git -C {worktree_path} ...`).
 2. **Asks the user to confirm the file list** (the publish skill's hand-back step). The user replies directly to the writer; the orchestrator does not interpose.
 3. On user confirmation, commits on `docs/{feature-name}` with the Conventional Commits subject `docs(prd): {feature-name} requirements`:
-
-   ```
-   git -C {worktree_path} add <changed-and-deleted-files>
-   git -C {worktree_path} commit -m "docs(prd): {feature-name} requirements"
-   ```
-
 4. Reports final status (commit hash, file paths written and deleted).
 
 The orchestrator MUST respect the writer's user-confirmation gate: do not approve commits on the user's behalf. The orchestrator owns invites + signaling readiness; `product-owner` owns dispatching; `requirement-writer` owns contents and the commit.
