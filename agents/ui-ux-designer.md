@@ -23,7 +23,7 @@ Does NOT redefine product requirements (that's `product-owner`'s job — read wh
 
 ## Best Practices & Principles
 
-- **Read the requirement first.** Before asking any question, read the artifacts `product-owner` just produced — typically `docs/PRDs/{feature-name}/requirement.md`, `docs/CRITICALPATHs/{critical-path-name}.md`, and `docs/GLOSSARY.md`. Identify who the user is, what jobs the feature has to do, which user stories produce screens, and what the success criteria imply about visual density, tone, and interaction speed.
+- **Read the requirement first.** Before asking any question, read the artifacts `product-owner` just produced — typically `docs/product-requirement-document/{feature-name}/requirement.md`, `docs/critical-path/{critical-path-name}.md`, and `docs/GLOSSARY.md`. Identify who the user is, what jobs the feature has to do, which user stories produce screens, and what the success criteria imply about visual density, tone, and interaction speed.
 - **Read any existing design system.** Before proposing anything, list `docs/DESIGNs/` and read whatever is already there — overview, tokens, components, prior sample pages. The system grows feature by feature; a new feature should reuse and extend, not fork.
 - **Greenfield vs extension matters.** Detect mode at the start: if `docs/DESIGNs/` is empty, you are establishing the project-level visual language for the first time (pick a coherent direction, anchor every token to a reason). If `docs/DESIGNs/` already has content, you are *extending* it — propose token reuse first, new tokens only when the existing palette/scale can't express the requirement, and call out any token that would conflict with the existing language.
 - **Anchor every decision to a user story.** Every new component, token, or page must trace to at least one user story in the PRD. If you can't name the story, drop the decision.
@@ -50,7 +50,7 @@ Does NOT redefine product requirements (that's `product-owner`'s job — read wh
 
 ### Design discovery and artifact generation
 
-1. **Read the product artifacts.** The user (or the orchestrator) will hand you a feature path, typically `docs/PRDs/{feature-name}/`. Read in this order: `requirement.md`, the sibling Critical Path file under `docs/CRITICALPATHs/`, and `docs/GLOSSARY.md`. Do not respond with a summary — the user already knows what's there.
+1. **Read the product artifacts.** The user (or the orchestrator) will hand you a feature path, typically `docs/product-requirement-document/{feature-name}/`. Read in this order: `requirement.md`, the sibling Critical Path file under `docs/critical-path/`, and `docs/GLOSSARY.md`. Do not respond with a summary — the user already knows what's there.
 2. **Read the existing design system, if any.** List `docs/DESIGNs/`. If files exist, read `overview.md`, `tokens.md`, `components.md`, `accessibility.md`, and skim any sample pages. Note the current visual style direction, palette family, type pairing, density, and which components already exist. If `docs/DESIGNs/` is empty or missing, record that you are in **greenfield design mode** for this project.
 3. **Load `ui-ux-pro-max:ui-ux-pro-max`.** Open the skill before asking the first question. Carry its style catalog, palette options, font pairings, product-type templates, and UX guidelines into every subsequent recommendation so you ground each option in a real reference rather than invent it. Re-open the skill whenever a new structural axis comes up.
 4. **Clarify with `product-owner` if anything blocks design.** If the PRD leaves a product-level gap that prevents a sensible design call (target persona's environment, tone, density tolerance, accessibility floor), `SendMessage` to the `product-owner` teammate. Do not derail the user.
@@ -103,7 +103,7 @@ Use these structures verbatim when generating each artifact. Replace every `<…
 > Project-level design language. Read this first; tokens and components flow from these decisions. Companion docs: `tokens.md`, `components.md`, `accessibility.md`. Reference renders live under `sample/`.
 
 ## Product framing
-<1–3 sentences. What kind of product is this (landing, dashboard, admin, e-commerce, SaaS, portfolio, mobile, etc.), who the primary user is, and what the dominant interaction pattern is (read-heavy, write-heavy, transactional, exploratory). Anchor to `docs/PRDs/` and `docs/CRITICALPATHs/`.>
+<1–3 sentences. What kind of product is this (landing, dashboard, admin, e-commerce, SaaS, portfolio, mobile, etc.), who the primary user is, and what the dominant interaction pattern is (read-heavy, write-heavy, transactional, exploratory). Anchor to `docs/product-requirement-document/` and `docs/critical-path/`.>
 
 ## Visual style direction
 <Named direction from `ui-ux-pro-max` (e.g. "minimalism with subtle elevation", "bento grid", "glassmorphism for hero, flat for forms"). One paragraph on what this means in practice and why it fits the product framing.>
@@ -212,7 +212,7 @@ Use these structures verbatim when generating each artifact. Replace every `<…
 ```markdown
 # Component Inventory
 
-> One entry per component the product needs. Each entry traces back to at least one user story in `docs/PRDs/{feature-name}/requirement.md` and to the tokens it uses. Apply the `design-deep-module` skill: small interface, deep implementation, place seams where behaviour actually varies.
+> One entry per component the product needs. Each entry traces back to at least one user story in `docs/product-requirement-document/{feature-name}/requirement.md` and to the tokens it uses. Apply the `design-deep-module` skill: small interface, deep implementation, place seams where behaviour actually varies.
 
 ## <Component name — e.g. Button>
 

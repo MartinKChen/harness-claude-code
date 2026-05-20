@@ -28,7 +28,7 @@ Do NOT activate when:
 
 Inputs from the caller (typically forwarded from the interviewer's dispatch prompt): a `<feature-name>`, the **partitioned decisions** already tagged with their assigned `ADR-{NNNN}` IDs, the **supersession list** (existing ADR IDs each new ADR replaces), any deferred-with-trigger items, whether the high-level topology shifted (so the architecture-context section of `CLAUDE.md` can be updated when warranted), and the working directory of the worktree on the feature branch. ADR partitioning and ID assignment happen upstream — do **not** re-partition or re-number here.
 
-Everything else (sibling PRD files, current `CLAUDE.md` shape, existing diagrams / contracts / data-models on disk that may need editing in place) you read from disk.
+Everything else (sibling PRD files, current `CLAUDE.md` shape, existing diagrams / contracts / data-model on disk that may need editing in place) you read from disk.
 
 ### Scope
 

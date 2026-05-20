@@ -134,7 +134,7 @@ This distinction is the single most important guard against writing code before 
 
 ### Reading the acceptance criteria
 
-Before step 0, fetch the GitHub issue under work (`gh issue view <n>` or via its URL). The acceptance criteria — typically EARS + Gherkin scenarios in the issue body — are the source of truth for what the acceptance test must assert. The PRD under `docs/PRDs/<feature-name>/` is background context only; do not derive acceptance criteria from `requirement.md`. If no issue is identified, or the issue's acceptance criteria are missing, vague, or contradict themselves, stop and ask the user to resolve it before writing any test. Do not invent acceptance criteria.
+Before step 0, fetch the GitHub issue under work (`gh issue view <n>` or via its URL). The acceptance criteria — typically EARS + Gherkin scenarios in the issue body — are the source of truth for what the acceptance test must assert. The PRD under `docs/product-requirement-document/<feature-name>/` is background context only; do not derive acceptance criteria from `requirement.md`. If no issue is identified, or the issue's acceptance criteria are missing, vague, or contradict themselves, stop and ask the user to resolve it before writing any test. Do not invent acceptance criteria.
 
 ## Pattern
 

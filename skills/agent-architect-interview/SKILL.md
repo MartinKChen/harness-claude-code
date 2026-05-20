@@ -19,7 +19,7 @@ Activate this skill whenever:
 
 Do NOT activate when:
 
-- The user wants to write or commit architecture artifacts (ADRs, implement-detail, data-models, api-contracts, C4 diagrams) — that is downstream artifact-publishing work, not interview work.
+- The user wants to write or commit architecture artifacts (ADRs, implement-detail, data-model, api-contract, C4 diagrams) — that is downstream artifact-publishing work, not interview work.
 - The requirement itself is unclear or contested — surface that to the user and stop. Product framing is the product owner's job.
 - The unit of work is a feature task (backend / frontend / e2e) — different lane.
 - The user asks to scaffold a worktree directly — different lane.
