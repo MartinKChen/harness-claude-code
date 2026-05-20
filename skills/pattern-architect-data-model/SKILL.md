@@ -1,9 +1,9 @@
 ---
-name: database-patterns
+name: pattern-architect-data-model
 description: "Enforce code-first data modeling and migration patterns whenever designing, implementing, refactoring, or reviewing database schemas, ORM models, or migrations. Activate on verbs like design, model, add, create, scaffold, refactor, migrate paired with database-shaped nouns (table, model, schema, column, index, constraint, foreign key, migration, revision). Triggers on framework signals (SQLAlchemy, Alembic, pytest-alembic, Django ORM, Pydantic ORM models) and file paths like models.py, models/*.py, alembic/, migrations/, alembic.ini, env.py, versions/*.py. Triggers on phrases like 'add a table for X', 'design the data model', 'write a migration for Y', 'add a column to Z', 'name this index', 'generate the migration', 'test the migration'. Encodes code-first workflow (models drive migrations, never the reverse), Alembic for Python migrations, pytest-alembic for migration testing, plural-noun table names, descriptive column names, and the pk/fk/idx/uq/vw constraint prefixes."
 ---
 
-# database-patterns
+# pattern-architect-data-model
 
 Standardize how we design and ship data models: the code is the source of truth, migrations are generated from the models (never hand-edited schemas drift first), and every table, column, and constraint follows a predictable naming convention so reviewers and tools can navigate the schema without surprises.
 

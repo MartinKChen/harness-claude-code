@@ -89,7 +89,7 @@ schema:
 
     # Indexes and constraints. ODCS doesn't strictly require this section, but we capture it so
     # the generated migration matches the contract one-to-one. Names follow the
-    # `pk_ / fk_ / idx_ / uq_` prefixes from `database-patterns`.
+    # `pk_ / fk_ / idx_ / uq_` prefixes from `pattern-architect-data-model`.
     customProperties:
       - property: constraints
         value:

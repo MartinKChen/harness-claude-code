@@ -39,9 +39,9 @@ Other skills still apply (route to them as you would any skill, not as files und
 
 | Skill | When to route to it |
 |-------|---------------------|
-| `design-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
-| `design-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
-| `database-patterns` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema/migration/naming. |
+| `pattern-architect-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
+| `pattern-architect-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
+| `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema/migration/naming. |
 
 Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `implement-feature-task`, `fix-pr-blockers`, `fix-task-feedback`, `author-e2e-tests`, or `fix-e2e-tests`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 
@@ -51,7 +51,7 @@ Commit-message format is owned by the **dispatched caller skill**, not this one.
 
 0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller skill's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
 
-1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface (lean on `design-deep-module`). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
+1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface (lean on `pattern-architect-deep-module`). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
 
    - **a. RED.** Write ONE failing test against the module's interface for ONE behavior. Use the fake adapters at seams. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Commit: `test(<module>): add failing test for <behavior>`.
    - **b. GREEN.** Write the minimum implementation that makes the test pass. No speculative code, no extra branches, no "while I'm here" cleanup. Run the suite. Commit: `feat(<module>): implement <behavior>`.

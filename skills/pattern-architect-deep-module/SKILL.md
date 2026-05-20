@@ -1,9 +1,9 @@
 ---
-name: design-deep-module
+name: pattern-architect-deep-module
 description: "Enforce the 'deep module' design pattern (Ousterhout, A Philosophy of Software Design) when designing or reviewing the shape of a module, class, package, service, or API. Activate for verbs like design, architect, scaffold, sketch, propose, structure, refactor, split, extract, or review when the noun is module, class, package, component, service, library, SDK, API, interface, or abstraction. Triggers on phrases like 'design a module for X', 'how should I structure this class', 'what should the interface look like', 'split this into modules', 'is this abstraction good', and on file-creation requests for new top-level modules, public APIs, or service boundaries. Ensures the module has a narrow interface relative to its functionality, hides implementation details, avoids pass-through and shallow wrappers, and pulls complexity downward."
 ---
 
-# design-deep-module
+# pattern-architect-deep-module
 
 Guides the design of modules so they end up *deep*: a small, simple interface that hides a large amount of functionality and complexity. Based on John Ousterhout's *A Philosophy of Software Design*. Use this whenever a new module/class/API seam is being drawn, or when reviewing whether an existing one is pulling its weight.
 

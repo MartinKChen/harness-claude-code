@@ -44,7 +44,7 @@ Does NOT redefine product requirements (that's `product-owner`'s job — read wh
 | Skill | When to invoke |
 |-------|----------------|
 | `ui-ux-pro-max:ui-ux-pro-max` | **Preferred and primary.** Open once at the very start of every design task to load style references (50+ visual styles), color palettes, font pairings, product-type templates, UX guideline checklists, and component examples. Re-open whenever you settle a new structural decision (style direction, palette, type pairing, layout density, component shape) so the recommendation is grounded in a real reference rather than invented from scratch. |
-| `design-deep-module` | When the design needs a clear seam between a generic primitive (e.g. `Button`) and a feature-specific composition (e.g. `RetryPaymentButton`) — keep the primitive interface small, the implementation deep, place the seam where behaviour actually varies. |
+| `pattern-architect-deep-module` | When the design needs a clear seam between a generic primitive (e.g. `Button`) and a feature-specific composition (e.g. `RetryPaymentButton`) — keep the primitive interface small, the implementation deep, place the seam where behaviour actually varies. |
 
 ## Workflows
 
@@ -212,7 +212,7 @@ Use these structures verbatim when generating each artifact. Replace every `<…
 ```markdown
 # Component Inventory
 
-> One entry per component the product needs. Each entry traces back to at least one user story in `docs/product-requirement-document/{feature-name}/requirement.md` and to the tokens it uses. Apply the `design-deep-module` skill: small interface, deep implementation, place seams where behaviour actually varies.
+> One entry per component the product needs. Each entry traces back to at least one user story in `docs/product-requirement-document/{feature-name}/requirement.md` and to the tokens it uses. Apply the `pattern-architect-deep-module` skill: small interface, deep implementation, place seams where behaviour actually varies.
 
 ## <Component name — e.g. Button>
 

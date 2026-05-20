@@ -14,7 +14,7 @@
 #   `backend`. A nginx reverse-proxy block to `backend` is NOT shipped here —
 #   that lands via frontend-patterns / docker-patterns when the first
 #   frontend->backend call ships.
-# - No `migrate` service here. It lands via database-patterns when the first
+# - No `migrate` service here. It lands via pattern-architect-data-model when the first
 #   migration ships.
 
 name: <PRODUCT>

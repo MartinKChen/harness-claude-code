@@ -1,9 +1,9 @@
 ---
-name: design-api-endpoint
+name: pattern-architect-api-endpoint
 description: "Activate when designing, implementing, reviewing, or refactoring HTTP API endpoints — REST/RESTful, web APIs, JSON APIs, controllers, routes, handlers. Triggers on verbs like design, add, create, scaffold, implement, expose, refactor, review when paired with nouns like endpoint, route, API, resource, controller, handler. Triggers on phrases like 'add an endpoint for X', 'design a REST API for Y', 'how should I structure this route', 'what URL/verb should this use', 'review this controller'. Triggers on file types like routes.{ts,js,py,rb,go}, *_controller.*, handlers/*, api/* and on framework signals (Express, Fastify, NestJS, FastAPI, Flask, Django REST, Rails, Gin, Echo). Encodes resource-oriented REST conventions: URL/path naming, HTTP verb selection, request/response shape, sparse fieldsets, error format (with no internal leakage on 5xx), offset pagination, filtering with comparison operators (gte/lte/in/like), sorting, versioning, idempotency, and rate limiting."
 ---
 
-# design-api-endpoint
+# pattern-architect-api-endpoint
 
 Frame every new or changed HTTP endpoint as a resource-oriented REST operation before writing code. This skill captures the conventions to follow so endpoints across the codebase stay consistent — predictable URLs, correct verbs, uniform response/error shapes, and explicit semantics for pagination, versioning, and idempotency.
 
