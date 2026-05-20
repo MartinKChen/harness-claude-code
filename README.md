@@ -77,7 +77,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 
 | Skill | What it does |
 | --- | --- |
-| `pattern-architect-data-model` | Code-first data modeling with SQLAlchemy + Alembic, naming conventions for tables / columns / constraints, migration testing with pytest-alembic. |
+| `pattern-engineer-database` | Ship migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip, named-artifact, extension cleanup), run via the one-shot `migrate` compose service. |
 | `security-patterns` | Baseline app-sec checks: CVEs, secret handling, input validation, parameterized queries, auth/cookies, CSRF + rate limits, redacted logs. |
 
 ### Design
@@ -85,6 +85,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | Skill | What it does |
 | --- | --- |
 | `pattern-architect-api-endpoint` | Resource-oriented REST conventions: URLs, verbs, response/error shape, pagination, filtering, sorting, versioning, idempotency. |
+| `pattern-architect-data-model` | Data-model shape and naming: predictable naming for tables / columns / constraints / indexes / views, and the SQLAlchemy `MetaData` convention that emits those names automatically. |
 | `pattern-architect-deep-module` | Ousterhout-style "deep module" design: narrow interfaces, hidden complexity, no shallow wrappers or pass-through layers. |
 
 ### `tdd-workflow` references

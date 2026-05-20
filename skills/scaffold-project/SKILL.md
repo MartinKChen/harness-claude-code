@@ -29,7 +29,7 @@ Do NOT activate when:
 |-------|---------------------|
 | `git-workflow` | For Conventional Commits subject format on every `chore(scaffold):` / `build:` commit produced here. **Required.** |
 
-This skill does NOT load `tdd-workflow`, `security-patterns`, `pattern-architect-data-model`, or any other pattern skill. Scaffold has no feature code to test, no secrets to handle, no schema to model. Those skills come in once `implement-feature-task` takes over.
+This skill does NOT load `tdd-workflow`, `security-patterns`, `pattern-architect-data-model`, `pattern-engineer-database`, or any other pattern skill. Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those skills come in once `implement-feature-task` takes over.
 
 ## Templates
 
@@ -95,7 +95,7 @@ For each surface in the work list, in this order (so later surfaces can referenc
    git commit -m "chore(scaffold): frontend (<stack>) — entry, manifests, Dockerfile"
    ```
 
-3. **`compose`** — copy `templates/compose.yaml` to the worktree root. Fill in service names and `image:` / `build:` targets per the ADR's topology. Use `${VAR:-default}` indirection on every host-exposed port. Do not add a `migrate` service unless the ADR explicitly says migrations are bootstrapped at scaffold time — by default migrations come in with the first migration via `pattern-architect-data-model` guidance. Commit:
+3. **`compose`** — copy `templates/compose.yaml` to the worktree root. Fill in service names and `image:` / `build:` targets per the ADR's topology. Use `${VAR:-default}` indirection on every host-exposed port. Do not add a `migrate` service unless the ADR explicitly says migrations are bootstrapped at scaffold time — by default migrations come in with the first migration via `pattern-engineer-database` guidance. Commit:
 
    ```bash
    git add compose.yaml

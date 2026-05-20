@@ -41,7 +41,8 @@ Other skills still apply (route to them as you would any skill, not as files und
 |-------|---------------------|
 | `pattern-architect-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
 | `pattern-architect-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
-| `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema/migration/naming. |
+| `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema shape and table/column/constraint naming. |
+| `pattern-engineer-database` | When the contract test or fixture has to ship an Alembic migration — for autogenerate, `pytest-alembic` assertions, and the `migrate` compose service. |
 
 Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `implement-feature-task`, `fix-pr-blockers`, `fix-task-feedback`, `author-e2e-tests`, or `fix-e2e-tests`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 

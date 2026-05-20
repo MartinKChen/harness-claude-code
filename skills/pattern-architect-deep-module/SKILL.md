@@ -1,6 +1,6 @@
 ---
 name: pattern-architect-deep-module
-description: "Enforce the 'deep module' design pattern (Ousterhout, A Philosophy of Software Design) when designing or reviewing the shape of a module, class, package, service, or API. Activate for verbs like design, architect, scaffold, sketch, propose, structure, refactor, split, extract, or review when the noun is module, class, package, component, service, library, SDK, API, interface, or abstraction. Triggers on phrases like 'design a module for X', 'how should I structure this class', 'what should the interface look like', 'split this into modules', 'is this abstraction good', and on file-creation requests for new top-level modules, public APIs, or service boundaries. Ensures the module has a narrow interface relative to its functionality, hides implementation details, avoids pass-through and shallow wrappers, and pulls complexity downward."
+description: "Deep-module design guidance (Ousterhout, A Philosophy of Software Design): narrow interface, deep implementation, hidden complexity, no shallow wrappers or pass-throughs. Activate when designing or reviewing the shape of a module, class, package, service, library, or API. Skip for implementation inside an already-agreed seam, bug fixes that don't change the interface, or general software-philosophy questions without an actual module to design."
 ---
 
 # pattern-architect-deep-module
@@ -126,15 +126,3 @@ What maintainers get from depth. Change, bugs, knowledge, and verification conce
 - **"Interface" as the TypeScript `interface` keyword or a class's public methods**: too narrow — interface here includes every fact a caller must know.
 - **"Boundary"**: overloaded with DDD's bounded context. Say **seam** or **interface**.
 
-## Workflow
-
-Use these steps when designing a new module or reviewing a proposed one. They are diagnostic — answer them honestly; if any answer is "no" or "I can't tell", the module is probably shallow and should be reshaped before code is written.
-
-1. **State the module's purpose in one sentence.** If it takes more, the module is doing too much or its abstraction isn't crisp yet. Refine the sentence first.
-2. **List the public interface.** Every method, every parameter, every exception, every config field, every type the caller must import. This is the "width" — keep it visible while you work.
-3. **List what the module hides.** Algorithms, data structures, external services, file formats, protocols, threading, caching, retries. This is the "depth". If this list is short or nearly the same shape as the interface, stop — the module is shallow.
-4. **Check the depth ratio.** Read interface and hidden-functionality side by side. The interface should feel disproportionately small. If they look balanced, decide: inline the module, merge it with a neighbor, or push more responsibility into it.
-5. **Hunt for shallow-module smells.** Walk the interface and flag: pass-through methods, pass-through parameters, leaked internal types, exceptions the caller could ignore, config knobs that name internal mechanisms, method names that describe *how* instead of *what*, temporal decomposition across sibling modules.
-6. **Fix the smells before writing code.** For each smell, choose: absorb the concern (define errors out of existence, hide the type, drop the knob), merge with another module, or rename so the abstraction reads at the right layer. Re-run step 4.
-7. **Write the interface comments.** Before any implementation, write the docstring/JSDoc for each public method as if the reader has never seen the module. If you can't write a useful comment without describing internals, the abstraction is still wrong — return to step 4.
-8. **Hand off to implementation.** Only once the interface is narrow, hides real complexity, and reads cleanly at its layer. The skill's job ends here; implementation proceeds normally.
