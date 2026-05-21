@@ -7,7 +7,7 @@ description: "Test-coverage patterns for the code gate on any `type:*` task. Eve
 
 Encodes the canonical patterns for evaluating whether the tests in a scoped diff are *enough* — every acceptance criterion the task promised has a test that actually exercises it, every Gherkin scenario walks Given → When → Then, and the obvious edge cases (boundary, error, empty input, concurrency, idempotency) are covered at the appropriate layer. This skill describes **what counts as a coverage gap and how to format the finding**. Driving the review (fetch issue, scope commits, post the comment, flip the gate) and computing the overall verdict (APPROVE / BLOCK) belong to the dispatched caller (the `reviewer` agent).
 
-Code-quality patterns live in `pattern-reviewer-code-quality`. Security patterns live in `pattern-reviewer-security`. This skill is the third pillar of the code gate — invoked on every task whose code gate is being reviewed, regardless of `type:*`.
+Code-quality patterns live in `pattern-reviewer-coding-standard`. Security patterns live in `pattern-reviewer-security`. This skill is the third pillar of the code gate — invoked on every task whose code gate is being reviewed, regardless of `type:*`.
 
 ## When to activate
 
@@ -117,4 +117,4 @@ Every finding emitted by this skill matches this shape (the template under `temp
 - Cross-references in the same comment use the AC/scenario label (`AC2`, `Scenario "Cancels pending order"`), the quoted finding title, or `F1` / `F2`.
 - BAD/GOOD code snippets are not required — the "fix" sentence + the AC reference is usually enough. Include a GOOD snippet only when the test's shape is non-obvious (e.g., a Playwright spec that needs a specific waitFor pattern).
 
-Hand the collected list of findings back to the dispatching `reviewer` agent — it owns the comment composition, severity-count summary, verdict line, scope note, and posting (folding these MEDIUM findings into the same `# Code Review` comment that carries the `pattern-reviewer-code-quality` findings).
+Hand the collected list of findings back to the dispatching `reviewer` agent — it owns the comment composition, severity-count summary, verdict line, scope note, and posting (folding these MEDIUM findings into the same `# Code Review` comment that carries the `pattern-reviewer-coding-standard` findings).

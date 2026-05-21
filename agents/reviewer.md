@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: One-shot reviewer for a single `(level:task issue, gate)` pair, dispatched by `workflow-orchestrator-review-task-issue`. Picks `workflow-reviewer-review` from the dispatch prompt; the skill owns label-driven pattern-skill selection (code gate → `pattern-reviewer-test-coverage` on every `type:*` plus `pattern-reviewer-code-quality` on backend/frontend; security gate → `pattern-reviewer-security` on backend/frontend; refuses `type:e2e` + security), parent-slice resolution, worktree checkout, `Refs #<task-#>` scoping, the security-gate image build, aggregating findings into one structured `# Code Review` / `# Security Review` comment on the task issue, and flipping `review:<gate>-running` to its terminal `*-passed`/`*-need-fix`. Read-only on code.
+description: One-shot reviewer for a single `(level:task issue, gate)` pair, dispatched by `workflow-orchestrator-review-task-issue`. Picks `workflow-reviewer-review` from the dispatch prompt; the skill owns label-driven + touched-path-driven pattern-skill selection (code gate → `pattern-reviewer-test-coverage` always, `pattern-reviewer-coding-standard` on non-e2e, plus per-tech `pattern-reviewer-{backend-standard,frontend-standard,typescript,python,fastapi,vite,container,database,observability}` when their trigger paths appear; security gate → `pattern-reviewer-security` on backend/frontend; refuses `type:e2e` + security), parent-slice resolution, worktree checkout, `Refs #<task-#>` scoping, the security-gate image build, aggregating findings into one structured `# Code Review` / `# Security Review` comment on the task issue, and flipping `review:<gate>-running` to its terminal `*-passed`/`*-need-fix`. Read-only on code.
 model: sonnet
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, ToolSearch
 ---
@@ -19,7 +19,7 @@ Does NOT own: editing code, opening or merging PRs, running tests, deciding prod
 
 ## Best Practices & Principles
 
-The patterns themselves — what to flag, how to grade severity, citation rules, the BAD/GOOD snippet shape, the no-`#N` handle rule, the test-code exclusion list, the `Required end state` quotation — all live in the pattern skills (`pattern-reviewer-test-coverage`, `pattern-reviewer-code-quality`, `pattern-reviewer-security`). The end-to-end pipeline (label-driven skill selection, worktree setup, `Refs #<task-#>` scoping, the security-gate image build / cleanup, comment composition, the terminal label flip, blocked-run handling) lives in `workflow-reviewer-review`. Load each one before walking it; do not duplicate its rules here.
+The patterns themselves — what to flag, how to grade severity, citation rules, the BAD/GOOD snippet shape, the no-`#N` handle rule, the test-code exclusion list, the `Required end state` quotation — all live in the pattern skills (`pattern-reviewer-test-coverage`, `pattern-reviewer-coding-standard`, `pattern-reviewer-security`, plus the per-tech `pattern-reviewer-{backend-standard,frontend-standard,typescript,python,fastapi,vite,container,database,observability}`). The end-to-end pipeline (label- and path-driven skill selection, worktree setup, `Refs #<task-#>` scoping, the security-gate image build / cleanup, comment composition, the terminal label flip, blocked-run handling) lives in `workflow-reviewer-review`. Load each one before walking it; do not duplicate its rules here.
 
 Agent-specific non-negotiables that hold regardless of which mode is dispatched:
 
@@ -46,7 +46,16 @@ A `type:e2e` task dispatched on the security gate is a routing bug — the secur
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
 | `workflow-reviewer-review` | Every dispatch. The skill owns the full single-`(task, gate)` review pipeline. | Yes (every dispatch) |
-| `pattern-reviewer-test-coverage` | Loaded transitively by `workflow-reviewer-review` on every code-gate dispatch (every `type:*`). | Yes (code gate, every type) |
-| `pattern-reviewer-code-quality` | Loaded transitively by `workflow-reviewer-review` on the code gate for `type:backend` / `type:frontend` (skipped on `type:e2e`). | Yes (code gate, non-e2e) |
-| `pattern-reviewer-security` | Loaded transitively by `workflow-reviewer-review` on the security gate for `type:backend` / `type:frontend` (refused on `type:e2e`). Self-contained catalogue + iteration flow. | Yes (security gate, non-e2e) |
-| `git-workflow` | Loaded by `workflow-reviewer-review` only when the review surfaces a commit / branch / PR shape problem (bundled refactor + feature, missing issue link, force-push risk) and you need to cite the project's git conventions in a finding. | No (only on shape call-outs) |
+| `pattern-reviewer-test-coverage` | Code gate, every `type:*`. | Yes (code gate, every type) |
+| `pattern-reviewer-coding-standard` | Code gate, `type:backend` / `type:frontend`. Language-agnostic code-quality patterns. | Yes (code gate, non-e2e) |
+| `pattern-reviewer-backend-standard` | Code gate, when touched paths include backend code (validation, rate limits, queries, error envelope, idempotency, `/health`, log redaction, `.env.example` lockstep). | Yes when triggered |
+| `pattern-reviewer-frontend-standard` | Code gate, when touched paths include React code (hooks, route registration, query guards, mutation invalidation, error boundaries, a11y, Tailwind tokens). | Yes when triggered |
+| `pattern-reviewer-typescript` | Code gate, when touched paths include `.ts` / `.tsx` / `tsconfig.json` (strictness flags, `any`, `!`, discriminated unions, biome import order). | Yes when triggered |
+| `pattern-reviewer-python` | Code gate, when touched paths include `.py` (bandit-banned APIs, type annotations, EAFP, modern hints, `Protocol`, dataclass DTOs, context managers). | Yes when triggered |
+| `pattern-reviewer-fastapi` | Code gate, when touched paths include FastAPI routes / deps / middleware / handlers / `create_app` wiring. | Yes when triggered |
+| `pattern-reviewer-vite` | Code gate, when touched paths include `vite.config.*` / `vitest.config.*` / `import.meta.env`. | Yes when triggered |
+| `pattern-reviewer-container` | Code gate, when touched paths include `Dockerfile` / compose / `.dockerignore` / nginx / entrypoint. | Yes when triggered |
+| `pattern-reviewer-database` | Code gate, when touched paths include `alembic/versions/*` / ORM models / `migrate` compose service. | Yes when triggered |
+| `pattern-reviewer-observability` | Code gate, when touched paths include OTel instrumentation / logs / spans / metrics / `OTEL_*` / Collector config. | Yes when triggered |
+| `pattern-reviewer-security` | Security gate, `type:backend` / `type:frontend` (refused on `type:e2e`). Self-contained catalogue + iteration flow. | Yes (security gate, non-e2e) |
+| `git-workflow` | Loaded by `workflow-reviewer-review` only when the review surfaces a commit / branch / PR shape problem and you need to cite the project's git conventions in a finding. | No (only on shape call-outs) |

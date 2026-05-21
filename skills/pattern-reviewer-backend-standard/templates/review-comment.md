@@ -69,7 +69,7 @@
 **Fix:** <…>
 
 <!--
-  Comment-shape conventions enforced by `pattern-reviewer-code-quality`:
+  Comment-shape conventions enforced by `pattern-reviewer-coding-standard`:
   - Body MUST begin with the literal header `# Code Review` (downstream skills grep for it).
   - Never refer to a finding as `#N` (N a number) — GitHub auto-links `#1`, `#2`, … to issues.
     Use a non-numeric handle: quoted title, or `F1` / `F2` / `Finding 1` / `Finding 2`.

@@ -58,7 +58,7 @@ Subagents live in [`agents/`](agents/). Each one is scoped to a single role and 
 | `architect` | opus | Designs a ship-ready architecture without over-engineering, generating an ADR, an implementation-detail document, per-entity data-model and api-contract files under `docs/product-requirement-document/<feature>/`, and updating `CLAUDE.md` when high-level architecture shifts. |
 | `engineer` | sonnet | Always-fullstack implementer with four modes. **Mode A** drives one assigned `type:backend` / `type:frontend` task through strict outside-in TDD. **Mode B** fixes one open draft PR for `conflict` and/or `ci` scenarios (and bails to `status:need-attention` when the CI failure needs an E2E-spec rewrite). **Mode C** addresses reviewer `need-fix` findings on a task, propagating the fix across every equivalent site found in the codebase. **Mode D** prepares a slice's draft PR — runs the slice's touched E2E specs in a worktree, fixes any production-code regressions surfaced, and either opens the draft PR (clearing `status:prepare-pr`) or flips the slice to `status:need-attention` when an E2E spec itself needs human editing. Loads the full fullstack pattern set upfront in every mode, audits Dockerfile / compose against the runtime surface before every push, and pulls per-entity architecture context (data-model, api-contract) on demand from `docs/product-requirement-document/<feature>/` instead of bulk-loading. |
 | `e2e-author` | sonnet | Authors and extends Playwright E2E tests for a single task issue. Self-driven from an issue ID — sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits to the slice branch, pushes, and flips `review:code-pending` on the task. PR creation is owned entirely by the `/workflow-orchestrator-create-draft-pr` skill once every task sub-issue under a slice has closed. The full Playwright suite is validated by a GitHub Actions workflow on the slice PR. |
-| `reviewer` | sonnet | Read-only one-shot reviewer for a single `(task, gate)` pair. Picks the pattern-skill set from the task's `(type:*, gate)` labels — code gate runs `pattern-reviewer-test-coverage` for every `type:*` plus `pattern-reviewer-code-quality` for `type:backend`/`type:frontend`; security gate runs `pattern-reviewer-security` (backend / frontend only; refuses `type:e2e`). Builds the slug-tagged image for security scans, posts one structured comment with every finding, and flips the gate label from `-running` to `-passed` / `-need-fix`. Fix work is delegated separately. |
+| `reviewer` | sonnet | Read-only one-shot reviewer for a single `(task, gate)` pair. Picks the pattern-skill set from the task's `(type:*, gate)` labels — code gate runs `pattern-reviewer-test-coverage` for every `type:*` plus `pattern-reviewer-coding-standard` for `type:backend`/`type:frontend`; security gate runs `pattern-reviewer-security` (backend / frontend only; refuses `type:e2e`). Builds the slug-tagged image for security scans, posts one structured comment with every finding, and flips the gate label from `-running` to `-passed` / `-need-fix`. Fix work is delegated separately. |
 
 ## Skills
 
@@ -72,17 +72,23 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `git-workflow` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
 
-### Coding patterns
+### Engineer patterns
+
+Bullet-form reminders for production-code authoring. Each is matched 1:1 by a `pattern-reviewer-*` skill that carries the detailed audit lens.
 
 | Skill | What it does |
 | --- | --- |
-| `pattern-engineer-coding-standard` | Language-agnostic coding standards — Readability → KISS → DRY → YAGNI, naming, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests. |
-| `pattern-engineer-container` | Multi-stage Dockerfiles with pinned non-root images, mandatory `.dockerignore`, migration-aware entrypoints, `/health` endpoints, deliberate networking/volumes, and the day-to-day `docker compose` commands. |
-| `pattern-engineer-frontend-standard` | Modern React + TypeScript practices — Next.js vs. Vite, composition-first components, route registration + reachability tests, TanStack Query guards, controlled forms via React Hook Form + Zod, error boundaries, Framer Motion, accessibility, Tailwind tokens. |
-| `pattern-engineer-observability` | OpenTelemetry as the only instrumentation API; traces / metrics / logs through OTel with shared resource attributes, semantic-convention names, bounded label cardinality, source-gated structured logs, and the Collector owning sampling / redaction / fan-out. |
-| `pattern-engineer-python` | Idiomatic modern Python — `uv` only, full type annotations, EAFP, modern type hints, `Protocol` for duck typing, dataclasses as DTOs, context managers, banned-API list, Alembic migrations with both-direction constraint tests + `pytest-alembic` round-trip. |
-| `pattern-engineer-database` | Ship migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip, named-artifact, extension cleanup), run via the one-shot `migrate` compose service. |
-| `pattern-engineer-security` | Engineer-facing security brief — non-negotiables (always do / ask first / never do) + quick-lookup table + red flags. Points back to `pattern-reviewer-security` for the canonical pattern bars. |
+| `pattern-engineer-coding-standard` | Language-agnostic standards — Readability → KISS → DRY → YAGNI, naming, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests. |
+| `pattern-engineer-backend-standard` | Framework-agnostic backend bullets — REST shape, schema-validated input, authorize-before-act + ownership, error envelope, Idempotency-Key, atomic mutations, rate limits, CSRF, logs, `/health` + `/ready`, graceful SIGTERM, `.env.example` lockstep, locked deps. |
+| `pattern-engineer-frontend-standard` | React bullets — composition-first components, custom hooks, route registration + reachability test, route-param query guards, `onSuccess` invalidation, stable mutation returns, idempotency-key rotation, `src/lib/api`, error boundaries, native a11y, RHF+Zod, mobile-first, Tailwind ↔ tokens. |
+| `pattern-engineer-typescript` | TypeScript bullets — strict mode + the non-negotiable flags, `compilerOptions.types` for test matchers, no `any`, discriminated unions, `interface` vs `type`, biome owns import order. |
+| `pattern-engineer-python` | Python bullets — `uv` only, full type annotations, EAFP, modern type hints, `Protocol` for seams, dataclass DTOs, `with` for resources, bandit-banned APIs avoided. |
+| `pattern-engineer-fastapi` | FastAPI bullets — `APIRouter` + prefix, `Depends()` injection, Pydantic at boundary only, app-level exception handlers, middleware order, trailing-slash, named path constants, async-by-default. |
+| `pattern-engineer-vite` | Vite bullets — pick Vite for CSR; `VITE_` prefix on env vars; Vitest setup; route-boundary lazy loading; static-asset imports; dev-server proxy. |
+| `pattern-engineer-container` | Multi-stage Dockerfiles, pinned non-root images, mandatory `.dockerignore`, migration-aware entrypoints, `/health` endpoints, nginx ordering, deliberate networking/volumes, day-to-day `docker compose` commands. |
+| `pattern-engineer-database` | Migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip + named-artifact + extension cleanup), run via the one-shot `migrate` compose service. |
+| `pattern-engineer-observability` | OpenTelemetry as the only instrumentation API; traces / metrics / logs through OTel with shared resource attributes, semantic-convention names, bounded label cardinality, source-gated structured logs. |
+| `pattern-engineer-security` | Engineer-facing security brief — non-negotiables + quick-lookup table + red flags. Points back to `pattern-reviewer-security` for canonical bars. |
 
 ### Design
 
@@ -92,15 +98,24 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `pattern-architect-data-model` | Data-model shape and naming: predictable naming for tables / columns / constraints / indexes / views, and the SQLAlchemy `MetaData` convention that emits those names automatically. |
 | `pattern-architect-deep-module` | Ousterhout-style "deep module" design: narrow interfaces, hidden complexity, no shallow wrappers or pass-through layers. |
 
-### Review
+### Reviewer patterns
 
 Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the agent aggregates them into one `# Code Review` or `# Security Review` comment and sets the verdict (APPROVE / BLOCK).
 
 | Skill | What it does |
 | --- | --- |
-| `pattern-reviewer-test-coverage` | Test-adequacy patterns for every `type:*` on the code gate: AC coverage from `Done criteria (EARS)`, scenario coverage from `Scenarios (Gherkin)` (and `Migration scenarios`), happy path + edges (boundary, error, empty, concurrency, idempotency, authz) for backend / frontend, parent-slice scenario coverage through the UI with semantic selectors for `type:e2e`. |
-| `pattern-reviewer-code-quality` | Production-code patterns for `type:backend` / `type:frontend` on the code gate: Security (CRITICAL), Code Quality (HIGH), React/Next.js (frontend), Node.js/Backend (backend), Performance (MEDIUM), Best Practices (LOW), AI-generated-code addendum. |
-| `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for the security gate on `type:backend` / `type:frontend` (refuses `type:e2e`). Fourteen patterns (CVEs, secrets, input validation, SQL injection, auth/cookies/IDOR/JWT, XSS + security headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions). Cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
+| `pattern-reviewer-test-coverage` | Test adequacy on every `type:*` code gate — AC + scenario coverage, edge breadth (boundary, error, empty, concurrency, idempotency, authz), `type:e2e` semantic-selector coverage. |
+| `pattern-reviewer-coding-standard` | Language-agnostic code-quality patterns — large functions / files / deep nesting / mutation / dead code / `console.log` left behind; performance; best practices; AI-generated-code addendum. |
+| `pattern-reviewer-backend-standard` | Backend audit — unvalidated input, missing rate limits, unbounded queries, N+1, missing timeouts, error-message leakage, error-envelope conformance, idempotency wiring, atomic mutations, `/health` shape, log redaction, `.env.example` lockstep, locked deps. |
+| `pattern-reviewer-frontend-standard` | React audit — hook correctness, route registration + reachability, TanStack Query route-param guards, mutation `onSuccess` + return stability, idempotency-key rotation, API via `src/lib/api`, error boundaries, native a11y, Tailwind ↔ tokens. |
+| `pattern-reviewer-typescript` | TypeScript audit — `tsconfig.json` strictness, `compilerOptions.types` for test matchers, `any` usage, `!` non-null without invariant, `interface` vs `type`, discriminated unions, biome `organizeImports`. |
+| `pattern-reviewer-python` | Python audit — bandit-banned APIs (B310/B602/B314/B506/B101), type annotations, EAFP discipline, modern type hints, `Protocol` over ABC, dataclass DTOs, context managers, `uv`-only environment. |
+| `pattern-reviewer-fastapi` | FastAPI audit — `APIRouter` prefix discipline, `Depends()` injection, Pydantic at boundary only, exception handlers + error envelope, middleware order, trailing-slash conformance, named path constants, `Settings()` footgun, `dependency_overrides` in tests. |
+| `pattern-reviewer-vite` | Vite audit — stack choice, `VITE_` prefix discipline, `.env.example` lockstep, `vite.config.ts` scope, vitest setup alignment with tsconfig, lazy-load + Suspense fallback, static-asset imports. |
+| `pattern-reviewer-container` | Docker / compose audit — multi-stage build, pinned + `docker scout`-vetted tags, non-root user with writable paths redirected, `.dockerignore`, backend entrypoint runs migrations before serving, `/health` shape, nginx SPA-fallback ordering, no secrets in image. |
+| `pattern-reviewer-database` | Migration audit — code-first, autogenerate review, `pytest-alembic` round-trip, post-state assertions by name, extension cleanup on downgrade, ORM ↔ migration name parity, both-direction constraint tests, no `conftest.py` pre-warming, `migrate` compose service. |
+| `pattern-reviewer-observability` | OTel audit — no vendor SDKs in `src/`, no `print` / `console.log`, span naming low-cardinality, semantic-convention attributes, errors via `record_exception`, bounded metric labels, structured JSON logs with trace correlation, batch processors, single SDK bootstrap, sampling lives in the Collector. |
+| `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for the security gate on `type:backend` / `type:frontend`. Fourteen patterns; cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
 
 ## Hooks
 

@@ -29,10 +29,14 @@ Do NOT activate when:
 |-------|---------------------|
 | `workflow-engineer-tdd` | For each production-code fix driven by a red E2E spec. **Required when any spec fails for a production-side reason.** |
 | `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-backend-standard` | When the fix touches backend service code. |
+| `pattern-engineer-frontend-standard` | When the fix touches React frontend code. |
+| `pattern-engineer-typescript` | When the fix touches `.ts` / `.tsx` / `tsconfig.json`. |
+| `pattern-engineer-python` | When the fix touches Python code. |
+| `pattern-engineer-fastapi` | When the fix touches FastAPI routes / deps / middleware / handlers. |
+| `pattern-engineer-vite` | When the fix touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
 | `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
-| `pattern-engineer-frontend-standard` | When the fix touches frontend code. |
 | `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
-| `pattern-engineer-python` | When the fix touches backend Python code. |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 
 ## Templates
@@ -95,7 +99,7 @@ Invoke `pattern-engineer-security` before any code is written, even if no produc
 
 ### 4. Load the full fullstack pattern set
 
-A failing E2E spec can point at a bug in any layer of the slice. Load `pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` so the fix can land anywhere without a second round-trip.
+A failing E2E spec can point at a bug in any layer of the slice. Load `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` so the fix can land anywhere without a second round-trip.
 
 ### 5. Merge `origin/main` into the slice branch and resolve any conflicts
 

@@ -26,10 +26,14 @@ Do NOT activate when:
 |-------|---------------------|
 | `workflow-engineer-tdd` | To drive each finding's RED → GREEN → REFACTOR cycle (and each propagated site's). **Required.** |
 | `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-backend-standard` | When the fix touches backend service code. |
+| `pattern-engineer-frontend-standard` | When the fix touches React frontend code. |
+| `pattern-engineer-typescript` | When the fix touches `.ts` / `.tsx` / `tsconfig.json`. |
+| `pattern-engineer-python` | When the fix touches Python code. |
+| `pattern-engineer-fastapi` | When the fix touches FastAPI routes / deps / middleware / handlers. |
+| `pattern-engineer-vite` | When the fix touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
 | `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
-| `pattern-engineer-frontend-standard` | When the fix touches frontend code. |
 | `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
-| `pattern-engineer-python` | When the fix touches backend Python code. |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
@@ -107,7 +111,7 @@ Invoke `pattern-engineer-security` before any code is written.
 
 ### 4. Load the full fullstack pattern set
 
-Same as `workflow-engineer-implement-task` step 4 — load every engineer pattern skill upfront (`pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, plus `pattern-engineer-observability` when instrumentation is in scope) alongside `workflow-engineer-tdd`.
+Same as `workflow-engineer-implement-task` step 4 — load every engineer pattern skill upfront (`pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, plus `pattern-engineer-observability` when instrumentation is in scope) alongside `workflow-engineer-tdd`.
 
 **Then read the ADR index, and the ADR detail(s) the reviewer's findings touch.** Reviewer findings on this codebase routinely flag deviations from project-specific architecture decisions (error-envelope shape, rate-limit keying, idempotency-key lifecycle, storage backend, config loader, sessions/cookies, atomic-token consumption, enumeration-prevention rules) — but the ADR numbers and detail-file names vary per project. Open `docs/ADRs/README.md` first to learn which detail file covers each axis the reviewer flagged, then read those detail files to ground the fix in what the project has actually decided. If the reviewer cites an ADR by number, follow the index to the matching detail file rather than trusting the number across projects. If a reviewer finding points at an axis with no ADR row in the index, halt and surface — the user needs to either add the decision or rescope the fix.
 

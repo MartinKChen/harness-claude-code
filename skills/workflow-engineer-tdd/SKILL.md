@@ -30,10 +30,14 @@ Pattern skills are not loaded as files under this one — route to them as sibli
 | Skill | When to route to it |
 |-------|---------------------|
 | `pattern-engineer-coding-standard` | Always. Naming, KISS/DRY/YAGNI, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests apply to every GREEN and REFACTOR step. |
+| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/health`, log redaction, `.env.example` lockstep. |
+| `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
+| `pattern-engineer-typescript` | When the task touches any `.ts` / `.tsx` / `tsconfig.json` — strictness flags, no `any`, discriminated unions, biome import order. |
+| `pattern-engineer-python` | When the task implements Python code — `.py` files, SQLAlchemy models, pytest tests. |
+| `pattern-engineer-fastapi` | When the task touches FastAPI routes, dependencies, middleware, exception handlers, or `create_app()` wiring. |
+| `pattern-engineer-vite` | When the task touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
 | `pattern-engineer-container` | When the task is container-related — editing `Dockerfile`, `docker-compose.yaml` / `.yml`, `compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
-| `pattern-engineer-frontend-standard` | When the task implements frontend code — React + TypeScript components, hooks, pages, forms, or anything under the frontend package. |
 | `pattern-engineer-observability` | When the task adds/edits instrumentation — log statements, spans, metrics, trace-context propagation, OTel SDK bootstrap, Collector config, or any `OTEL_*` env var. Iron rule: OpenTelemetry is the only instrumentation API; vendor SDKs only appear in the Collector. |
-| `pattern-engineer-python` | When the task implements backend code in Python — `.py` files, FastAPI/Flask/Django handlers, SQLAlchemy models, pytest tests. |
 | `pattern-architect-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
 | `pattern-architect-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
 | `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema shape and table/column/constraint naming. |

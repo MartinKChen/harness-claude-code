@@ -5,238 +5,101 @@ description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char l
 
 # pattern-engineer-python
 
-Enforce idiomatic, modern Python practices on every Python implementation task. Encodes the conventions this project considers non-negotiable: `uv` for environments, PEP 8 style, type annotations on every signature, EAFP over LBYL, modern type hints, `Protocol` for duck typing, dataclasses as DTOs, context managers for resource handling, a fixed backend layout, and a standard lint/test command set.
+Engineer-side bullet reminders for Python implementation. Detailed audit criteria + bandit-specific failure modes live in `pattern-reviewer-python`. FastAPI-specific bullets live in `pattern-engineer-fastapi`; Alembic migrations live in `pattern-engineer-database`.
 
 ## When to activate
 
-Activate this skill whenever the user:
+Activate when writing or editing any `.py` file, scaffolding a Python service, modifying `pyproject.toml`, working with FastAPI / Flask / Django / SQLAlchemy / Pydantic / pytest, or running `mypy` / `ruff` / `bandit` / `pytest` / `uv`. Skip for non-Python code.
 
-- writes, edits, or refactors any `.py` file
-- adds or modifies functions, classes, dataclasses, protocols, generators, decorators, or context managers in Python
-- scaffolds a new Python module, package, or backend service
-- sets up or modifies `pyproject.toml`, `conftest.py`, `requirements*.txt`, or virtual environments
-- works with Python frameworks (FastAPI, Flask, Django, SQLAlchemy, Pydantic, pytest)
-- runs or configures `mypy`, `ruff`, `black`, `isort`, `bandit`, `pytest`, or `uv`
-- asks how to structure a Python project, type a function, model a DTO, or handle a resource
+## Patterns
 
-Do NOT activate when the user is editing non-Python code, working purely on infrastructure/IaC without Python content, or asking general (non-implementation) Python language questions unrelated to this project's code.
+### Environment — `uv` only
 
-## Pattern
-
-### Environment with `uv`
-
-`uv` is the only supported environment and dependency manager. Do not introduce `pip`, `poetry`, `pipenv`, `conda`, or `virtualenv` workflows.
-
-```bash
-uv venv                       # create .venv
-uv sync                       # install from pyproject.toml + uv.lock
-uv add <pkg>                  # add a runtime dep
-uv add --dev <pkg>            # add a dev dep
-uv run <cmd>                  # run inside the project env
-uv run python -m mypackage    # run the package
-```
-
+- `uv` is the only supported environment / dependency manager.
+- No `pip`, `poetry`, `pipenv`, `conda`, `virtualenv` workflows.
 - Pin Python version in `pyproject.toml` via `requires-python`.
-- Commit `uv.lock`. Never edit it by hand.
-- Prefer `uv run <tool>` over activating the venv in scripts.
+- Commit `uv.lock`; never edit by hand.
+- Prefer `uv run <cmd>` over activating the venv in scripts.
 
-### PEP 8 conventions
+| Command | Purpose |
+|---------|---------|
+| `uv venv` | Create `.venv` |
+| `uv sync` | Install from `pyproject.toml` + `uv.lock` |
+| `uv add <pkg>` | Add a runtime dep |
+| `uv add --dev <pkg>` | Add a dev dep |
+| `uv run <cmd>` | Run inside the project env |
+
+### PEP 8
 
 - 4-space indentation, no tabs.
 - Lines ≤ 88 chars (ruff default).
-- `snake_case` for functions, methods, variables, modules.
+- `snake_case` for functions / methods / variables / modules.
 - `PascalCase` for classes.
 - `SCREAMING_SNAKE_CASE` for module-level constants.
 - Two blank lines between top-level defs; one between methods.
-- Imports grouped: stdlib → third-party → local; sorted by `ruff` (the `I` rules).
-- One statement per line; no semicolons.
+- Imports: stdlib → third-party → local; sorted by `ruff` (`I` rules).
 
-### Type annotations on all signatures
+### Type annotations on every signature
 
-Every function and method signature — including `__init__`, private helpers, and tests — must be fully annotated. Annotate parameters and the return type. Use `-> None` explicitly for procedures.
-
-```python
-# Bad
-def fetch(user_id, retries=3):
-    ...
-
-# Good
-def fetch(user_id: int, retries: int = 3) -> User:
-    ...
-```
-
-### Readability counts
-
-Code should be obvious on first read. If a reviewer would have to re-read a line to understand it, rewrite the line.
-
-- Name things for what they mean, not how they're computed.
-- Prefer early returns over nested branching.
-- Prefer comprehensions over `map`/`filter` chains.
-- Prefer named args at call sites when there is more than one argument or any boolean.
-- Don't write a comment that restates the code; write a clearer line of code instead.
+- Every function and method — including `__init__`, private helpers, and tests — fully annotated.
+- Annotate parameters AND the return type. `-> None` explicitly for procedures.
 
 ### EAFP over LBYL
 
-Easier to Ask Forgiveness Than Permission. Prefer `try/except` over pre-condition checks for things that are usually fine.
-
-```python
-# Bad — LBYL
-if "name" in payload and isinstance(payload["name"], str):
-    name = payload["name"]
-else:
-    raise ValueError("missing name")
-
-# Good — EAFP
-try:
-    name: str = payload["name"]
-except KeyError as e:
-    raise ValueError("missing name") from e
-```
-
-- Catch the **narrowest** exception that applies.
+- Try the operation; catch the narrowest exception that applies.
 - Always `raise ... from e` to preserve the cause.
-- Don't swallow exceptions silently; if you catch, either handle meaningfully or re-raise.
+- Don't swallow silently; either handle meaningfully or re-raise.
 
-### Modern type hints, type aliases, and `TypeVar`
+### Modern type hints
 
-Target Python ≥ 3.10. Use built-in generics and PEP 604 unions; do not import from `typing` what the language now provides natively.
-
-```python
-# Bad
-from typing import Dict, List, Optional, Union
-
-def load(ids: List[int]) -> Optional[Dict[str, Union[int, str]]]:
-    ...
-
-# Good
-def load(ids: list[int]) -> dict[str, int | str] | None:
-    ...
-```
-
-For aliases and generics, use PEP 695 syntax when on 3.12+:
-
-```python
-type UserId = int
-type JSON = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
-
-def first[T](items: list[T]) -> T | None:
-    return items[0] if items else None
-```
-
-On older interpreters, fall back to `TypeAlias` and `TypeVar` from `typing`.
+- Target Python ≥ 3.10.
+- Built-in generics: `list[int]`, `dict[str, X]` — not `List` / `Dict` from `typing`.
+- PEP 604 unions: `int | None` — not `Optional[int]`.
+- PEP 695 aliases + generics on 3.12+: `type UserId = int`; `def first[T](items: list[T]) -> T | None: ...`.
 
 ### `Protocol` (duck typing)
 
-Use `typing.Protocol` to type duck-typed interfaces instead of forcing inheritance from an ABC. Protocols are structural — anything with the right shape satisfies them.
-
-```python
-from typing import Protocol
-
-class SupportsClose(Protocol):
-    def close(self) -> None: ...
-
-def shutdown(resource: SupportsClose) -> None:
-    resource.close()
-```
-
-- Use `Protocol` for collaborator types crossing module boundaries.
-- Use ABCs only when you need shared implementation, not just a shape.
+- `typing.Protocol` for collaborator types crossing module boundaries (structural — anything with the right shape satisfies).
+- ABCs only when you need shared implementation, not just a shape.
 
 ### Dataclasses as DTOs
 
-Use `@dataclass` (or `@dataclass(frozen=True, slots=True)`) for plain data carriers — request/response payloads, config bundles, value objects. Reach for Pydantic only when you need parsing/validation at a system boundary.
-
-```python
-from dataclasses import dataclass
-
-@dataclass(frozen=True, slots=True)
-class UserDTO:
-    id: int
-    email: str
-    is_active: bool = True
-```
-
-- Prefer `frozen=True` for immutability; `slots=True` for memory + attribute safety.
-- Don't put behavior on DTOs beyond trivial derived properties.
-- Keep DTOs at boundaries; don't pass them deep into the domain layer if a richer type fits.
-
-### Alembic migrations — chain, test, and constrain in both directions
-
-Every Alembic revision MUST do all three:
-
-1. **Chain to the current head.** Run `uv run alembic heads` before authoring the revision; the new revision's `down_revision` must equal that head. The trap to avoid: hand-editing `down_revision` (or autogenerating against a stale local DB) so the chain branches, then pushing — `alembic upgrade head` in CI applies the OTHER branch and the new table never gets created. Pin this with a migration-runner test that calls `upgrade("head")` and asserts every new table exists:
-   ```python
-   def test_groups_migration_applies_groups_table(alembic_engine, alembic_runner):
-       alembic_runner.migrate_up_to("head")
-       inspector = sa.inspect(alembic_engine)
-       assert "groups" in inspector.get_table_names()
-   ```
-
-2. **Test every CHECK / UNIQUE / FK constraint in BOTH directions.** Positive-case ("a valid row inserts") is half the test; without the negative case the regex / partial index / cascade rule never actually gets exercised. PR #167's `currency_iso4217` CHECK constraint shipped a regex that accepted `"1A2"` because the only test was a positive case. The shape that catches the failure:
-   ```python
-   # tests/database/test_groups_migration.py
-   def test_groups_currency_accepts_alphabetic_iso4217(db_session: Session) -> None:
-       db_session.execute(insert(groups).values(name="x", currency="USD"))  # PASSES
-
-   def test_groups_currency_rejects_digits(db_session: Session) -> None:
-       with pytest.raises(IntegrityError):  # FAILS at the DB layer
-           db_session.execute(insert(groups).values(name="x", currency="1A2"))
-
-   def test_groups_currency_rejects_lowercase(db_session: Session) -> None:
-       with pytest.raises(IntegrityError):
-           db_session.execute(insert(groups).values(name="x", currency="usd"))
-   ```
-   Author the negative test(s) BEFORE the constraint regex / index expression — the negative test is what proves the constraint is doing work, and authoring it second makes it too easy to write a regex that happens to accept whatever the test feeds.
-
-3. **Round-trip with `pytest-alembic`.** The runner walks every revision both up AND down against a real Postgres (use the same image tag as production). `migrate_up_one` / `migrate_down_one` per revision catches the "irreversible migration" trap (drops a column without re-adding it on downgrade) and the "data-loss migration" trap (renames via DROP+CREATE without preserving data).
-
-The pre-push hook runs `uv run pytest`, so any migration test that's red blocks the push. The hook does NOT verify chain hygiene structurally — if no migration test exists for a new revision, the push goes out and CI catches it. Write the migration test in the same commit as the revision.
-
-### Banned APIs — bandit will block these
-
-- **`urllib.request.urlopen` (bandit B310 — Medium severity).** Use `http.client.HTTPSConnection` for stdlib-only callers, or `httpx` for anything that wants connection pooling / timeouts / async. B310 fires because `urlopen` historically accepted `file://` and `ftp://` URLs, which becomes an SSRF vector when the URL comes from user input.
-- **`subprocess.Popen(..., shell=True)` (B602).** Pass `shell=False` (the default) with a list of args; if you genuinely need shell expansion, document the safe-input invariant and add `# nosec B602`.
-- **`xml.etree.ElementTree` on untrusted XML (B314).** Use `defusedxml` for any XML you didn't author yourself.
-- **`yaml.load(...)` without a `Loader` (B506).** Use `yaml.safe_load(...)` — the no-Loader form executes arbitrary Python.
-- **`assert` for runtime invariants in production code (B101).** Asserts strip out under `python -O`; raise an exception instead. Asserts in test code are fine.
-
-The pre-push hook's `backend:security` step runs `uv run bandit -r .` — anything above LOW severity blocks the push.
+- `@dataclass(frozen=True, slots=True)` for plain data carriers — request/response payloads, config bundles, value objects.
+- `frozen=True` for immutability; `slots=True` for memory + attribute safety.
+- No behavior beyond trivial derived properties.
+- Pydantic only when parsing/validation is needed at a system boundary (FastAPI request bodies, config from env).
 
 ### Context managers
 
-Any acquired resource — files, sockets, locks, DB sessions, temp dirs, subprocess handles — must be released via `with`. Author your own context managers with `contextlib.contextmanager` or `__enter__`/`__exit__` when wrapping a resource.
+- Every acquired resource (files, sockets, locks, DB sessions, temp dirs, subprocess handles) released via `with`.
+- Author your own with `contextlib.contextmanager` or `__enter__` / `__exit__`.
+- `contextlib.ExitStack` to compose a dynamic set of context managers.
+- Never `try` with manual `.close()` when `with` would do.
 
-```python
-from contextlib import contextmanager
-from collections.abc import Iterator
+### Banned APIs (bandit blocks these)
 
-@contextmanager
-def session_scope() -> Iterator[Session]:
-    session = SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-```
+| API | Why | Use |
+|-----|-----|-----|
+| `urllib.request.urlopen` | B310 — historically accepted `file://` / `ftp://` (SSRF vector). | `http.client.HTTPSConnection` for stdlib-only; `httpx` otherwise. |
+| `subprocess.Popen(..., shell=True)` | B602 — shell injection. | `shell=False` (the default) with a list of args; if you genuinely need shell expansion, document the safe-input invariant and add `# nosec B602`. |
+| `xml.etree.ElementTree` on untrusted XML | B314 — XXE / billion-laughs. | `defusedxml`. |
+| `yaml.load(...)` without `Loader` | B506 — arbitrary Python execution. | `yaml.safe_load(...)`. |
+| `assert` for runtime invariants in production code | B101 — strips under `python -O`. | Raise an exception. Asserts in test code are fine. |
 
-- Never leave a `try` with manual `.close()` when `with` would do.
-- Use `contextlib.ExitStack` to compose a dynamic set of context managers.
+The pre-push hook runs `uv run bandit -r .` — anything above LOW severity blocks the push.
 
-## Template
+### Backend layout (`src/`)
 
-| Asset | Purpose |
-|-------|---------|
-| `templates/backend-layout.md` | Canonical `src/`-layout backend tree — package under `src/<package>/{api,models,utils}/`, tests mirrored under `tests/{database,unit,integration}/`, single `pyproject.toml` with tool configs (`[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`). |
+See `templates/backend-layout.md`. Source under `src/<package>/`, tests at the top level under `tests/{database,unit,integration}/`, single `pyproject.toml`.
 
-## Command
+- `src/` layout avoids accidental imports from CWD.
+- `api/` holds route/handler modules; `models/` holds dataclasses / ORM / DTOs; `utils/` holds cross-cutting helpers.
+- Shared fixtures live in `tests/conftest.py`.
+- Tool configs (`[tool.ruff]`, `[tool.ruff.format]`, `[tool.mypy]`, `[tool.pytest.ini_options]`) live in `pyproject.toml`.
 
-Run all tooling via `uv run` so it picks up the project environment. The first set is read-only checks; the second set mutates files.
+## Tooling
 
-### Checks
+Run via `uv run` so it picks up the project env.
 
 ```bash
 uv run mypy .                  # Type checking
@@ -246,15 +109,26 @@ uv run bandit -r .             # Static security analysis
 uv run pytest                  # Tests
 ```
 
-- Run all five before declaring a task complete.
-- A clean `mypy` and `ruff` run is required; coverage thresholds (if any) are configured in `pyproject.toml` (`[tool.pytest.ini_options]` / `[tool.coverage.*]`) and enforced by `pytest` automatically — don't pass `--cov` flags on the CLI.
-
-### Auto-fix
+Auto-fix before re-running checks:
 
 ```bash
 uv run ruff format .       # Auto-format
-uv run ruff check --fix .  # Auto-fix lint issues (includes import sorting)
+uv run ruff check --fix .  # Auto-fix lint (includes import sorting)
 ```
 
-- Run auto-fix before re-running checks; don't hand-fix what the formatters will fix.
-- Review the diff after auto-fix — formatters occasionally reflow code in ways that hurt readability, in which case rewrite the underlying line.
+## Templates
+
+| Asset | Purpose |
+|-------|---------|
+| `templates/backend-layout.md` | Canonical `src/`-layout backend tree — package under `src/<package>/{api,models,utils}/`, tests mirrored under `tests/{database,unit,integration}/`, single `pyproject.toml` with tool configs. |
+
+## Related skills
+
+| Skill | Purpose |
+|-------|---------|
+| `pattern-engineer-coding-standard` | Always. |
+| `pattern-engineer-fastapi` | When the framework is FastAPI. |
+| `pattern-engineer-backend-standard` | Always (server-side patterns). |
+| `pattern-engineer-database` | When writing migrations / ORM models. |
+| `pattern-engineer-observability` | When wiring OTel into a Python service. |
+| `pattern-reviewer-python` | Detailed audit criteria + bandit findings (reviewer lens). |

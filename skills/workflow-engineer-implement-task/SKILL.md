@@ -28,10 +28,14 @@ Do NOT activate when:
 | `workflow-engineer-tdd` | To drive the entire implementation loop (acceptance → red/green/refactor → wiring). **Required.** |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code; re-open whenever the change touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. **Required (always).** |
 | `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/health`, log redaction. |
+| `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
+| `pattern-engineer-typescript` | When the task touches `.ts` / `.tsx` / `tsconfig.json`. |
+| `pattern-engineer-python` | When the task implements Python code — `.py` files, models, pytest tests. |
+| `pattern-engineer-fastapi` | When the task touches FastAPI routes, dependencies, middleware, exception handlers, or app wiring. |
+| `pattern-engineer-vite` | When the task touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
 | `pattern-engineer-container` | When the task touches `Dockerfile`, compose files, or `.dockerignore`. |
-| `pattern-engineer-frontend-standard` | When the task implements frontend code — React + TypeScript components, hooks, pages, forms. |
 | `pattern-engineer-observability` | When the task adds/edits OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
-| `pattern-engineer-python` | When the task implements backend Python code — handlers, models, pytest tests. |
 ## Templates
 
 | Asset | Purpose |
@@ -80,7 +84,7 @@ Invoke `pattern-engineer-security` to anchor security constraints before any cod
 
 ### 4. Load the full fullstack pattern set
 
-Load every engineer pattern skill upfront, alongside `workflow-engineer-tdd`: `pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, and `pattern-engineer-observability` (when instrumentation is in scope). The engineer is fullstack by default — even when this particular task only touches one side, having the other side's patterns resolved means a follow-up cycle that crosses the boundary doesn't pay a re-read tax. The `type:<type>` label still informs which patterns will drive *most* of the red/green/refactor cycles for this task; it does not narrow which skills you load.
+Load every engineer pattern skill upfront, alongside `workflow-engineer-tdd`: `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` (when instrumentation is in scope). The engineer is fullstack by default — even when this particular task only touches one side, having the other side's patterns resolved means a follow-up cycle that crosses the boundary doesn't pay a re-read tax. The `type:<type>` label still informs which patterns will drive *most* of the red/green/refactor cycles for this task; it does not narrow which skills you load.
 
 ### 5. Pull entity-scoped architecture context (only when the issue needs it)
 
@@ -132,7 +136,7 @@ This is the terminal action. Exit after the label add lands — do not close the
 - **Paths, status codes, and response shapes come from the api-contract doc, never from the keyboard.** Any URL this task introduces (route decorator, frontend `fetch` target, test assertion path, `curl` in a script or CI step), the status code the route returns on each error class (400 / 404 / 409 / 422 — the choice is the contract's, not the engineer's intuition), and the response body shape on both success and error paths are all sourced from `docs/product-requirement-document/<feature-name>/api-contract/<entity>.md`. If the task body cites a status code or path that disagrees with the contract, the **contract wins** — surface the disagreement on the task issue and proceed against the contract. Define the path once as a module constant near the route and have the test import the same constant; hand-typing the same string twice (once in the route, once in the test) is the failure mode that lets implementation and contract drift apart. Same rule for status codes — never `raise HTTPException(status_code=401)` inline; bind the status to a named error class so the route, the test, and the error-mapper agree by construction. If the contract is missing for a path / status / response the task needs, STOP and surface it — the architect owns contract authorship, not the engineer.
 - **Trailing slash matters — pick the contract's spelling and pin it.** FastAPI routes `/me` and `/me/` are different URLs; the framework's default redirect-to-trailing-slash returns a 307 that breaks Set-Cookie persistence on cross-site responses and silently slows every authenticated call. Match the contract's spelling exactly, and add a test that asserts the contracted URL returns 200 (not 307) so the next router change can't drift the trailing slash unnoticed.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
-- **Always fullstack — load every pattern skill upfront.** Mode-A work always loads `pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` before writing any code.
+- **Always fullstack — load every pattern skill upfront.** Mode-A work always loads `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` before writing any code.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed or where a behavior lives.
 - **Read before every edit; verify after every edit; make logically coupled changes in one Edit call.** Before touching any file, Read the full region that will be affected. After each Edit call, run the relevant static-analysis check (`uv run mypy <file>`, `uv run ruff check <file>`, or `tsc --noEmit`) immediately. When a single logical change requires editing two or more lines that must be true simultaneously (e.g. adding a new import and updating the signature to use it), include all affected lines in a single `old_string`/`new_string` pair — never make them as separate sequential edits.
 

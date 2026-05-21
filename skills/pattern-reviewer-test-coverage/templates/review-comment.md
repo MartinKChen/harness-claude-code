@@ -2,7 +2,7 @@
 
 <!--
   Test-coverage findings are folded into the same `# Code Review` comment that carries
-  `pattern-reviewer-code-quality` findings. The dispatching `reviewer` agent composes
+  `pattern-reviewer-coding-standard` findings. The dispatching `reviewer` agent composes
   the final comment — this template only shows the **finding rows** this skill emits.
   Severity for every coverage gap is MEDIUM.
 -->
@@ -38,5 +38,5 @@
     Use a non-numeric handle: AC/scenario label, quoted finding title, or `F1` / `F2`.
   - The skill never sets the verdict line — the dispatching `reviewer` agent owns
     APPROVE / BLOCK based on the aggregated findings from this skill plus
-    `pattern-reviewer-code-quality`.
+    `pattern-reviewer-coding-standard`.
 -->

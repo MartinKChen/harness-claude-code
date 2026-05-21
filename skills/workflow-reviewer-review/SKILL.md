@@ -26,9 +26,18 @@ Do NOT activate when:
 | Skill | When to route to it |
 |-------|---------------------|
 | `pattern-reviewer-test-coverage` | On every code-gate dispatch (every `type:*`). Emits MEDIUM findings for AC / scenario / migration-scenario gaps and shallow coverage. **Required on the code gate.** |
-| `pattern-reviewer-code-quality` | On the code gate for `type:backend` / `type:frontend` only (skip on `type:e2e`). Emits CRITICAL / HIGH / MEDIUM / LOW findings for code-quality patterns the project codifies. **Required on the code gate for non-e2e types.** |
-| `pattern-reviewer-security` | On the security gate for `type:backend` / `type:frontend` only (refuse on `type:e2e`). Self-contained catalogue covering CVE policy, secrets handling, schema-validated input, parameterized queries, cookie flags, authorize-before-act, sanitized output, CSRF + rate limits, redacted logs, generic 5xx errors, and dependency hygiene. **Required on the security gate.** |
-| `git-workflow` | When the review surfaces a commit / branch / PR shape problem (bundled refactor + feature, missing issue link, force-push risk) and you need to cite the project's git conventions in the finding. | No (only when the diff itself or the PR shape warrants a process call-out) |
+| `pattern-reviewer-coding-standard` | On the code gate for `type:backend` / `type:frontend`. Language-agnostic code-quality patterns (large functions, deep nesting, mutation, dead code, performance, best practices, AI-generated-code addendum). **Required on the code gate for non-e2e types.** |
+| `pattern-reviewer-backend-standard` | On the code gate when the touched paths include backend code. Backend audit (unvalidated input, missing rate limits, unbounded queries, N+1, missing timeouts, error envelope, idempotency, atomic mutations, `/health`, log redaction, `.env.example` lockstep, locked deps). |
+| `pattern-reviewer-frontend-standard` | On the code gate when the touched paths include React code. React audit (hook correctness, route registration, TanStack Query guards, mutation invalidation, API via `src/lib/api`, error boundaries, native a11y, Tailwind ↔ tokens). |
+| `pattern-reviewer-typescript` | On the code gate when the touched paths include `.ts` / `.tsx` / `tsconfig.json`. TypeScript audit (strictness flags, `any`, `!`, discriminated unions, biome import order). |
+| `pattern-reviewer-python` | On the code gate when the touched paths include `.py` files. Python audit (bandit-banned APIs, type annotations, EAFP, modern type hints, `Protocol`, dataclass DTOs, context managers, `uv`-only env). |
+| `pattern-reviewer-fastapi` | On the code gate when the touched paths include FastAPI routes / deps / middleware / handlers. FastAPI audit (`Depends` discipline, Pydantic at boundary, middleware order, trailing-slash, `Settings()` footgun, test factory). |
+| `pattern-reviewer-vite` | On the code gate when the touched paths include `vite.config.*` / `vitest.config.*` / `import.meta.env` reads. Vite audit (stack choice, `VITE_` prefix, dev-proxy, lazy-load Suspense, static-asset imports). |
+| `pattern-reviewer-container` | On the code gate when the touched paths include `Dockerfile` / `docker-compose.yaml` / `.dockerignore` / nginx config / entrypoint scripts. Container audit (multi-stage, pinned + scout-vetted, non-root, nginx SPA-fallback order, no secrets in image). |
+| `pattern-reviewer-database` | On the code gate when the touched paths include `alembic/versions/*` / ORM model edits / `migrate` compose service. Migration audit (code-first, post-state by name, extension cleanup, both-direction constraint tests, no `conftest.py` pre-warming). |
+| `pattern-reviewer-observability` | On the code gate when the touched paths include OTel instrumentation / logs / spans / metrics / `OTEL_*` env vars / Collector config. Observability audit (no vendor SDKs, no `print`, span cardinality, metric labels, structured logs with trace correlation, batch processors, single bootstrap). |
+| `pattern-reviewer-security` | On the security gate for `type:backend` / `type:frontend` only (refuse on `type:e2e`). Self-contained catalogue (CVEs, secrets, input, SQL, auth/cookies/IDOR/JWT, XSS + headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions). **Required on the security gate.** |
+| `git-workflow` | When the review surfaces a commit / branch / PR shape problem (bundled refactor + feature, missing issue link, force-push risk) and you need to cite the project's git conventions in the finding. |
 
 ## Scripts
 
@@ -114,7 +123,18 @@ If the build fails, do not proceed to scanning — compose a blocked-review comm
 The pattern skills are loaded at agent kickoff; the **References section above** governs which ones apply to this dispatch:
 
 - Code gate, `type:e2e` → `pattern-reviewer-test-coverage` only.
-- Code gate, `type:backend` / `type:frontend` → `pattern-reviewer-test-coverage`, then `pattern-reviewer-code-quality`.
+- Code gate, `type:backend` / `type:frontend` → walk the skills in this order, invoking each only when its trigger paths appear in `${touched_paths}`:
+  1. `pattern-reviewer-test-coverage` — always.
+  2. `pattern-reviewer-coding-standard` — always.
+  3. `pattern-reviewer-backend-standard` — when backend code is touched.
+  4. `pattern-reviewer-frontend-standard` — when React code is touched.
+  5. `pattern-reviewer-typescript` — when any `.ts` / `.tsx` / `tsconfig.json` is touched.
+  6. `pattern-reviewer-python` — when any `.py` is touched.
+  7. `pattern-reviewer-fastapi` — when FastAPI routes / deps / middleware / handlers are touched.
+  8. `pattern-reviewer-vite` — when `vite.config.*` / `vitest.config.*` / `import.meta.env` is touched.
+  9. `pattern-reviewer-container` — when `Dockerfile` / compose / nginx / entrypoint is touched.
+  10. `pattern-reviewer-database` — when `alembic/versions/*` / ORM models / `migrate` compose service is touched.
+  11. `pattern-reviewer-observability` — when OTel instrumentation / `OTEL_*` env vars / Collector config is touched.
 - Security gate, `type:backend` / `type:frontend` → `pattern-reviewer-security` (self-contained catalogue + iteration flow).
 - Security gate, `type:e2e` → already refused in step 1; do not reach this step.
 

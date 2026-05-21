@@ -1,731 +1,141 @@
 ---
 name: pattern-engineer-frontend-standard
-description: "Modern React + TypeScript: Next.js for SSR/SSG/edge, Vite for CSR. Composition-first components, custom hooks, route registration + `App.test.tsx` reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, RHF+Zod forms, error boundaries per route, native a11y elements, strict TS, Tailwind ↔ `docs/DESIGNs/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+description: "React frontend bullets: composition-first components, custom hooks, route registration + reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, error boundaries per route, Framer Motion, native a11y elements, mobile-first, Tailwind ↔ `docs/DESIGNs/tokens.md`. Activate on frontend `.tsx`/`.ts`."
 ---
 
 # pattern-engineer-frontend-standard
 
-Enforce idiomatic, modern React + TypeScript practices on every frontend implementation task. Encodes the conventions this project considers non-negotiable: React + TypeScript as the baseline, Next.js when the app needs SSR/SSG/edge, Vite when it's pure CSR, composition-first component design, custom hooks for reusable logic, Context + Reducer for shared state, deliberate performance optimization, controlled forms with validation, error boundaries at app seams, Framer Motion for animation, accessible keyboard/focus behavior, responsive design, i18n, strict TypeScript, and a standard lint/typecheck/test command set.
+Engineer-side React bullets. Detailed audit criteria + trap stories live in `pattern-reviewer-frontend-standard`. TypeScript specifics live in `pattern-engineer-typescript`; Vite specifics in `pattern-engineer-vite`.
 
 ## When to activate
 
-Activate this skill whenever the user:
+Activate when writing or editing React components, hooks, pages, routes, layouts, forms, modals, lists, tables, or navigation in any React-based app (Next.js or Vite). Skip for pure backend code or non-React frontends.
 
-- writes, edits, or refactors any `.tsx` / `.ts` / `.jsx` / `.js` file in a frontend project
-- adds or modifies React components, hooks, contexts, reducers, pages, routes, or layouts
-- scaffolds a new React app, Next.js app, or Vite app
-- works with React, Next.js, Vite, React Router, TanStack Query, Framer Motion, Zod, Testing Library
-- builds forms, modals, lists, tables, navigation, or animations
-- fixes accessibility, responsiveness, internationalization, or performance issues
-- runs or configures `tsc`, `biome`, `jest`, `vitest`, `npm audit`
+## Patterns
 
-Do NOT activate when the user is editing pure backend code, infrastructure/IaC, or asking general (non-implementation) framework questions unrelated to this project's code.
+### Component design
 
-## Pattern
-
-### Stack selection: Next vs. Vite
-
-Default to **React + TypeScript**. Pick the bundler/framework based on rendering needs:
-
-- **Next.js** — when the app needs any of: SSR, SSG, ISR, edge runtime, file-based routing, server components, SEO-critical pages, image optimization, or first-class API routes.
-- **Vite** — when the app is pure CSR: internal tools, dashboards behind auth, embedded widgets, prototypes, SPAs where SEO doesn't matter. Faster dev server, simpler config, no server runtime.
-
-Don't reach for Next.js "just in case." If today's requirements are CSR-only, ship Vite; migrating to Next later is straightforward.
-
-### Component patterns
-
-#### a. Composition over inheritance
-
-React has no `extends` story for components. Compose with children and props instead of building class hierarchies.
-
-```tsx
-// Bad — trying to inherit
-class FancyButton extends Button { ... }
-
-// Good — compose via children/props
-function Button({ children, variant = "primary", ...rest }: ButtonProps) {
-  return <button className={variants[variant]} {...rest}>{children}</button>;
-}
-
-function IconButton({ icon, children, ...rest }: IconButtonProps) {
-  return <Button {...rest}><Icon name={icon} />{children}</Button>;
-}
-```
-
-- Pass behavior as props, structure as children.
-- Lift shared logic into a hook, not a base component.
-
-#### b. Compound components
-
-Group related components under a single namespace when they only make sense together (Tabs/Tab, Menu/MenuItem, Accordion/Item). Share state via Context internal to the parent.
-
-```tsx
-const TabsContext = createContext<TabsCtx | null>(null);
-
-export function Tabs({ defaultValue, children }: TabsProps) {
-  const [value, setValue] = useState(defaultValue);
-  return (
-    <TabsContext.Provider value={{ value, setValue }}>
-      <div role="tablist">{children}</div>
-    </TabsContext.Provider>
-  );
-}
-
-Tabs.Tab = function Tab({ value, children }: TabProps) {
-  const ctx = useContext(TabsContext);
-  if (!ctx) throw new Error("Tabs.Tab must be used inside Tabs");
-  const isActive = ctx.value === value;
-  return (
-    <button role="tab" aria-selected={isActive} onClick={() => ctx.setValue(value)}>
-      {children}
-    </button>
-  );
-};
-```
-
-- Throw a clear error when a child is used outside its parent.
-- Keep the Context internal (don't export it) so consumers must use the compound API.
-
-#### c. Render props
-
-Use a render prop (or `children` as a function) when a component owns logic but the consumer owns the markup.
-
-```tsx
-type MouseProps = { children: (pos: { x: number; y: number }) => ReactNode };
-
-function MousePosition({ children }: MouseProps) {
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
-  }, []);
-  return <>{children(pos)}</>;
-}
-
-// Usage
-<MousePosition>{({ x, y }) => <div>{x}, {y}</div>}</MousePosition>
-```
-
-- Reach for a custom hook first; use render props when consumers also need to control where the output renders.
+- Composition over inheritance: pass behavior as props, structure as children.
+- Compound components for related parts (`Tabs` / `Tabs.Tab`) sharing state via internal Context — keep the Context unexported.
+- Render props / `children` as a function when consumers own the markup but you own the logic.
+- Throw a clear error when a compound child is used outside its parent.
 
 ### Custom hooks
 
-Extract any reusable stateful logic into a `useX` hook. Hooks must follow the Rules of Hooks (top-level only, in components or other hooks). Always type the return value explicitly.
-
-#### a. State management hook
-
-Wrap a self-contained piece of state behavior — toggles, counters, multi-step flows — in a hook with a stable, named API.
-
-```ts
-export function useToggle(initial = false): [boolean, () => void, (v: boolean) => void] {
-  const [value, setValue] = useState(initial);
-  const toggle = useCallback(() => setValue(v => !v), []);
-  return [value, toggle, setValue];
-}
-```
-
-- Return a tuple for 2–3 values; return an object once it grows past that.
+- Extract any reusable stateful logic into a `useX` hook.
+- Return a tuple for 2–3 values; an object once it grows past that.
 - Wrap callbacks in `useCallback` so consumers can pass them to memoized children.
+- Async data fetching: use TanStack Query (or Next route loaders / server components). Hand-rolled `useFetch` only for tiny one-offs, and it MUST handle loading, error, and cancellation.
 
-#### b. Async data fetching hook
-
-Prefer **TanStack Query** (or Next.js server components / Route loaders) for production fetching. Hand-rolled hooks are fine for tiny apps or one-off cases — they must handle loading, error, and cancellation.
-
-```ts
-type FetchState<T> =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success"; data: T }
-  | { status: "error"; error: Error };
-
-export function useFetch<T>(url: string): FetchState<T> {
-  const [state, setState] = useState<FetchState<T>>({ status: "idle" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setState({ status: "loading" });
-    fetch(url, { signal: controller.signal })
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<T>;
-      })
-      .then(data => setState({ status: "success", data }))
-      .catch((error: Error) => {
-        if (error.name !== "AbortError") setState({ status: "error", error });
-      });
-    return () => controller.abort();
-  }, [url]);
-
-  return state;
-}
-```
-
-- Model state as a discriminated union, not three independent booleans.
-- Always provide an `AbortController` and clean up in the effect's return.
-- For anything beyond trivial: use TanStack Query for cache, retries, dedup, and background refresh.
-
-#### c. Debounce hook
-
-```ts
-export function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
-}
-```
-
-- Use for search inputs, resize handlers, and any high-frequency state that drives expensive work.
-
-### Route registration is part of the page task — App.tsx and its test must land in the same slice
-
-A page component that renders correctly in isolation is half a feature. The other half is wiring it into the app's router, plus a test in `App.test.tsx` that proves the page is reachable at its declared URL. Past reviews have caught pages shipped without a route entry, where every component test passed but the URL returned a 404 in the running app.
-
-```tsx
-// frontend/src/App.tsx
-import { Route, Routes } from "react-router-dom";
-import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
-
-export function App() {
-  return (
-    <Routes>
-      <Route path="/forgot" element={<ForgotPasswordPage />} />
-      {/* ... other routes ... */}
-    </Routes>
-  );
-}
-```
-
-```tsx
-// frontend/src/App.test.tsx
-test("/forgot renders the forgot-password page", () => {
-  render(<MemoryRouter initialEntries={["/forgot"]}><App /></MemoryRouter>);
-  expect(screen.getByRole("heading", { name: /forgot password/i })).toBeInTheDocument();
-});
-```
-
-- **Every new page lands with both edits in the same slice.** No route registration → the page is unreachable. No App.test.tsx test → the next slice can break the route silently.
-- **When editing `App.test.tsx`, never overwrite the file wholesale.** Shared test files accumulate tests for every page; a wholesale replacement loses pre-existing route coverage. `git diff` `App.test.tsx` before committing and confirm every test from the prior revision is still present.
-- **Cross-page navigation links are part of the page contract too.** If sibling pages link to this page (e.g. `/login` shows a "Forgot password?" link), the matching back-link from this page (e.g. "Back to login") is part of this task — not a follow-up.
-
-### Route-param queries guard with `enabled: !!param`
-
-A TanStack Query that depends on a route param (`groupId`, `taskId`, etc.) must not fire when the param is empty, `undefined`, or still parsing. Without the guard, the query fires `GET /api/v1/groups/` (or worse, `/groups/undefined`) on the very first render, polluting the cache and triggering 404 spam in CI logs.
-
-```tsx
-// Bad — fires with empty groupId on the first render
-export function useGroup(groupId: string) {
-  return useQuery({
-    queryKey: ["group", groupId],
-    queryFn: () => getGroup(groupId),
-  });
-}
-
-// Good — gated by a truthy param
-export function useGroup(groupId: string | undefined) {
-  return useQuery({
-    queryKey: ["group", groupId],
-    queryFn: () => getGroup(groupId!),
-    enabled: !!groupId,
-  });
-}
-```
-
-- The `queryFn` argument type stays non-null because `enabled: !!groupId` is the guarantee `getGroup` never runs with an empty value. The `!` non-null assertion is acceptable here because `enabled` is the invariant.
-- Pair with an `isLoading: true` initial-state test in the hook's unit test so the gate is covered by a regression test, not just an implementation detail.
-
-### Mutations: cache invalidation in `onSuccess`, referential stability in the return
-
-Two patterns that have repeatedly cost review rounds and belong on every mutation hook.
-
-**a. Invalidate the queries the mutation affects.** Every mutation that changes server state visible through another query must call `queryClient.invalidateQueries({ queryKey: <KEY> })` in `onSuccess`. The most common miss: a `useLogout` mutation that resolves before `useMe` refetches, leaving the stale `currentUser` visible in the cache for several frames.
-
-```tsx
-export function useLogout() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => logoutRequest(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: GROUPS_QUERY_KEY });
-    },
-  });
-}
-```
-
-**b. Return the mutation's `mutate` directly — do not re-wrap in an arrow function.** A wrapper allocates a fresh function reference on every render, which silently breaks consumer `useEffect` / `useCallback` dependency arrays and triggers spurious re-runs in memoized children.
-
-```ts
-// Bad — fresh function every render; `login` and `logout` are referentially unstable
-return {
-  login: (...args) => loginMutation.mutate(...args),
-  logout: () => logoutMutation.mutate(),
-};
-
-// Good — stable references; consumer deps stay sane
-return {
-  login: loginMutation.mutate,
-  logout: logoutMutation.mutate,
-};
-```
-
-If the hook genuinely needs to transform args before calling `mutate`, wrap the result in `useCallback` with a stable dependency list — never a bare arrow function on every render.
-
-### Form idempotency-key rotation on 4xx
-
-Forms that submit with an `Idempotency-Key` header (per the project's idempotency ADR) must **rotate the key on a 4xx response** so the user can correct the input and re-submit. The trap: the form mints one key in a `useRef`, the user submits with a bad value, the server caches the 422 against the key, the user fixes the value and re-submits — and the server replays the cached 422 forever, surfacing as a permanent "unrecoverable" error state.
-
-```tsx
-const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
-
-const onSubmit = async (values: FormValues) => {
-  try {
-    await createGroup(values, { idempotencyKey: idempotencyKeyRef.current });
-  } catch (err) {
-    if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
-      idempotencyKeyRef.current = crypto.randomUUID(); // new key for the next attempt
-    }
-    throw err;
-  }
-};
-```
-
-- Server-side 2xx is the only state where the key is "spent" and the next user submit needs a fresh key (which `useRef` already gives them on remount).
-- 5xx never rotates the key — that's exactly the case retry was designed for.
-- 4xx is where the bug lives: the request reached the server, the server cached the response against the key, and the user must be able to re-submit with new data.
-
-### Sticky one-shot UI state needs an explicit reset path or an explicit decision not to reset
-
-Forms with a "submitted" / "success" UI state often hold the state forever after first submit. Decide on day one whether that's intentional:
-
-- **Intentional and documented** (e.g. `/forgot` shows the generic confirmation and never lets the user submit again from the same mount — by design, to slow enumeration attempts): write the comment that says so, and mark the state as `useState<"idle" | "submitted">` with no transition back. The component test should pin that invariant.
-- **Unintentional** (the user should be able to send another email, edit and re-submit, etc.): expose a reset path — a "Send another" button, an `onSuccess`-driven prop, or an unmount/remount via key change. The test should drive both transitions.
-
-The default in reviews has been to surface this as a finding; pick one or the other up front.
-
-### API access: route everything through `src/lib/api`
-
-**Never** call `fetch` or `axios` directly inside component files. All backend calls — including those made from custom hooks, route loaders, and server components — go through the project's `src/lib/api` module.
-
-```ts
-// src/lib/api/users.ts — the only place fetch/axios live
-import { apiClient } from "./client";
-
-export async function getUser(id: string): Promise<User> {
-  return apiClient.get<User>(`/users/${id}`);
-}
-```
-
-```tsx
-// Bad — fetch inside a component
-function UserCard({ id }: { id: string }) {
-  const [user, setUser] = useState<User | null>(null);
-  useEffect(() => { fetch(`/api/users/${id}`).then(r => r.json()).then(setUser); }, [id]);
-  // ...
-}
-
-// Good — call goes through src/lib/api
-import { getUser } from "@/lib/api/users";
-
-function UserCard({ id }: { id: string }) {
-  const { data: user } = useQuery({ queryKey: ["user", id], queryFn: () => getUser(id) });
-  // ...
-}
-```
-
-- `src/lib/api` owns base URL, auth headers, error normalization, retry/timeout policy, response parsing, and request cancellation. Centralizing these means a single place to change them.
-- Components and hooks call typed functions from `src/lib/api` — they never know about `fetch`, `axios`, URL strings, or HTTP status codes.
-- Pair with TanStack Query for cache/loading/error state; the `queryFn` calls into `src/lib/api`.
-- Tests mock `src/lib/api` functions, not `fetch` — keeps tests decoupled from transport details.
-
-### State management: Context + Reducer
-
-For shared state that crosses more than 2–3 levels, pair `useReducer` with a `Context`. Keep state and dispatch in **separate** contexts so consumers that only dispatch don't re-render on state changes.
-
-```tsx
-type State = { count: number };
-type Action = { type: "inc" } | { type: "dec" } | { type: "set"; value: number };
-
-const StateCtx = createContext<State | null>(null);
-const DispatchCtx = createContext<Dispatch<Action> | null>(null);
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "inc": return { count: state.count + 1 };
-    case "dec": return { count: state.count - 1 };
-    case "set": return { count: action.value };
-  }
-}
-
-export function CounterProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, { count: 0 });
-  return (
-    <StateCtx.Provider value={state}>
-      <DispatchCtx.Provider value={dispatch}>{children}</DispatchCtx.Provider>
-    </StateCtx.Provider>
-  );
-}
-
-export function useCounter() {
-  const state = useContext(StateCtx);
-  if (!state) throw new Error("useCounter must be used inside CounterProvider");
-  return state;
-}
-
-export function useCounterDispatch() {
-  const dispatch = useContext(DispatchCtx);
-  if (!dispatch) throw new Error("useCounterDispatch must be used inside CounterProvider");
-  return dispatch;
-}
-```
-
-- Discriminated `Action` unions give you exhaustive switch-checking.
-- Don't put server data in Context — that's TanStack Query's job. Context is for client state.
-- Reach for Zustand/Redux Toolkit only when reducer + context starts duplicating ceremony across many slices.
-
-### Performance optimization
-
-Optimize after measuring. Don't sprinkle `useMemo`/`memo` preemptively — they have their own cost.
-
-#### a. Memoization
-
-```tsx
-const ExpensiveList = memo(function ExpensiveList({ items, onSelect }: Props) {
-  return <>{items.map(item => <Row key={item.id} item={item} onSelect={onSelect} />)}</>;
-});
-
-function Parent({ items }: { items: Item[] }) {
-  const [filter, setFilter] = useState("");
-  const filtered = useMemo(
-    () => items.filter(i => i.name.includes(filter)),
-    [items, filter],
-  );
-  const handleSelect = useCallback((id: string) => { /* ... */ }, []);
-  return <ExpensiveList items={filtered} onSelect={handleSelect} />;
-}
-```
-
-- `useMemo` for expensive derivations, `useCallback` for callbacks passed to memoized children, `memo` for components that re-render often with the same props.
-- A `memo` is useless if you pass a fresh object/array/function on every render — wrap those too.
-
-#### b. Code splitting & lazy loading
-
-Split at route boundaries and around heavy, conditional UI (modals, editors, charts).
-
-```tsx
-// React + Vite
-const Settings = lazy(() => import("./pages/Settings"));
-
-<Suspense fallback={<PageSkeleton />}>
-  <Settings />
-</Suspense>
-```
-
-```tsx
-// Next.js (App Router) — components lazy load via next/dynamic
-const Chart = dynamic(() => import("./Chart"), { ssr: false, loading: () => <Skeleton /> });
-```
-
-- Always pair `lazy` with a meaningful `Suspense` fallback.
-- `ssr: false` in Next when the component touches `window`/`document`.
-
-#### c. Virtualization for long lists
-
-Render only what's visible when a list exceeds ~100 items. Use **TanStack Virtual** (or `react-window`).
-
-```tsx
-import { useVirtualizer } from "@tanstack/react-virtual";
-
-function BigList({ items }: { items: Item[] }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 48,
-    overscan: 8,
-  });
-  return (
-    <div ref={parentRef} style={{ height: 600, overflow: "auto" }}>
-      <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-        {virtualizer.getVirtualItems().map(v => (
-          <div
-            key={v.key}
-            style={{ position: "absolute", top: 0, transform: `translateY(${v.start}px)`, height: v.size, width: "100%" }}
-          >
-            <Row item={items[v.index]} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
-- Provide a stable `key` per row.
-- Tune `overscan` for smoothness vs. work.
-
-### Form handling: controlled forms with validation
-
-Use **React Hook Form + Zod** for any non-trivial form. The schema is the single source of truth for both runtime validation and TypeScript types.
-
-```tsx
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-
-const SignupSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
-type SignupValues = z.infer<typeof SignupSchema>;
-
-export function SignupForm({ onSubmit }: { onSubmit: (v: SignupValues) => Promise<void> }) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } =
-    useForm<SignupValues>({ resolver: zodResolver(SignupSchema) });
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate>
-      <label htmlFor="email">Email</label>
-      <input id="email" type="email" aria-invalid={!!errors.email} {...register("email")} />
-      {errors.email && <p role="alert">{errors.email.message}</p>}
-
-      <label htmlFor="password">Password</label>
-      <input id="password" type="password" aria-invalid={!!errors.password} {...register("password")} />
-      {errors.password && <p role="alert">{errors.password.message}</p>}
-
-      <button type="submit" disabled={isSubmitting}>Sign up</button>
-    </form>
-  );
-}
-```
-
-- Always derive types with `z.infer<typeof Schema>`.
-- Wire `aria-invalid` and `role="alert"` so errors reach assistive tech.
+### Routes + reachability
+
+- A new page lands with BOTH the route registration in `App.tsx` AND a matching `App.test.tsx` test in the same slice.
+- `App.test.tsx` asserts the page is reachable at its declared URL (`render <App />` inside `<MemoryRouter initialEntries={[url]}>`, expect heading).
+- When editing `App.test.tsx`, never overwrite the file wholesale — accumulate tests; `git diff` it before commit.
+- Cross-page navigation links (e.g. "Forgot password?" on `/login` + "Back to login" on `/forgot`) ship in the same slice as the page they reference.
+
+### TanStack Query
+
+- Route-param queries guard with `enabled: !!param` — without it the query fires `GET /api/v1/groups/` (or `/groups/undefined`) on first render.
+- Pair the guard with an `isLoading: true` initial-state test so the gate is locked by a regression test.
+- Every mutation that changes server state visible through another query calls `queryClient.invalidateQueries({ queryKey: <KEY> })` in `onSuccess`.
+- Common miss: `useLogout` resolves before `useMe` refetches, leaving stale `currentUser` visible.
+
+### Mutation return shape
+
+- Return `mutation.mutate` directly. Do NOT re-wrap in an arrow function — a fresh ref every render breaks consumer `useEffect` / `useCallback` deps.
+- If transforming args before `mutate`, wrap with `useCallback` and a stable dep list. Never a bare arrow per render.
+
+### Idempotency-key rotation
+
+- Forms that submit with `Idempotency-Key`: rotate the key on 4xx so the user can correct and resubmit.
+- 2xx = key is spent (next submit gets a fresh `useRef` value on remount).
+- 5xx = never rotate (retry was designed for it).
+- 4xx = rotate before the next attempt.
+
+### Sticky UI state
+
+- "Submitted" / "success" UI that holds forever after first submit must be decided up front:
+  - **Intentional** (e.g. `/forgot` shows the generic confirmation by design): mark the state as `useState<"idle" | "submitted">` with no transition back; comment why; pin with a test.
+  - **Unintentional**: expose a reset path ("Send another" button, `onSuccess`-driven prop, key change → unmount).
+
+### API access
+
+- ALL backend calls route through `src/lib/api/<resource>.ts`. Never `fetch` / `axios` inside a component or hook.
+- `src/lib/api` owns: base URL, auth headers, error normalization, retry/timeout policy, response parsing, cancellation.
+- Tests mock `src/lib/api` functions, not `fetch`.
+
+### State management
+
+- Server data → TanStack Query.
+- Client state crossing 2–3 levels → `useReducer` + Context. Keep state and dispatch in **separate** Contexts so dispatch-only consumers don't re-render on state changes.
+- Discriminated `Action` unions for exhaustive switch checking.
+- Reach for Zustand / Redux Toolkit only when reducer+context starts duplicating ceremony across many slices.
+
+### Performance
+
+- Measure first. Don't sprinkle `useMemo` / `memo` preemptively.
+- `useMemo` for expensive derivations. `useCallback` for callbacks passed to memoized children. `memo` for components that re-render often with the same props.
+- A `memo` is useless if you pass a fresh object / array / function every render — wrap those too.
+- Code-split at route boundaries via `lazy(() => import(...))` paired with a meaningful `<Suspense fallback>`.
+- Virtualize long lists (TanStack Virtual / `react-window`) once items exceed ~100.
+
+### Forms
+
+- React Hook Form + Zod. Schema is the single source of truth for runtime validation AND types (`z.infer<typeof Schema>`).
+- `aria-invalid={!!errors.x}` and `role="alert"` on each error message.
 - Disable the submit while in flight to prevent double submits.
 
-### Error boundary pattern
+### Error boundaries
 
-Wrap each route (and any seam where a render error must not crash the whole app) in an error boundary. Error boundaries must be class components — that is the only place React supports them.
+- One per route + extra boundaries around risky islands (dashboard widgets, third-party embeds).
+- Class component (the only place React supports them). In Next App Router use `error.tsx` files.
 
-```tsx
-type State = { error: Error | null };
+### Animation
 
-export class ErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, State> {
-  state: State = { error: null };
-  static getDerivedStateFromError(error: Error): State { return { error }; }
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    reportError(error, info); // send to Sentry / your logger
-  }
-  render() {
-    return this.state.error ? this.props.fallback : this.props.children;
-  }
-}
-
-// Usage
-<ErrorBoundary fallback={<ErrorFallback />}>
-  <Route />
-</ErrorBoundary>
-```
-
-- One boundary per route, plus extra boundaries around risky islands (dashboard widgets, third-party embeds).
-- In Next App Router use `error.tsx` files — same idea, framework-managed.
-
-### Animation: Framer Motion
-
-Use **Framer Motion** for any non-trivial animation. CSS transitions are still fine for simple hover/focus states.
-
-```tsx
-import { motion, AnimatePresence } from "framer-motion";
-
-export function Modal({ open, onClose, children }: ModalProps) {
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          role="dialog"
-          aria-modal="true"
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-          onClick={onClose}
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-```
-
+- Framer Motion for non-trivial animation. CSS transitions for simple hover/focus.
 - `AnimatePresence` is mandatory for exit animations.
-- Respect `prefers-reduced-motion` — Framer Motion exposes `useReducedMotion()`.
-- Keep durations short (120–250ms for UI; longer only for hero/onboarding).
+- Respect `prefers-reduced-motion` via `useReducedMotion()`.
+- Durations: 120–250ms for UI; longer only for hero / onboarding.
 
 ### Accessibility
 
-#### a. Keyboard navigation
+- Native semantic elements (`<button>`, `<a>`, `<input>`, `<select>`, `<dialog>`, `<nav>`, `<h1>`–`<h6>`) over `role` on a generic tag.
+- Biome's `lint/a11y/useSemanticElements` blocks `<div role="dialog">`, `<form role="dialog">`, `<div role="button">`, etc.
+- Visible focus styles required (`:focus-visible`); never `outline: none` without a replacement.
+- Trap focus inside modals; restore to the opener on close.
+- Empty-state copy, loading skeletons, "no results" panels render inside the same semantic landmark (`<main>`) the loaded state would — so Playwright's `getByRole('main').getByRole(...)` queries work.
 
-Every interactive element must be reachable and operable from the keyboard.
+### Responsive
 
-- Use real `<button>`, `<a>`, `<input>`, `<select>` — only fall back to a `div`+`role` when the semantic element won't fit, and then add `tabIndex={0}` plus `onKeyDown` for Enter/Space.
-- Visible focus styles are required (`:focus-visible`, never `outline: none` without a replacement).
-- For lists/menus/tabs/grids, implement arrow-key navigation and Home/End where applicable, following the WAI-ARIA Authoring Practices for that pattern.
-- Trap focus inside modals; restore focus to the opener on close.
+- Mobile-first. Author the small-screen layout; layer breakpoints upward (`sm:`, `md:`, `lg:`, `xl:`).
+- Fluid units (`rem`, `clamp()`, `%`, `fr`) over fixed pixels for layout.
+- Test at 320 / 768 / 1024 / 1440 minimum.
+- Images: `srcset` / `sizes` (or Next `<Image>`).
 
-```tsx
-function MenuItem({ onSelect, children }: MenuItemProps) {
-  return (
-    <li
-      role="menuitem"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } }}
-    >
-      {children}
-    </li>
-  );
-}
-```
+### i18n
 
-#### b. Focus management
+- No hardcoded user-facing strings; route through `next-intl` (Next) / `react-i18next` (Vite).
+- ICU MessageFormat for plurals / gender / interpolation; never concatenate translated fragments.
+- Stable namespaced keys (`auth.signup.submitButton`).
+- Dates / numbers / currency via `Intl.DateTimeFormat` / `Intl.NumberFormat` with the active locale.
+- `<html lang>` set; `dir="rtl"` when needed.
 
-After navigation or major UI changes, send focus where it belongs.
+### Styling — Tailwind + design tokens
 
-```tsx
-function Dialog({ open, onClose, children }: DialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
+- Source of truth is `docs/DESIGNs/` when present (`tokens.md`, `components.md`, `accessibility.md`, `overview.md`, `sample/*.html`).
+- Tailwind class names map 1:1 to design tokens (`color/brand/500` → `bg-brand-500`).
+- No hard-coded color values; no hard-coded pixel sizes (`[420px]`, `[#3b82f6]`); no ad-hoc inline `style={{ color, padding }}` for visual properties.
+- Need a value the scale doesn't have? Extend the token in `tailwind.config` (mirrored in `tokens.md`) — don't reach for arbitrary `[...]` classes.
+- Dynamic values that genuinely can't be tokens (e.g. chart bar's computed height) go through `style={{ height: \`${pct}%\` }}` — the exception, not a pattern.
 
-  useEffect(() => {
-    if (open) {
-      openerRef.current = document.activeElement as HTMLElement | null;
-      dialogRef.current?.focus();
-    } else {
-      openerRef.current?.focus();
-    }
-  }, [open]);
+## Related skills
 
-  // Prefer the native <dialog> element over role="dialog" on a generic
-  // container — Biome's lint/a11y/useSemanticElements blocks the latter.
-  return (
-    <dialog ref={dialogRef as React.RefObject<HTMLDialogElement>} open={open}>
-      {children}
-    </dialog>
-  );
-}
-```
-
-- On route change, move focus to the page's `<h1>` (or a skip-link target) so screen-reader users don't lose context.
-- Inside dialogs, drawers, and command palettes: trap focus, close on Escape, restore focus on close.
-- **Use the native semantic element, never `role="X"` on a generic tag.** Biome's `lint/a11y/useSemanticElements` blocks `<div role="dialog">`, `<form role="dialog">`, `<div role="button">`, `<div role="navigation">`, `<span role="heading">`, etc. — every one of those has a native HTML equivalent (`<dialog>`, `<button>`, `<nav>`, `<h1>`–`<h6>`) that ships with the right keyboard semantics, focus behavior, and screen-reader output for free. Reach for `role` only when no native element fits AND no parent component already provides the role (e.g. `role="tablist"` on a wrapper that contains real `<button>` tabs).
-- **Empty-state copy lives inside the semantic landmark E2E asserts against.** A page's empty state ("No groups yet — create one to get started") MUST render inside `<main>` so a Playwright spec can pin its assertion to `getByRole('main').getByRole('heading', { name: /no groups yet/i })`. Rendering it outside `<main>` (above the header, in a sidebar, in a floating overlay) breaks the role-scoped query without ever touching the user-visible UI, which is the worst kind of E2E flake — the test fails for a reason that looks unrelated to the change. Same rule applies to error states, loading skeletons, and "no results" panels: they all render inside the same landmark the loaded state would.
-
-## Key principles
-
-### Styling: Tailwind + design tokens only
-
-The project's **design system is the source of truth for every visual value**. Before writing or editing any styling, check whether the project has a design system on disk:
-
-```bash
-ls docs/DESIGNs/ 2>/dev/null
-```
-
-If `docs/DESIGNs/` exists, read these files before touching styles — they were produced by the `ui-ux-designer` agent during `/deep-dive-feature` and are authoritative:
-
-- `docs/DESIGNs/tokens.md` — the canonical list of color, typography, spacing, radii, shadow, and motion tokens. Every visual value used in JSX or CSS must trace back to a token defined here.
-- `docs/DESIGNs/components.md` — the component inventory: variants, sizes, states, tokens each component consumes, and the focus-style + reduced-motion behaviour you must implement.
-- `docs/DESIGNs/accessibility.md` — the accessibility floor for every interactive component (keyboard interaction, focus style, ARIA roles/labels, motion fallback).
-- `docs/DESIGNs/overview.md` — the project-level visual style direction, density, and motion philosophy that constrains *how* you compose tokens (e.g. when a card uses `shadow/elevation-1` vs `shadow/elevation-2`).
-- `docs/DESIGNs/sample/*.html` — static reference renders. When in doubt about how a component should look, open the relevant sample page; every CSS custom property there matches a token name in `tokens.md`.
-
-Workflow when styling a component:
-
-1. Look up the component in `components.md`. If it's listed, use exactly the variants, sizes, states, tokens, and focus/reduced-motion rules that entry declares — don't invent a variant the design doesn't sanction.
-2. Look up every visual value (color, spacing, radius, etc.) in `tokens.md`. The token name maps 1:1 to the Tailwind class in `tailwind.config` (e.g. `color/brand/500` → `bg-brand-500`, `space/4` → `p-4`, `radius/md` → `rounded-md`).
-3. If the design system **doesn't have** the token or component variant the requirement demands, **stop and surface the gap** rather than inventing a one-off:
-   - For a task issue: post a comment on the slice issue describing what's missing and re-run `/deep-dive-feature` for that feature so `ui-ux-designer` can extend the system properly.
-   - For an ad-hoc fix where the gap is mechanical (e.g. a token alias was forgotten in `tailwind.config`): add the alias in a separate `chore(tokens): mirror <token> from docs/DESIGNs/tokens.md` commit so the linkage stays auditable.
-4. **Never let `tailwind.config` and `docs/DESIGNs/tokens.md` drift.** A token added to `tailwind.config` without a row in `tokens.md` is a bug; same the other way. Treat the design doc as the spec the config implements.
-
-If `docs/DESIGNs/` does not exist on this project, fall back to whatever tokens live in `tailwind.config` and flag the gap to the human — the project should be running `/deep-dive-feature` before further UI work to lock in a design system.
-
-Style exclusively with Tailwind CSS classes that map to design tokens. **No** hard-coded color values, **no** hard-coded pixel sizes, **no** ad-hoc inline styles for visual properties.
-
-```tsx
-// Bad — hard-coded color and pixel sizes
-<button style={{ backgroundColor: "#3b82f6", padding: "12px 16px", fontSize: "14px" }}>
-  Save
-</button>
-<div className="text-[#1f2937] mt-[18px] w-[420px]">...</div>
-
-// Good — token-mapped Tailwind classes
-<button className="bg-primary px-4 py-3 text-sm text-primary-foreground">
-  Save
-</button>
-<div className="text-foreground mt-5 w-md">...</div>
-```
-
-- Colors come from semantic tokens (`bg-primary`, `text-foreground`, `border-muted`) defined in `tailwind.config` — never raw hex, rgb, or hsl in JSX/CSS.
-- Sizing uses Tailwind's spacing scale (`p-4`, `gap-6`, `w-md`) — never `[12px]`, `[420px]`, or arbitrary pixel values in `[]` brackets.
-- Need a value the scale doesn't have? Extend the token in `tailwind.config` so it's reusable, don't reach for an arbitrary class.
-- Dynamic values that genuinely can't be tokens (e.g. a chart bar's computed height) go through `style={{ height: \`${pct}%\` }}` — but this is an exception, not a pattern.
-- Dark mode and theming work because tokens swap; hard-coded values defeat them.
-
-### Responsive web design (RWD)
-
-- Mobile-first. Author the small-screen layout first, then layer breakpoints upward (`min-width` queries).
-- Use Tailwind's responsive prefixes (`sm:`, `md:`, `lg:`, `xl:`) or CSS Container Queries for component-driven responsiveness.
-- Prefer fluid units (`rem`, `clamp()`, `%`, `fr`) over fixed pixel sizes for layout dimensions.
-- Test at 320px (small phone), 768px (tablet), 1024px (laptop), and 1440px (desktop) at minimum.
-- Images: use `srcset`/`sizes` (or Next.js `<Image>`) so phones don't download desktop assets.
-
-### Internationalization (i18n)
-
-- No hardcoded user-facing strings. Every string runs through the i18n layer (`next-intl` for Next.js, `react-i18next` for Vite).
-- Use ICU MessageFormat for plurals, gender, and interpolation — don't concatenate translated fragments.
-- Keys are namespaced and stable: `auth.signup.submitButton`, not `button1`.
-- Format dates, numbers, and currency via `Intl.DateTimeFormat` / `Intl.NumberFormat` with the active locale.
-- Set `<html lang>` and (when needed) `dir="rtl"`. Test at least one RTL locale if RTL languages are in scope.
-
-### TypeScript strictness
-
-`tsconfig.json` must enable strict mode. The non-negotiable `compilerOptions` flags live in `templates/tsconfig.json` — copy that block into the project's tsconfig and add project-specific entries on top.
-
-- No `any`. Use `unknown` at boundaries and narrow before use.
-- No non-null assertions (`!`) except in the rarest cases with a comment explaining the invariant.
-- Prefer `type` for unions/intersections, `interface` for object shapes you intend others to extend.
-- Use discriminated unions (`{ status: "success"; data: T } | { status: "error"; error: Error }`) instead of optional fields that "go together."
-- Type props explicitly — `function Component(props: Props)` — don't rely on inference for the public API.
-- **Don't hand-order imports.** Biome's `organizeImports` owns the order — it groups by source (stdlib → third-party → `@/...` aliases → relative), then sorts within each group. Manually reordering imports (in particular: putting `@/components/Foo` before `react` because "the local thing matters more here") fights the formatter and trips `lint/correctness/organizeImports` in CI. Run `npx biome check --write .` after any non-trivial set of edits so the import block is in the shape the formatter expects before commit.
-- **`compilerOptions.types` must include `@testing-library/jest-dom` (or the testing-library matcher package the project uses).** Without it, matchers like `toBeInTheDocument()` and `toHaveValue()` compile but produce `tsc --noEmit` errors that block the frontend Docker build — and the failure surfaces as "image build broken" in the security review, not "missing types" in the code review. Land the `types` entry alongside the first test file that uses jest-dom matchers, in the same commit as the matcher import or one chore-scoped commit before it. Same rule for `vitest/globals` if the project uses Vitest with globals enabled.
-
-## Command
-
-Run all tooling from the project root. The first set is read-only checks; the second mutates files.
-
-### Checks
-
-```bash
-tsc --noEmit     # Type checking
-biome check .    # Lint
-biome check .    # Format check (same command — biome covers both)
-npm audit        # Security scan
-jest             # Tests
-```
-
-- Run all five before declaring a task complete.
-- Replace `jest` with `vitest` on Vite projects.
-- A clean `tsc` and `biome` run is required; coverage thresholds (if any) are configured in `package.json` / `jest.config` (`coverageThreshold`) and enforced by `jest` automatically — don't pass `--coverage` on the CLI.
-
-### Auto-fix
-
-```bash
-biome check --write .   # Auto-fix lint issues and format
-```
-
-- Run auto-fix before re-running checks; don't hand-fix what the formatter will fix.
-- Review the diff after auto-fix — formatters occasionally reflow JSX in ways that hurt readability, in which case rewrite the underlying line.
+| Skill | Purpose |
+|-------|---------|
+| `pattern-engineer-coding-standard` | Always. |
+| `pattern-engineer-typescript` | Always (every component is a `.tsx`). |
+| `pattern-engineer-vite` | When the app is Vite-based. |
+| `pattern-engineer-backend-standard` | When wiring a new endpoint the frontend will call. |
+| `pattern-engineer-observability` | When emitting frontend spans / metrics / logs. |
+| `pattern-reviewer-frontend-standard` | Detailed audit criteria + trap stories (reviewer lens). |
