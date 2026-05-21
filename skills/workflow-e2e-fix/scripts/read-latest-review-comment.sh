@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Print the body of the most recent comment on the task issue whose body starts
 # with "# Code Review" — that's the structured findings comment posted by the
-# `code-reviewer` sub-agent and is the source-of-truth fix list.
+# `reviewer` sub-agent and is the source-of-truth fix list.
 #
 # Exits non-zero with a diagnostic on stderr if no matching comment exists.
 #

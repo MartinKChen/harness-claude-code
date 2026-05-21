@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push the slice branch to remote and add `review:code-pending` to the task
-# issue so `review-task-issue` dispatches the `code-reviewer`. E2e tasks do
+# issue so `review-task-issue` dispatches the `reviewer` agent. E2e tasks do
 # not carry a security gate (test code has no production attack surface), so
 # `review:security-pending` is NOT added here.
 #

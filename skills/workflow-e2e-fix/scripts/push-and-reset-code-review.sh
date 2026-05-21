@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push the slice branch to remote and reset the task's `review:code-*` gate to
-# `review:code-pending` so `review-task-issue` dispatches a fresh `code-reviewer`
+# `review:code-pending` so `review-task-issue` dispatches a fresh `reviewer`
 # against the fix. Idempotent — `gh issue edit` silently ignores
 # `--remove-label` targets that aren't currently set.
 #

@@ -109,7 +109,7 @@ Then run the `.env.example` audit: if this task added, renamed, or removed any e
 
 ### 8. Push the slice branch and open both review gates
 
-Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `code-reviewer` and `security-reviewer`:
+Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `reviewer` agent for both gates:
 
 ```bash
 bash scripts/push-and-open-reviews.sh <issue-#> "${slice_branch}"

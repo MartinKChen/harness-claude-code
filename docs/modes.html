@@ -671,7 +671,7 @@ task issues  ────────────► level:task                 
       <div class="meta">review:*-pending → -running</div>
       <ul>
         <li>Scans in-progress tasks with <code>review:code-pending</code> or <code>review:security-pending</code>.</li>
-        <li>Flips just the pending gate to <code>-running</code>; dispatches <code>code-reviewer</code> or <code>security-reviewer</code>.</li>
+        <li>Flips just the pending gate to <code>-running</code>; dispatches the <code>reviewer</code> sub-agent (one per <code>(task, gate)</code> pair; pattern skills picked from the labels).</li>
         <li>Reviewer posts a structured comment on the task and flips to <code>-passed</code> or <code>-need-fix</code>.</li>
       </ul>
     </div>
@@ -852,7 +852,7 @@ task issues  ────────────► level:task                 
       <div class="meta">review:*-pending → -running</div>
       <ul>
         <li>Scans in-progress tasks with <code>review:code-pending</code> or <code>review:security-pending</code>.</li>
-        <li>Flips just the pending gate to <code>-running</code>; dispatches <code>code-reviewer</code> or <code>security-reviewer</code> in the background.</li>
+        <li>Flips just the pending gate to <code>-running</code>; dispatches the <code>reviewer</code> sub-agent (one per <code>(task, gate)</code> pair; pattern skills picked from the labels) in the background.</li>
         <li>Reviewer posts a structured comment on the task and flips to <code>-passed</code> or <code>-need-fix</code>.</li>
       </ul>
     </div>
@@ -925,7 +925,7 @@ task issues  ────────────► level:task                 
   implement-task-issue  ──►  ready tasks dispatched
                               (engineer Mode A / e2e-author, backgrounded)
   review-task-issue     ──►  pending gates flipped to -running
-                              (code-reviewer / security-reviewer, backgrounded)
+                              (reviewer agent, one per (task, gate), backgrounded)
   fix-task-issue        ──►  -need-fix tasks dispatched
                               (engineer Mode C / e2e-author fix, backgrounded)
   close-task-issue      ──►  tasks whose required gates are all
@@ -1008,7 +1008,7 @@ task issues  ────────────► level:task                 
         │                            ▼                                 │
         │   /review-task-issue                                         │
         │     review:&lt;gate&gt;-pending → review:&lt;gate&gt;-running             │
-        │     code-reviewer  /  security-reviewer  (backgrounded)      │
+        │     reviewer (one per (task, gate), backgrounded)            │
         │     post structured finding COMMENT on TASK                  │
         │     review:&lt;gate&gt;-running → review:&lt;gate&gt;-passed              │
         │                              or   review:&lt;gate&gt;-need-fix     │

@@ -1,6 +1,6 @@
 ---
 name: workflow-orchestrator-review-task-issue
-description: "Find every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-pending`/`review:security-pending`, flip the gate(s) to `-running`, and dispatch the reviewer (`code-running`→`code-reviewer`, `security-running`→`security-reviewer`). Reviews are scoped to the task, not the slice PR. Activate on 'review the task issues', 'kick off code/security review', '/workflow-orchestrator-review-task-issue'. Skip for slice-PR review."
+description: "Find every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-pending`/`review:security-pending`, flip the gate(s) to `-running`, and dispatch the `reviewer` sub-agent (one per `(task, gate)` pair; the agent picks the pattern-skill set from the labels). Reviews are scoped to the task, not the slice PR. Activate on 'review the task issues', 'kick off code/security review', '/workflow-orchestrator-review-task-issue'. Skip for slice-PR review."
 ---
 
 # workflow-orchestrator-review-task-issue
@@ -15,7 +15,7 @@ Activate this skill whenever the user:
 
 - Types `/workflow-orchestrator-review-task-issue` (with or without a numeric cap argument).
 - Asks to "pick up reviews", "dispatch reviewers", "review pending task issues", or "kick off code/security review on task issues".
-- Wants to fan out `code-reviewer` / `security-reviewer` sub-agents against every open task issue carrying a `review:*-pending` label.
+- Wants to fan out `reviewer` sub-agents (one per `(task, gate)` pair) against every open task issue carrying a `review:*-pending` label.
 
 Do NOT activate when the user wants to review a slice PR directly (the `review:*` label family no longer lives on PRs), when no `review:*-pending` gate exists, or when they want a single ad-hoc review on a specific task without scanning the full backlog.
 
@@ -87,12 +87,12 @@ Do NOT roll back on internal sub-agent failure — once the sub-agent is running
 
 ### 5. Dispatch the matching reviewer sub-agent
 
-Map gate to `subagent_type`:
+Every dispatched pair uses the same `reviewer` sub-agent — it derives the pattern-skill set from the task's `(type:*, gate)` label combination:
 
-| Running gate label         | `subagent_type`     |
-|----------------------------|---------------------|
-| `review:code-running`      | `code-reviewer`     |
-| `review:security-running`  | `security-reviewer` |
+| Running gate label         | `subagent_type` |
+|----------------------------|-----------------|
+| `review:code-running`      | `reviewer`      |
+| `review:security-running`  | `reviewer`      |
 
 Spawn each pair with the `Agent` tool, passing:
 

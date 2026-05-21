@@ -5,7 +5,7 @@ description: "Fix Playwright E2E specs on a single `type:e2e` GitHub task per th
 
 # workflow-e2e-fix
 
-Address the `code-reviewer`'s findings on a single `type:e2e` GitHub task issue. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, read the most recent `# Code Review` comment as the source-of-truth fix list, edit only test code (never production code), smoke-run each touched spec, commit using the Conventional Commits format from `templates/commit-messages.md`, push, and reset the `review:code-*` label back to `review:code-pending` so a fresh review cycle picks up the fix.
+Address the `reviewer` agent's findings on a single `type:e2e` GitHub task issue. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, read the most recent `# Code Review` comment as the source-of-truth fix list, edit only test code (never production code), smoke-run each touched spec, commit using the Conventional Commits format from `templates/commit-messages.md`, push, and reset the `review:code-*` label back to `review:code-pending` so a fresh review cycle picks up the fix.
 
 ## When to activate
 
@@ -52,7 +52,7 @@ gh issue view <task-#> --json title,body,labels,url
 
 ### 2. Read the reviewer's findings comment on the task
 
-`code-reviewer` posts one structured comment on the task issue with severity/file:line/fix details. Pull the most recent `# Code Review` body — that's the source-of-truth for what to fix:
+The `reviewer` agent posts one structured comment on the task issue with severity/file:line/fix details. Pull the most recent `# Code Review` body — that's the source-of-truth for what to fix:
 
 ```bash
 review_body="$(bash scripts/read-latest-review-comment.sh <task-#>)"
@@ -86,7 +86,7 @@ Format commit messages per `templates/commit-messages.md` — one commit per log
 
 ### 7. Push the slice branch and reset `review:code-*` to pending
 
-Push the new commits to the remote slice branch and idempotently reset the task's `review:code-*` gate to `review:code-pending` so `workflow-orchestrator-review-task-issue` will dispatch a fresh `code-reviewer` against the fix:
+Push the new commits to the remote slice branch and idempotently reset the task's `review:code-*` gate to `review:code-pending` so `workflow-orchestrator-review-task-issue` will dispatch a fresh `reviewer` against the fix:
 
 ```bash
 bash scripts/push-and-reset-code-review.sh <task-#> "${slice_branch}"

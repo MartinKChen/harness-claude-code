@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Push the slice branch to remote and open both review gates on the task
 # issue (`review:code-pending` + `review:security-pending`) so `review-task-issue`
-# dispatches the `code-reviewer` and `security-reviewer`.
+# dispatches the `reviewer` agent for both gates.
 #
 # Terminal action for `implement-feature-task`.
 #

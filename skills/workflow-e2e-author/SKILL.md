@@ -5,7 +5,7 @@ description: "Author Playwright E2E tests for a single `type:e2e` GitHub task on
 
 # workflow-e2e-author
 
-Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is owned outside this lane — the push updates the remote slice branch and the label flip is enough to trigger `code-reviewer`.
+Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is owned outside this lane — the push updates the remote slice branch and the label flip is enough to trigger the `reviewer` agent.
 
 ## When to activate
 
@@ -93,7 +93,7 @@ Format commit messages per `templates/commit-messages.md` (Conventional Commits)
 
 ### 7. Push the slice branch and add `review:code-pending` to the task issue
 
-Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `code-reviewer` against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is owned outside this lane.
+Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `reviewer` agent against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is owned outside this lane.
 
 ```bash
 bash scripts/push-and-request-code-review.sh <task-#> "${slice_branch}"
