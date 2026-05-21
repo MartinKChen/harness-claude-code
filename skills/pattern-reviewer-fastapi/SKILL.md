@@ -1,11 +1,11 @@
 ---
 name: pattern-reviewer-fastapi
-description: "FastAPI best-practice audit — router-mount prefix discipline, `Depends()` injection (no inline auth in handlers), Pydantic at boundary only (not deep in domain), app-level exception handlers (every project exception class registered), middleware registration order (`RequestIdMiddleware` last so it runs first), named path constants shared by route + tests, `Settings()` instantiation footgun in `create_app()`, `dependency_overrides` in tests (not `monkeypatch`), per-test app factory. Contract conformance (path, verb, status code, response/error shape) lives in `pattern-reviewer-contract`."
+description: "FastAPI best-practice audit — router-mount prefix discipline, `Depends()` injection (no inline auth in handlers), Pydantic at boundary only (not deep in domain), app-level exception handlers (every project exception class registered), middleware registration order (`RequestIdMiddleware` last so it runs first), named path constants shared by route + tests, `Settings()` instantiation footgun in `create_app()`, `dependency_overrides` in tests (not `monkeypatch`), per-test app factory."
 ---
 
 # pattern-reviewer-fastapi
 
-FastAPI implementation best-practice audit. The contract-conformance audit (path / verb / status code / response shape / error envelope shape / idempotency policy / rate-limit policy) is owned by `pattern-reviewer-contract` — this skill skips those checks and focuses on FastAPI-specific mechanics.
+FastAPI implementation best-practice audit. This skill focuses on FastAPI-specific mechanics — contract-conformance checks (path / verb / status code / response shape / error envelope shape / idempotency policy / rate-limit policy) are out of scope here.
 
 ## When to activate
 
@@ -14,13 +14,16 @@ FastAPI implementation best-practice audit. The contract-conformance audit (path
 
 ## Iron rules
 
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 
 ## Patterns to review
 
 ### Router mounting (MEDIUM)
 
-- Each `APIRouter` mounts with an explicit prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`. Whether the prefix matches the contract is `pattern-reviewer-contract`'s job — this rule is "prefix explicit, not implicit".
+- Each `APIRouter` mounts with an explicit prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`. This rule is "prefix explicit, not implicit" — contract-prefix conformance is out of scope here.
 - Routes from multiple resources collapsed into a single "kitchen-sink" router → flag.
 - Missing `tags=` → LOW (OpenAPI groups won't render right).
 
@@ -78,7 +81,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 - Inline `HTTPException(status_code=..., detail=...)` for a project-wide error class → flag (move to a handler).
 - Generic 500 handler exists; logs the full exception server-side.
 
-(Whether the handler's body matches the contracted error envelope shape is `pattern-reviewer-contract`'s job — this rule is "handler exists at app level, not inline".)
+(This rule is "handler exists at app level, not inline" — error-envelope-shape conformance is out of scope here.)
 
 ### Middleware registration order (HIGH)
 
@@ -91,7 +94,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 - Paths used in BOTH the route decorator AND tests must be defined once as a module-level constant.
 - `@router.post("/api/v1/users")` + `client.post("/api/v1/users")` in a test → flag; both should import `USERS_PATH`.
 
-(The constant's **value** matches the api contract — that's `pattern-reviewer-contract`'s job; this rule is "constant exists; route + tests share it".)
+(This rule is "constant exists; route + tests share it" — whether the constant's **value** matches the api contract is out of scope here.)
 
 ### Lifespan + background tasks (MEDIUM)
 

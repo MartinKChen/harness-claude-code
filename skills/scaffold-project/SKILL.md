@@ -1,11 +1,11 @@
 ---
 name: scaffold-project
-description: "Bring a worktree from empty (or partially-empty) to a bootable stack — backend process starts and exposes its framework-metadata endpoint, frontend process starts and serves the default page, every deployable surface has a buildable Dockerfile, a top-level `docker-compose.yaml` brings up all services the ADR declares, and an `e2e/tests/smoke.spec.ts` drives the served frontend through one visibility assertion. Reads `docs/ADRs/` to pick stack variants and topology; never reads `docs/api-contract/` or `data-model/` (those are feature-time concerns). Materializes from per-stack templates under `templates/<stack>/`, fills in service names / image targets per the ADR, commits each surface as a discrete `chore(scaffold): <surface>` / `build: <surface>` commit on the architect's feature-lockin branch so the scaffold artifacts ship in the same lockin PR. Dispatched by the `architect` agent during `/deep-dive-feature` right after the ADR / implement-detail commit lands — that's the moment the ADR exists, the worktree on `docs/<feature-name>` is checked out, and the project is either greenfield (every surface flagged) or it's the first feature-lockin that needs structural pieces filled in. Idempotent: on later lockins the detector returns empty and the skill is a no-op. Do NOT activate to add feature endpoints, routes, pages, migrations, health-contract paths, router wiring, or cookie/auth knobs — those are feature work in `workflow-engineer-implement-task`'s lane."
+description: "Bring a worktree from empty (or partially-empty) to a bootable stack — backend process starts and exposes its framework-metadata endpoint, frontend process starts and serves the default page, every deployable surface has a buildable Dockerfile, a top-level `docker-compose.yaml` brings up all services the ADR declares, and an `e2e/tests/smoke.spec.ts` drives the served frontend through one visibility assertion. Reads `docs/ADRs/` to pick stack variants and topology; never reads `docs/api-contract/` or `data-model/` (those are feature-time concerns). Materializes from per-stack templates under `templates/<stack>/`, fills in service names / image targets per the ADR, commits each surface as a discrete `chore(scaffold): <surface>` / `build: <surface>` commit on the architect's feature-lockin branch so the scaffold artifacts ship in the same lockin PR. Dispatched by the `architect` agent during `/deep-dive-feature` right after the ADR / implement-detail commit lands — that's the moment the ADR exists, the worktree on `docs/<feature-name>` is checked out, and the project is either greenfield (every surface flagged) or it's the first feature-lockin that needs structural pieces filled in. Idempotent: on later lockins the detector returns empty and the skill is a no-op. Do NOT activate to add feature endpoints, routes, pages, migrations, health-contract paths, router wiring, or cookie/auth knobs — those are feature work, owned by the engineer lane."
 ---
 
 # scaffold-project
 
-Take a worktree from empty (or partially-empty) to a stack that can boot end-to-end: backend reachable on its framework-metadata endpoint, frontend reachable on its default page, every Dockerfile builds, compose brings the whole topology up, and a Playwright smoke spec drives the served frontend. Nothing more. No feature endpoints, no routes, no migrations, no auth knobs, no contract-derived paths. Those land later, owned by `workflow-engineer-implement-task` when a feature task brings them in.
+Take a worktree from empty (or partially-empty) to a stack that can boot end-to-end: backend reachable on its framework-metadata endpoint, frontend reachable on its default page, every Dockerfile builds, compose brings the whole topology up, and a Playwright smoke spec drives the served frontend. Nothing more. No feature endpoints, no routes, no migrations, no auth knobs, no contract-derived paths. Those land later, when a feature task brings them in via the engineer lane.
 
 The skill is dispatched by the `architect` agent during `/deep-dive-feature`, immediately after the ADR / implement-detail / data-model / api-contract commit lands on the `docs/<feature-name>` branch. By that point the ADR exists (so the skill can read stack choices and topology), the worktree is on the lock-in branch (so scaffold commits ride the same feature-lockin PR), and the detector decides whether the work is greenfield (every surface flagged), partial fill-in (some surfaces flagged), or a no-op (already scaffolded — every subsequent lockin).
 
@@ -19,17 +19,13 @@ Activate this skill whenever:
 Do NOT activate when:
 
 - The detector reports an empty surface list — the stack is already bootable, scaffold is a no-op.
-- `workflow-engineer-implement-task` or `workflow-e2e-author` notices missing scaffold. Those skills are NOT dispatchers — they STOP and surface the gap so a human can re-run the lockin flow. Scaffold belongs to architect's lane; running it from inside a task lane bypasses the lockin PR's review of the structural pieces.
-- The work the user wants is *feature* work — adding a health endpoint at a contract path, wiring React Router, adding a migrate service, adding cookie knobs. Those belong in `workflow-engineer-implement-task` and the pattern skills it loads.
+- A feature-task lane (engineer or e2e-author) notices missing scaffold. Those lanes STOP and surface the gap so a human can re-run the lockin flow. Scaffold belongs to architect's lane; running it from inside a task lane bypasses the lockin PR's review of the structural pieces.
+- The work the user wants is *feature* work — adding a health endpoint at a contract path, wiring React Router, adding a migrate service, adding cookie knobs. Those belong to the engineer lane.
 - `docs/ADRs/` is empty or doesn't declare a stack choice and a compose topology. Surface the gap to architect (or to the user, if invoked directly) and STOP — scaffold MUST NOT guess at frameworks or services.
 
-## References
+## Scope
 
-| Skill | When to route to it |
-|-------|---------------------|
-| `git-workflow` | For Conventional Commits subject format on every `chore(scaffold):` / `build:` commit produced here. **Required.** |
-
-This skill does NOT load `workflow-engineer-tdd`, `pattern-engineer-security`, `pattern-architect-data-model`, `pattern-engineer-database`, or any other pattern skill. Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those skills come in once `workflow-engineer-implement-task` takes over.
+Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those concerns are out of scope here and are picked up once the engineer lane takes over.
 
 ## Templates
 
@@ -41,7 +37,7 @@ Each `templates/<variant>/` directory holds a working example that copies as-is 
 | `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json`, multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path). The booted container responds 200 on `GET /`. |
 | `templates/compose.yaml` | Topology skeleton: backend + frontend + db services, `${VAR:-default}` port indirection, named volumes. The skill fills in service names / image targets per the ADR. No migrate service — that comes when the first migration lands. |
 | `templates/e2e/` | E2E variant: `package.json` (with `@playwright/test` and an `npm test` script), `playwright.config.ts` (env-overridable `baseURL`, `retries: 1` on CI, `workers: 1`), `tests/smoke.spec.ts` (`goto('/')` + one visibility assertion), `.gitignore`. |
-| `templates/commit-messages.md` | Pointer to `git-workflow`'s Conventional Commits format. Subject is `<type>(<scope>): <subject>`. Scaffold-produced commits use `chore(scaffold): <surface>` or `build: <surface>`. |
+| `templates/commit-messages.md` | Conventional Commits format. Subject is `<type>(<scope>): <subject>`. Scaffold-produced commits use `chore(scaffold): <surface>` or `build: <surface>`. |
 
 ## Scripts
 
@@ -95,7 +91,7 @@ For each surface in the work list, in this order (so later surfaces can referenc
    git commit -m "chore(scaffold): frontend (<stack>) — entry, manifests, Dockerfile"
    ```
 
-3. **`compose`** — copy `templates/compose.yaml` to the worktree root. Fill in service names and `image:` / `build:` targets per the ADR's topology. Use `${VAR:-default}` indirection on every host-exposed port. Do not add a `migrate` service unless the ADR explicitly says migrations are bootstrapped at scaffold time — by default migrations come in with the first migration via `pattern-engineer-database` guidance. Commit:
+3. **`compose`** — copy `templates/compose.yaml` to the worktree root. Fill in service names and `image:` / `build:` targets per the ADR's topology. Use `${VAR:-default}` indirection on every host-exposed port. Do not add a `migrate` service unless the ADR explicitly says migrations are bootstrapped at scaffold time — by default migrations come in later with the first feature migration. Commit:
 
    ```bash
    git add compose.yaml
@@ -118,9 +114,9 @@ This skill is terminal at the end of step 3. Do not push, do not open a PR — t
 ## Iron rules
 
 - **Scaffold is feature-agnostic.** Never read `docs/api-contract/` or `docs/data-model/`. The only doc surface this skill consults is `docs/ADRs/`.
-- **Scaffold materializes templates; it does not author code.** No routes beyond what the template ships (which is none). No components / pages beyond the placeholder. No middleware, no settings logic, no auth, no migrations, no router. If the next step needs any of those, that's `workflow-engineer-implement-task`'s job using its pattern skills.
+- **Scaffold materializes templates; it does not author code.** No routes beyond what the template ships (which is none). No components / pages beyond the placeholder. No middleware, no settings logic, no auth, no migrations, no router. If the next step needs any of those, that's the engineer lane's job.
 - **No defaulted URIs, service names, ports, or framework choices.** Stack variants come from the ADR (`python-fastapi` vs `python-django` etc.). Compose service names come from the ADR's topology. If the ADR doesn't say, STOP and surface — never guess.
 - **No live builds in the detector.** `scripts/check-scaffold-needed.sh` is static-only (file existence + presence of framework instances). Live `docker build` / `docker compose up` validation belongs to the smoke spec running in CI, not to scaffold.
-- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e`.** Subject is `chore(scaffold): <surface> — <short detail>` (per `git-workflow`'s Conventional Commits). Never bundle, never reorder, never use `feat:`.
+- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e`.** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **Skip surfaces that aren't flagged.** Re-running scaffold on a worktree where the detector reports an empty surface list is a no-op — the skill exits without commits.
 - **Terminal on success.** After the last surface commit, the skill returns to the caller. It does not push, does not open a PR, does not author tests.

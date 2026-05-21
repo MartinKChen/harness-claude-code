@@ -1,11 +1,11 @@
 ---
 name: pattern-reviewer-backend-standard
-description: "Language-agnostic backend best-practice audit — input-validation mechanics, unbounded queries (`SELECT *` / no `LIMIT`), N+1, missing outbound timeouts, error-message leakage on 5xx, atomic-mutation discipline, `/healthz` no-DB shape, `RequestIdMiddleware` registration order, log redaction key match, sensitive-value single-layer logging, `.env.example` ↔ code lockstep, locked lock files, CORS lock-down. Contract conformance (paths, verbs, status codes, envelope shape, idempotency / rate-limit policy) lives in `pattern-reviewer-contract`. Each finding cites `file:line` with BAD/GOOD snippets."
+description: "Language-agnostic backend best-practice audit — input-validation mechanics, unbounded queries (`SELECT *` / no `LIMIT`), N+1, missing outbound timeouts, error-message leakage on 5xx, atomic-mutation discipline, `/healthz` no-DB shape, `RequestIdMiddleware` registration order, log redaction key match, sensitive-value single-layer logging, `.env.example` ↔ code lockstep, locked lock files, CORS lock-down. Each finding cites `file:line` with BAD/GOOD snippets."
 ---
 
 # pattern-reviewer-backend-standard
 
-Backend implementation best-practice audit. The contract-conformance audit (paths, verbs, status codes, response/error shape, idempotency, rate-limit policy) is owned by `pattern-reviewer-contract` — this skill skips those checks and focuses on implementation patterns that aren't in the contract.
+Backend implementation best-practice audit. This skill focuses on implementation patterns that aren't in the api / data-model contract — contract-conformance checks (paths, verbs, status codes, response/error shape, idempotency, rate-limit policy) are out of scope here.
 
 ## When to activate
 
@@ -14,13 +14,17 @@ Backend implementation best-practice audit. The contract-conformance audit (path
 
 ## Iron rules
 
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
+- **>80% confidence filter.** Report only when you are >80% confident. Skip stylistic preferences unless they violate a documented convention. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
+- **Match project conventions.** Read `CLAUDE.md` and every ADR in `docs/ADRs/`.
 
 ## Patterns to review
 
 ### Input validation at the boundary (HIGH)
 
-- Every external input (HTTP body, query param, webhook payload, file upload) goes through a schema. Schema shape is the contract's; flag when the **mechanism is missing**, not when the shape disagrees (that's `pattern-reviewer-contract`).
+- Every external input (HTTP body, query param, webhook payload, file upload) goes through a schema. Flag when the **mechanism is missing** — schema-shape disagreement with the api contract is out of scope here.
 - Bounded string lengths, numeric ranges, enum values applied via the schema library (Pydantic `Field`, Zod `.min` / `.max` / `.enum`).
 - File uploads enforce size + MIME + extension whitelist; magic-byte check for high-trust uploads.
 - Validation errors return field-level messages; no internal types / table names / stack traces in the body.
@@ -97,7 +101,7 @@ catch (error) {
 }
 ```
 
-(Whether the envelope shape matches the contract is `pattern-reviewer-contract`'s job; this rule is the leakage check only.)
+(This rule is the leakage check only — not an envelope-shape check.)
 
 ### Atomic mutations (HIGH)
 
@@ -158,4 +162,4 @@ def withdraw(user_id: int, amount: int) -> None:
 
 ## Constructing the finding
 
-Use the shape in `templates/review-comment.md` (duplicated from `pattern-reviewer-coding-standard`).
+Use the shape in `templates/review-comment.md`.

@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-backend-standard
-description: "Backend implementation bullets — what the contract doesn't say. Follow the contract verbatim (paths, verbs, status codes, body, envelope, idempotency, rate-limit policy live in `pattern-architect-api-endpoint`). Covers input-validation mechanics, atomic mutations, RequestId middleware position, `/healthz` + `/readyz` shape, log redaction, SSRF safety, webhook HMAC verify, `.env.example` lockstep, locked deps, SIGTERM, migrations as compose service. Activate on backend code."
+description: "Backend implementation bullets — what the contract doesn't say. Follow the contract verbatim (paths, verbs, status codes, body, envelope, idempotency, rate-limit policy). Covers input-validation mechanics, atomic mutations, RequestId middleware position, `/healthz` + `/readyz` shape, log redaction, SSRF safety, webhook HMAC verify, `.env.example` lockstep, locked deps, SIGTERM, migrations as compose service. Activate on backend code."
 ---
 
 # pattern-engineer-backend-standard
@@ -11,7 +11,7 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 ## Follow the contract — don't redecide
 
-Before implementing any endpoint, open the api contract at `docs/api-contract/<entity>.yaml`. Take from the contract — never invent — the **path** (including trailing-slash spelling), **HTTP verb**, **request body schema**, **response body schema**, **status codes per outcome**, **error envelope shape + `code` values**, **Idempotency-Key policy**, **rate-limit budget**, and **versioning notes**. If the contract is missing or ambiguous for an endpoint the task touches, halt and surface "no api contract for `<endpoint>`" — `pattern-architect-api-endpoint` owns adding it.
+Before implementing any endpoint, open the api contract at `docs/api-contract/<entity>.yaml`. Take from the contract — never invent — the **path** (including trailing-slash spelling), **HTTP verb**, **request body schema**, **response body schema**, **status codes per outcome**, **error envelope shape + `code` values**, **Idempotency-Key policy**, **rate-limit budget**, and **versioning notes**. If the contract is missing or ambiguous for an endpoint the task touches, halt and surface "no api contract for `<endpoint>`".
 
 Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of truth for table names, column types, constraints, indexes. The migration / ORM model implements the contract verbatim.
 
@@ -60,7 +60,7 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 
 ### Logging mechanics
 
-- One structured logger per service. Bridge into OTel logs (see `pattern-engineer-observability`).
+- One structured logger per service. Bridge into OTel logs.
 - Log identifiers (user_id, request_id), never secrets.
 - Log a sensitive value at exactly one layer — never the same value at service AND router.
 - Redaction allow-list key names match the keys the code emits **exactly** (case-sensitive).

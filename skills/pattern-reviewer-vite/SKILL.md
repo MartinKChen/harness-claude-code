@@ -12,6 +12,11 @@ description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO — p
 
 ## Iron rules
 
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
+
 ## Patterns to review
 
 ### Stack choice (HIGH)
@@ -54,7 +59,7 @@ import { API_URL } from "@/env";
 
 ### Vitest setup (MEDIUM)
 
-- `test.globals: true` in `vitest.config` without `"vitest/globals"` in `compilerOptions.types` → flag (cross-references `pattern-reviewer-typescript`).
+- `test.globals: true` in `vitest.config` without `"vitest/globals"` in `compilerOptions.types` → flag.
 - `test.environment: 'jsdom'` missing for component tests that use DOM matchers → flag.
 - `vitest.setup.ts` missing the `@testing-library/jest-dom` import that the matchers need → flag.
 
@@ -75,7 +80,7 @@ import { API_URL } from "@/env";
 
 ### `vite preview` in production (HIGH)
 
-- Production Dockerfile / compose using `vite preview` → flag; serve `dist/` via nginx / static host (see `pattern-engineer-container` frontend block).
+- Production Dockerfile / compose using `vite preview` → flag; serve `dist/` via nginx / static host.
 
 ## Constructing the finding
 

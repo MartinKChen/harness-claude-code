@@ -1,6 +1,6 @@
 ---
 name: workflow-orchestrator-close-task-issue
-description: "Close every open `level:task`+`kind:feature`+`status:in-progress` task whose required review gates are `*-passed`. Backend/frontend need `review:code-passed` + `review:security-passed`; `type:e2e` needs only `review:code-passed`. Activate on 'close passed tasks', 'close the green task issues', '/workflow-orchestrator-close-task-issue'. Skip for dispatching reviewers (`workflow-orchestrator-review-task-issue`), merging (`workflow-orchestrator-close-pr`), closing slices (handled by close-pr)."
+description: "Close every open `level:task`+`kind:feature`+`status:in-progress` task whose required review gates are `*-passed`. Backend/frontend need `review:code-passed` + `review:security-passed`; `type:e2e` needs only `review:code-passed`. Activate on 'close passed tasks', 'close the green task issues', '/workflow-orchestrator-close-task-issue'. Skip for dispatching reviewers, merging, or closing slices."
 ---
 
 # workflow-orchestrator-close-task-issue
@@ -24,13 +24,13 @@ Activate this skill whenever the user:
 - Types `/workflow-orchestrator-close-task-issue` (with or without a numeric cap argument).
 - Asks to "close out the green tasks", "close task issues with passed reviews", or "finalize tasks whose review gates are all `*-passed`".
 
-Do NOT activate when the user wants to dispatch reviewers (use `workflow-orchestrator-review-task-issue`), wants to merge a slice PR (use `workflow-orchestrator-close-pr`), or wants to close a slice issue directly (slice issues close as a side effect of `workflow-orchestrator-close-pr`).
+Do NOT activate when the user wants to dispatch reviewers, wants to merge a slice PR, or wants to close a slice issue directly (slice issues close as a side effect of merging the slice PR).
 
 ## Arguments
 
 Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
-- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`). Empty / unset → scan every milestone.
 - `<cap>` — optional positive integer; stop after N tasks have been closed. Empty / unset → close every eligible task.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
@@ -96,5 +96,5 @@ Track closed / skipped counts internally per task; do **not** print per-task dec
 - **Required gates differ by `type:*`.** `type:e2e` skips the security gate by design — test cases have no production attack surface to validate. Do NOT widen or narrow the required-passed set without updating the rule table above.
 - **Race-safe by re-check.** Step 3 re-reads each candidate's labels after the step-2 list call, so a task that picked up a fresh `*-need-fix` or `*-pending` between list and close is correctly skipped.
 - **No reopening of closed tasks.** This skill only closes; reviewers/engineers reopen when they need to drive a fresh fix cycle.
-- **No slice or PR mutation.** Closing the last task on a slice does **not** merge the slice PR — that's `workflow-orchestrator-close-pr`'s job, driven independently off the slice PR's check + mergeability state.
+- **No slice or PR mutation.** Closing the last task on a slice does **not** merge the slice PR — slice PR merging is a separate lifecycle stage, driven independently off the slice PR's check + mergeability state.
 - **Skip, don't fail, on benign outcomes.** Already-removed labels, already-closed issues, missing gates, and cap-reached are all expected — track internally and continue, never surface per-task.

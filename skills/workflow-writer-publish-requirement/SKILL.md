@@ -7,7 +7,7 @@ description: "Materialize and commit every artifact for an approved product requ
 
 Materialize every output of an approved product-requirement interview and commit them on the current branch. Owns: the feature's PRD, the critical-path file (newly created, edited-in-place, or written-and-superseded), glossary updates, the optional `CLAUDE.md` product-context update, and the inline commit on the current branch.
 
-This skill **assumes the requirement is already clarified and approved** with the user via `workflow-product-owner-interview` (or an equivalent explicit lock-in). It does not run a discovery interview, does not push, and does not open a PR.
+This skill **assumes the requirement is already clarified and approved** with the user via a prior product-owner discovery interview (or an equivalent explicit lock-in). It does not run a discovery interview, does not push, and does not open a PR.
 
 ## When to activate
 

@@ -187,4 +187,4 @@ function UserCard({ id }: { id: string }) {
 
 ## Constructing the finding
 
-Use the shape in `templates/review-comment.md` (duplicated from `pattern-reviewer-coding-standard`). Hand findings back to the dispatching `reviewer` agent.
+Use the shape in `templates/review-comment.md`. Hand findings back to the dispatching `reviewer` agent.

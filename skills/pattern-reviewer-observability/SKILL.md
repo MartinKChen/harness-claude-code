@@ -5,7 +5,7 @@ description: "OTel instrumentation audit: vendor SDKs (Datadog/New Relic/Sentry/
 
 # pattern-reviewer-observability
 
-OpenTelemetry instrumentation audit catalogue. Engineer-side bullets live in `pattern-engineer-observability`. Drop-in starting files live in `templates/`.
+OpenTelemetry instrumentation audit catalogue. Drop-in starting files live in `templates/`.
 
 ## When to activate
 
@@ -13,7 +13,10 @@ OpenTelemetry instrumentation audit catalogue. Engineer-side bullets live in `pa
 
 ## Iron rules
 
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 
 ## Patterns to review
 

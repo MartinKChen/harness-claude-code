@@ -1,11 +1,11 @@
 ---
 name: workflow-orchestrator-kickoff-slice-issue
-description: "Promote ready slice issues to in-progress and add `status:ready-to-implement` to every `kind:feature` task sub-issue underneath, so `workflow-orchestrator-implement-task-issue` can pick them up. Skip slices with open `Blocked by` deps. Activate on 'kick off the next slices', '/workflow-orchestrator-kickoff-slice-issue'. Skip for dispatching tasks (`workflow-orchestrator-implement-task-issue`) or merging PRs (`workflow-orchestrator-close-pr`)."
+description: "Promote ready slice issues to in-progress and add `status:ready-to-implement` to every `kind:feature` task sub-issue underneath, so the implement-task stage can pick them up. Skip slices with open `Blocked by` deps. Activate on 'kick off the next slices', '/workflow-orchestrator-kickoff-slice-issue'. Skip for dispatching tasks or merging PRs."
 ---
 
 # workflow-orchestrator-kickoff-slice-issue
 
-Slice issues created by `create-issues` are born with their dev branch already linked and `status:ready-to-implement` on the slice — but their task sub-issues are *not* yet ready (they ship without `status:ready-to-implement`, so `workflow-orchestrator-implement-task-issue` cannot see them). This skill is the gatekeeper: for every slice that is `level:slice` + `kind:feature` + `status:ready-to-implement` with zero open blockers, flip the slice to `status:in-progress` and append `status:ready-to-implement` to its `level:task` + `kind:feature` sub-issues.
+Slice issues are born with their dev branch already linked and `status:ready-to-implement` on the slice — but their task sub-issues are *not* yet ready (they ship without `status:ready-to-implement`, so the implement-task stage cannot see them). This skill is the gatekeeper: for every slice that is `level:slice` + `kind:feature` + `status:ready-to-implement` with zero open blockers, flip the slice to `status:in-progress` and append `status:ready-to-implement` to its `level:task` + `kind:feature` sub-issues.
 
 The skill never checks out, edits, or pushes to any branch. It mutates **only** GitHub labels.
 
@@ -16,13 +16,13 @@ Activate this skill whenever the user:
 - Types `/workflow-orchestrator-kickoff-slice-issue` (with or without a numeric cap argument).
 - Asks to "promote slice issues", "kick off the next slices", "unlock task sub-issues for implementation", or "advance ready slices into in-progress".
 
-Do NOT activate when the user wants to dispatch agents to start the actual work (that's `workflow-orchestrator-implement-task-issue`'s job), wants to merge a slice PR (that's `workflow-orchestrator-close-pr`), or wants to create slice issues from a PRD (that's the `create-issues` skill).
+Do NOT activate when the user wants to dispatch agents to start the actual work, wants to merge a slice PR, or wants to create slice issues from a PRD.
 
 ## Arguments
 
 Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
-- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone created by `/deep-dive-feature` and used by `create-issues`). Empty / unset → scan every milestone.
+- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`). Empty / unset → scan every milestone.
 - `<cap>` — optional positive integer; stop after N slices have been promoted. Empty / unset → process every eligible slice. Already-skipped slices (blocked, etc.) do not count toward N.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.

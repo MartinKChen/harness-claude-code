@@ -69,12 +69,3 @@ Copy the block in `templates/tsconfig.json` into the project's `tsconfig.json`. 
 | Asset | Purpose |
 |-------|---------|
 | `templates/tsconfig.json` | Drop-in `compilerOptions` with the project's required strictness flags + `types` entries; copy into the project's `tsconfig.json` and layer project-specific options on top. |
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-coding-standard` | Always — language-agnostic standards. |
-| `pattern-engineer-frontend-standard` | When the TS file is a React component / hook / page. |
-| `pattern-engineer-vite` | When the project uses Vite (`import.meta.env` types, `vitest/globals`). |
-| `pattern-reviewer-typescript` | Detailed audit criteria + tsc / biome failure modes (reviewer lens). |

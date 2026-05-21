@@ -1,11 +1,11 @@
 ---
 name: workflow-reviewer-review
-description: "Review a single `(task issue, gate)` pair end-to-end — derive the pattern-skill set from `(type:*, gate)` labels, check the parent slice branch out in a worktree, scope to `Refs #<task-#>` commits (on the security gate, build a slug-tagged compose image so CVE scans target this PR's artifact), aggregate every pattern's findings into one structured `# Code Review` / `# Security Review` comment on the task, post it, and flip `review:<gate>-running` to its terminal `*-passed`/`*-need-fix`. Read-only on code. Activate on `Review GitHub task issue #<n> for the <code|security> gate` / '/workflow-reviewer-review'. Skip for slice-PR review, fix work, or any `type:e2e` + security pairing (refuse and surface)."
+description: "Review a single `(task issue, gate)` pair end-to-end — derive the applicable reviewer pattern set from `(type:*, gate)` labels, check the parent slice branch out in a worktree, scope to `Refs #<task-#>` commits (on the security gate, build a slug-tagged compose image so CVE scans target this PR's artifact), aggregate every pattern's findings into one structured `# Code Review` / `# Security Review` comment on the task, post it, and flip `review:<gate>-running` to its terminal `*-passed`/`*-need-fix`. Read-only on code. Activate on `Review GitHub task issue #<n> for the <code|security> gate` / '/workflow-reviewer-review'. Skip for slice-PR review, fix work, or any `type:e2e` + security pairing (refuse and surface)."
 ---
 
 # workflow-reviewer-review
 
-Review a single `(task issue, gate)` pair dispatched by `workflow-orchestrator-review-task-issue`. The orchestrator has already flipped `review:<gate>-pending` → `review:<gate>-running` as its lock; this skill is read-only on code, walks every pattern skill the labels select, aggregates findings into one structured comment on the task issue, and flips the gate label to its terminal `*-passed` / `*-need-fix` state. There is no loop and no re-validation — re-review after a fix is a fresh dispatch driven by the engineer / e2e-author flipping the terminal label back to `review:<gate>-pending`.
+Review a single `(task issue, gate)` pair dispatched by the orchestrator. The orchestrator has already flipped `review:<gate>-pending` → `review:<gate>-running` as its lock; this skill is read-only on code, walks every reviewer pattern the labels select, aggregates findings into one structured comment on the task issue, and flips the gate label to its terminal `*-passed` / `*-need-fix` state. There is no loop and no re-validation — re-review after a fix is a fresh dispatch driven by the engineer / e2e-author flipping the terminal label back to `review:<gate>-pending`.
 
 ## When to activate
 
@@ -20,25 +20,6 @@ Do NOT activate when:
 - The matching `review:<gate>-running` lock is missing on the task — halt and surface "no running review lock on this task — refusing to invent a verdict". The orchestrator's lock is the contract.
 - The unit of work is a slice PR (the `review:*` label family lives on tasks, not PRs) or a task whose verdict has already been written (`review:<gate>-passed` / `review:<gate>-need-fix` present without `*-running`).
 - The task is closed — there is nothing to review.
-
-## References
-
-| Skill | When to route to it |
-|-------|---------------------|
-| `pattern-reviewer-test-coverage` | On every code-gate dispatch (every `type:*`). Emits MEDIUM findings for AC / scenario / migration-scenario gaps and shallow coverage. **Required on the code gate.** |
-| `pattern-reviewer-coding-standard` | On the code gate for `type:backend` / `type:frontend`. Language-agnostic code-quality patterns (large functions, deep nesting, mutation, dead code, performance, best practices, AI-generated-code addendum). **Required on the code gate for non-e2e types.** |
-| `pattern-reviewer-contract` | On the code gate when the touched paths include API route handlers OR ORM models AND a sibling contract file exists in `docs/api-contract/` or `data-model/`. Audits implementation conformance to the contract (path / verb / status / shape; table / columns / constraint names / relationships). **Required when contract files cover the touched entity.** |
-| `pattern-reviewer-backend-standard` | On the code gate when the touched paths include backend code. Backend best-practice audit (unvalidated input, unbounded queries, N+1, missing timeouts, 5xx leakage, atomic mutations, `/healthz` shape, `RequestIdMiddleware` order, log redaction, `.env.example` lockstep, locked deps, CORS). Contract-conformance lives in `pattern-reviewer-contract`. |
-| `pattern-reviewer-frontend-standard` | On the code gate when the touched paths include React code. React audit (hook correctness, route registration, TanStack Query guards, mutation invalidation, API via `src/lib/api`, error boundaries, native a11y, Tailwind ↔ tokens). |
-| `pattern-reviewer-typescript` | On the code gate when the touched paths include `.ts` / `.tsx` / `tsconfig.json`. TypeScript audit (strictness flags, `any`, `!`, discriminated unions, biome import order). |
-| `pattern-reviewer-python` | On the code gate when the touched paths include `.py` files. Python audit (bandit-banned APIs, type annotations, EAFP, modern type hints, `Protocol`, dataclass DTOs, context managers, `uv`-only env). |
-| `pattern-reviewer-fastapi` | On the code gate when the touched paths include FastAPI routes / deps / middleware / handlers. FastAPI audit (`Depends` discipline, Pydantic at boundary, middleware order, trailing-slash, `Settings()` footgun, test factory). |
-| `pattern-reviewer-vite` | On the code gate when the touched paths include `vite.config.*` / `vitest.config.*` / `import.meta.env` reads. Vite audit (stack choice, `VITE_` prefix, dev-proxy, lazy-load Suspense, static-asset imports). |
-| `pattern-reviewer-container` | On the code gate when the touched paths include `Dockerfile` / `docker-compose.yaml` / `.dockerignore` / nginx config / entrypoint scripts. Container audit (multi-stage, pinned + scout-vetted, non-root, nginx SPA-fallback order, no secrets in image). |
-| `pattern-reviewer-database` | On the code gate when the touched paths include `alembic/versions/*` / ORM model edits / `migrate` compose service. Migration audit (code-first, post-state by name, extension cleanup, both-direction constraint tests, no `conftest.py` pre-warming). |
-| `pattern-reviewer-observability` | On the code gate when the touched paths include OTel instrumentation / logs / spans / metrics / `OTEL_*` env vars / Collector config. Observability audit (no vendor SDKs, no `print`, span cardinality, metric labels, structured logs with trace correlation, batch processors, single bootstrap). |
-| `pattern-reviewer-security` | On the security gate for `type:backend` / `type:frontend` only (refuse on `type:e2e`). Self-contained catalogue (CVEs, secrets, input, SQL, auth/cookies/IDOR/JWT, XSS + headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions). **Required on the security gate.** |
-| `git-workflow` | When the review surfaces a commit / branch / PR shape problem (bundled refactor + feature, missing issue link, force-push risk) and you need to cite the project's git conventions in the finding. |
 
 ## Scripts
 
@@ -68,7 +49,7 @@ Confirm the labels: `level:task` + `kind:feature` + exactly one `type:*`, with `
 
 ### 2. Resolve the parent slice and slice branch, then materialize the worktree
 
-The slice branch is attached to the **parent slice issue** (set by `create-issues`), not to each task sub-issue.
+The slice branch is attached to the **parent slice issue** (set when the slice was created), not to each task sub-issue.
 
 ```bash
 slice_branch="$(bash scripts/resolve-slice-branch.sh <task-#>)"
@@ -107,7 +88,7 @@ On the **code gate**, also re-read the **task issue body** you fetched in step 1
 gh issue view "${parent_number}" --json body --jq .body
 ```
 
-Keep this list of ACs + scenarios open while you walk `pattern-reviewer-test-coverage` — every one of them is a coverage obligation.
+Keep this list of ACs + scenarios open while you walk the test-coverage pattern — every one of them is a coverage obligation.
 
 ### 5. Security gate only — build the image(s) with a slug tag for vulnerability scanning
 
@@ -119,28 +100,28 @@ image_tag="$(bash scripts/build-scan-image.sh "${slice_branch}")"
 
 If the build fails, do not proceed to scanning — compose a blocked-review comment (step 8, blocked-run branch) explaining the build error and exit without flipping to a terminal state. Capture the resulting image tag(s) — every CVE scan must run against these exact tag(s), not against `:latest` or a base image.
 
-### 6. Walk each pattern skill the labels select, in order
+### 6. Walk each applicable reviewer pattern, in order
 
-The pattern skills are loaded at agent kickoff; the **References section above** governs which ones apply to this dispatch:
+The reviewer patterns are loaded at agent kickoff; apply each one only when its trigger conditions match this dispatch:
 
-- Code gate, `type:e2e` → `pattern-reviewer-test-coverage` only.
-- Code gate, `type:backend` / `type:frontend` → walk the skills in this order, invoking each only when its trigger paths appear in `${touched_paths}`:
-  1. `pattern-reviewer-test-coverage` — always.
-  2. `pattern-reviewer-coding-standard` — always.
-  3. `pattern-reviewer-contract` — when API route handlers OR ORM models are touched AND a sibling contract file exists under `docs/api-contract/` or `data-model/`. Walk before the per-tech reviewers so a contract violation is named first.
-  4. `pattern-reviewer-backend-standard` — when backend code is touched.
-  5. `pattern-reviewer-frontend-standard` — when React code is touched.
-  6. `pattern-reviewer-typescript` — when any `.ts` / `.tsx` / `tsconfig.json` is touched.
-  7. `pattern-reviewer-python` — when any `.py` is touched.
-  8. `pattern-reviewer-fastapi` — when FastAPI routes / deps / middleware / handlers are touched.
-  9. `pattern-reviewer-vite` — when `vite.config.*` / `vitest.config.*` / `import.meta.env` is touched.
-  10. `pattern-reviewer-container` — when `Dockerfile` / compose / nginx / entrypoint is touched.
-  11. `pattern-reviewer-database` — when `alembic/versions/*` / ORM models / `migrate` compose service is touched.
-  12. `pattern-reviewer-observability` — when OTel instrumentation / `OTEL_*` env vars / Collector config is touched.
-- Security gate, `type:backend` / `type:frontend` → `pattern-reviewer-security` (self-contained catalogue + iteration flow).
+- Code gate, `type:e2e` → test-coverage audit only (AC / scenario / migration-scenario gaps).
+- Code gate, `type:backend` / `type:frontend` → walk in this order, invoking each only when its trigger paths appear in `${touched_paths}`:
+  1. **Test coverage** — always. Emits MEDIUM findings for AC / scenario / migration-scenario gaps and shallow coverage.
+  2. **Coding standard** — always. Language-agnostic code-quality patterns (large functions, deep nesting, mutation, dead code, performance, best practices, AI-generated-code addendum).
+  3. **Contract conformance** — when API route handlers OR ORM models are touched AND a sibling contract file exists under `docs/api-contract/` or `data-model/`. Walk before the per-tech reviewers so a contract violation is named first.
+  4. **Backend standard** — when backend code is touched. Best-practice audit (unvalidated input, unbounded queries, N+1, missing timeouts, 5xx leakage, atomic mutations, `/healthz` shape, middleware order, log redaction, `.env.example` lockstep, locked deps, CORS).
+  5. **Frontend standard** — when React code is touched. React audit (hook correctness, route registration, TanStack Query guards, mutation invalidation, API via `src/lib/api`, error boundaries, native a11y, Tailwind ↔ tokens).
+  6. **TypeScript** — when any `.ts` / `.tsx` / `tsconfig.json` is touched. Strictness flags, `any`, `!`, discriminated unions, biome import order.
+  7. **Python** — when any `.py` is touched. Bandit-banned APIs, type annotations, EAFP, modern type hints, `Protocol`, dataclass DTOs, context managers, `uv`-only env.
+  8. **FastAPI** — when FastAPI routes / deps / middleware / handlers are touched. `Depends` discipline, Pydantic at boundary, middleware order, trailing-slash, `Settings()` footgun, test factory.
+  9. **Vite** — when `vite.config.*` / `vitest.config.*` / `import.meta.env` is touched. Stack choice, `VITE_` prefix, dev-proxy, lazy-load Suspense, static-asset imports.
+  10. **Container** — when `Dockerfile` / `docker-compose.yaml` / `.dockerignore` / nginx config / entrypoint scripts are touched. Multi-stage, pinned + scout-vetted, non-root, nginx SPA-fallback order, no secrets in image.
+  11. **Database / migration** — when `alembic/versions/*` / ORM model edits / `migrate` compose service is touched. Code-first, post-state by name, extension cleanup, both-direction constraint tests, no `conftest.py` pre-warming.
+  12. **Observability** — when OTel instrumentation / logs / spans / metrics / `OTEL_*` env vars / Collector config is touched. No vendor SDKs, no `print`, span cardinality, metric labels, structured logs with trace correlation, batch processors, single bootstrap.
+- Security gate, `type:backend` / `type:frontend` → walk the security catalogue (CVEs, secrets, input, SQL, auth/cookies/IDOR/JWT, XSS + headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions).
 - Security gate, `type:e2e` → already refused in step 1; do not reach this step.
 
-Invoke each applicable skill against `${touched_paths}` / `${scoped_diff}`. Each skill emits findings as `{title, severity, location (file:line OR image:<tag>), evidence, fix, ...}` records — collect them all. On the security gate, also capture per-image CVE counts (CRITICAL / HIGH / MEDIUM / LOW) — `pattern-reviewer-security` walks them. Do not post yet; do not flip any label yet.
+Invoke each applicable pattern against `${touched_paths}` / `${scoped_diff}`. Each pattern emits findings as `{title, severity, location (file:line OR image:<tag>), evidence, fix, ...}` records — collect them all. On the security gate, also capture per-image CVE counts (CRITICAL / HIGH / MEDIUM / LOW). Do not post yet; do not flip any label yet.
 
 On the security gate, **remove the built image(s) once every pattern has been scanned**. The slug-tagged artifact is single-use:
 
@@ -152,7 +133,7 @@ If the cleanup fails (e.g., still in use by another container), log the error bu
 
 ### 7. Compose the comment and compute the verdict
 
-Pick the comment header from the gate — `# Code Review` for the code gate, `# Security Review` for the security gate. Downstream skills `workflow-engineer-fix-task` and `workflow-e2e-fix` grep for these literal headers, so the wording is load-bearing. Fill in the severity-count summary table, every finding (matching the per-skill finding shape verbatim — see each skill's `templates/review-comment.md`), and the verdict. On the security gate, also include the per-image CVE-count table and the `Left unfixed (LOW only): <reason>` line if any LOW counts were left unfixed. If `scope_note` from step 3 is set, include it as a `**Note:**` line above the verdict.
+Pick the comment header from the gate — `# Code Review` for the code gate, `# Security Review` for the security gate. Downstream fix flows grep for these literal headers, so the wording is load-bearing. Fill in the severity-count summary table, every finding (matching the pattern's prescribed finding shape verbatim), and the verdict. On the security gate, also include the per-image CVE-count table and the `Left unfixed (LOW only): <reason>` line if any LOW counts were left unfixed. If `scope_note` from step 3 is set, include it as a `**Note:**` line above the verdict.
 
 Compute the verdict from the aggregated severity counts:
 
@@ -167,7 +148,7 @@ Write the comment body to a file (e.g. `/tmp/review-<task-#>-<gate>.md`) so the 
 bash scripts/post-review-and-flip-gate.sh <task-#> <gate> <passed|need-fix> <body-file>
 ```
 
-This is the terminal action — comment + label flip both happen here. Exit after the call returns; do not follow up, do not loop, do not message anyone. Re-review after a fix is a fresh dispatch driven by the engineer / e2e-author / `workflow-orchestrator-fix-task-issue` flipping `review:<gate>-need-fix` / `review:<gate>-passed` back to `review:<gate>-pending` and `workflow-orchestrator-review-task-issue` picking it up again.
+This is the terminal action — comment + label flip both happen here. Exit after the call returns; do not follow up, do not loop, do not message anyone. Re-review after a fix is a fresh dispatch driven by a later stage flipping `review:<gate>-need-fix` / `review:<gate>-passed` back to `review:<gate>-pending` and the orchestrator picking it up again.
 
 **Blocked-run branch.** If something prevents the review from being completed (worktree fetch failed mid-run, diff is unreadable, parent slice's branch is missing locally, referenced file is binary/encrypted, image build failed on the security gate, a pattern skill is missing, scope exceeds what one pass can review), post a single task-issue comment stating the blocker and what would unblock it — without invoking `post-review-and-flip-gate.sh`:
 
@@ -179,12 +160,12 @@ Leave the gate label as `review:<gate>-running` for an operator to triage — do
 
 ## Iron rules
 
-- **Skill selection follows the label combination, not the dispatch prompt's wording.** The orchestrator sends `(task-#, gate)`. Read the task's `type:*` label and the gate to derive the skill set per the *References* section above — never invent a skill, never skip one that the labels select.
-- **Aggregate, then post once.** Run every selected skill to completion, collect every finding, then compose ONE structured comment and post it as a single atomic write (the `post-review-and-flip-gate.sh` script handles the comment + label flip together). Do not stream partial findings. Do not post per-skill.
-- **The verdict line is the skill's, not the pattern skills'.** The pattern skills emit findings only — APPROVE / BLOCK is computed by this skill from the aggregated severity counts (any CRITICAL / HIGH → BLOCK; otherwise APPROVE — MEDIUM and LOW are reported but do not block). The pattern skills' templates carry a placeholder for this line; this workflow fills it.
+- **Pattern selection follows the label combination, not the dispatch prompt's wording.** The orchestrator sends `(task-#, gate)`. Read the task's `type:*` label and the gate to derive the applicable reviewer patterns per the step-6 ordering — never invent a pattern, never skip one that the labels select.
+- **Aggregate, then post once.** Run every selected pattern to completion, collect every finding, then compose ONE structured comment and post it as a single atomic write (the `post-review-and-flip-gate.sh` script handles the comment + label flip together). Do not stream partial findings. Do not post per-pattern.
+- **The verdict line is this skill's, not the patterns'.** The reviewer patterns emit findings only — APPROVE / BLOCK is computed here from the aggregated severity counts (any CRITICAL / HIGH → BLOCK; otherwise APPROVE — MEDIUM and LOW are reported but do not block).
 - **GitHub is the single source of truth.** Findings live as a single structured comment on the **task issue**, and the verdict lives as the task's terminal label (`review:<gate>-passed` / `review:<gate>-need-fix`). Do not return a structured summary, do not `SendMessage` other agents, do not maintain side-channel state. The task-issue comment + the label are the only output.
 - **One review, one comment, one terminal label.** This skill is single-shot — fetch → derive → worktree → scope → (build image, on security) → walk patterns → comment → flip label → exit. Do NOT loop, do NOT re-validate after fixes, do NOT wait for engineer acknowledgements.
 - **Refuse what the labels forbid.** Security gate + `type:e2e` → halt and surface the violation; test code skips the security gate by design. Missing the `*-running` lock for the gate you were dispatched on → halt and surface "no running review lock on this task — refusing to invent a verdict". Closed issue → halt and surface.
 - **Read-only on code.** Never edit files, never push, never `git reset --hard` outside the worktree setup script, never open or close issues or PRs. The only permitted writes are `gh issue comment` (one comment on the task issue) and `gh issue edit --remove-label/--add-label` (the gate label flip) — both go through `post-review-and-flip-gate.sh`.
 - **On a blocked run, do NOT flip the label.** Leave `review:<gate>-running` in place for an operator to triage and post a single diagnostic comment via `gh issue comment` directly. Fabricating a verdict from incomplete evidence is worse than a visibly stuck gate.
-- **The pattern skills own what to flag, how to grade severity, citation rules, the BAD/GOOD snippet shape, the no-`#N` handle rule, the test-code exclusion list, and the `Required end state` quotation.** Load each one before walking it; do not duplicate its rules here.
+- **The reviewer patterns own what to flag, how to grade severity, citation rules, the BAD/GOOD snippet shape, the no-`#N` handle rule, the test-code exclusion list, and the `Required end state` quotation.** Apply each one before walking it; do not duplicate its rules here.

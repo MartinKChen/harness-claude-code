@@ -33,7 +33,7 @@ Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, s
 ### Vitest
 
 - Use Vitest for unit tests; configure via `vitest.config.ts` (or merge into `vite.config.ts` with `defineConfig`).
-- `test.globals: true` if the project uses globals; matching `compilerOptions.types` entry for TS — see `pattern-engineer-typescript`.
+- `test.globals: true` if the project uses globals; matching `compilerOptions.types` entry for TS.
 - `test.environment: 'jsdom'` for component tests; `'node'` for pure-logic tests.
 - Setup file (`vitest.setup.ts`) registers `@testing-library/jest-dom` matchers, MSW handlers, etc.
 - `vi.mock(...)` only when there is no seam to inject a fake; prefer dependency injection.
@@ -59,5 +59,5 @@ Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, s
 ### Building for production
 
 - `npm run build` produces hashed assets in `dist/`.
-- The container image's `final` stage copies `dist/` into nginx (see `pattern-engineer-container`).
+- The container image's `final` stage copies `dist/` into nginx.
 - `vite preview` is for sanity-checking the built bundle locally; never serve `preview` in production.

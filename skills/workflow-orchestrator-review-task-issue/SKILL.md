@@ -1,6 +1,6 @@
 ---
 name: workflow-orchestrator-review-task-issue
-description: "Find every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-pending`/`review:security-pending`, flip the gate(s) to `-running`, and dispatch the `reviewer` sub-agent (one per `(task, gate)` pair; the agent picks the pattern-skill set from the labels). Reviews are scoped to the task, not the slice PR. Activate on 'review the task issues', 'kick off code/security review', '/workflow-orchestrator-review-task-issue'. Skip for slice-PR review."
+description: "Find every `level:task`+`kind:feature`+`status:in-progress` task with `review:code-pending`/`review:security-pending`, flip the gate(s) to `-running`, and dispatch the `reviewer` sub-agent (one per `(task, gate)` pair; the agent picks its context from the task labels). Reviews are scoped to the task, not the slice PR. Activate on 'review the task issues', 'kick off code/security review', '/workflow-orchestrator-review-task-issue'. Skip for slice-PR review."
 ---
 
 # workflow-orchestrator-review-task-issue
@@ -23,7 +23,7 @@ Do NOT activate when the user wants to review a slice PR directly (the `review:*
 
 Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
-- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<milestone-name>` — when set, scope the task scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`). Empty / unset → scan every milestone.
 - `<cap>` — optional positive integer; stop after N `(task, gate)` pairs have been locked + dispatched. A task with both gates pending counts as **two** pairs against the cap. Empty / unset → process every eligible pair.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
@@ -87,7 +87,7 @@ Do NOT roll back on internal sub-agent failure — once the sub-agent is running
 
 ### 5. Dispatch the matching reviewer sub-agent
 
-Every dispatched pair uses the same `reviewer` sub-agent — it derives the pattern-skill set from the task's `(type:*, gate)` label combination:
+Every dispatched pair uses the same `reviewer` sub-agent — it derives its context set from the task's `(type:*, gate)` label combination:
 
 | Running gate label         | `subagent_type` |
 |----------------------------|-----------------|

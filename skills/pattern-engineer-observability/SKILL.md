@@ -316,7 +316,7 @@ The only wire across the boundary is **OTLP outbound from the app side**. The ob
 
 **When one stack is acceptable:**
 
-- **Local dev.** The Compose file from `scaffold-project` is the right place for the Collector and any local backend stub. Dev ergonomics > deployment hygiene at this layer.
+- **Local dev.** The project's `docker-compose.yaml` is the right place for the Collector and any local backend stub. Dev ergonomics > deployment hygiene at this layer.
 - **CI.** Same as dev — E2E smoke tests bring up the whole thing in one Compose, assert spans/metrics reach the in-network Collector, tear down.
 - **Earliest greenfield.** One app, one team, low traffic, no compliance constraints — namespaced co-location in a single cluster is fine. The blast-radius cost exists but is not fatal yet.
 
@@ -343,7 +343,7 @@ CI runs typically use the first option so E2E smoke tests can assert that spans 
 | Surface | Owner | Examples |
 |---------|-------|----------|
 | **App-side SDK bootstrap + emitted spans/metrics/logs** | `architect` (initial scaffold) + feature engineers (the signals their code emits) | `observability.py` / `observability.ts` bootstrap; business spans like `payments.charge_card`; route-level histograms |
-| **App-stack Compose Collector** (dev / CI only) | `architect` via `scaffold-project` | The Collector service in the project's `docker-compose.yaml` |
+| **App-stack Compose Collector** (dev / CI only) | `architect` | The Collector service in the project's `docker-compose.yaml` |
 | **Production Collector deployment** (gateway + agents) | `sre` | Helm/manifest, scaling, autoscaler, alerts on `otelcol_processor_dropped_*` |
 | **Production observability backends** (Tempo / Mimir / Loki / Grafana, or the wire-up to a managed vendor) | `sre` | Backend deploys, retention policy, IAM, on-call dashboards |
 

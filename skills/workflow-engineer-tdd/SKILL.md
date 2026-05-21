@@ -1,11 +1,11 @@
 ---
 name: workflow-engineer-tdd
-description: "Strictly enforce outside-in TDD on every implementation task. Acceptance test first from the issue's EARS/Gherkin scenarios; modules grown via one-behavior RED → GREEN → REFACTOR loops with fake adapters at seams; real adapters earn contract tests; wiring proved by the acceptance test going green. Each step is its own commit per the caller's `templates/commit-messages.md`. Encodes scaffold-vs-production boundaries, mandatory edge-case coverage, banned test anti-patterns, and the iron rules."
+description: "Strictly enforce outside-in TDD on every implementation task. Acceptance test first from the issue's EARS/Gherkin scenarios; modules grown via one-behavior RED → GREEN → REFACTOR loops with fake adapters at seams; real adapters earn contract tests; wiring proved by the acceptance test going green. Each step is its own commit per the caller's commit-message template. Encodes scaffold-vs-production boundaries, mandatory edge-case coverage, banned test anti-patterns, and the iron rules."
 ---
 
 # workflow-engineer-tdd
 
-Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller skill's local `templates/commit-messages.md` (e.g. `workflow-engineer-implement-task/templates/commit-messages.md`, `workflow-engineer-fix-task/templates/commit-messages.md`).
+Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller's local `templates/commit-messages.md`.
 
 ## When to activate
 
@@ -23,35 +23,19 @@ Do NOT activate when:
 - The change is non-behavioral: formatting, comments, type-only renames, dependency bumps, or doc edits.
 - The user has explicitly opted out of TDD for this task (rare — push back once before complying).
 
-## Other skills
+## Pattern application
 
-Pattern skills are not loaded as files under this one — route to them as siblings whenever their surface comes up in a RED / GREEN / REFACTOR step.
+Engineer and architect patterns are loaded at agent kickoff; apply each one whenever its surface comes up in a RED / GREEN / REFACTOR step (coding standard always; backend / frontend / language / framework patterns when those file types are touched; module-shape and API-endpoint guidance when defining a module's public interface or HTTP surface; data-model and database / migration guidance when a real adapter is a DB-backed store).
 
-| Skill | When to route to it |
-|-------|---------------------|
-| `pattern-engineer-coding-standard` | Always. Naming, KISS/DRY/YAGNI, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests apply to every GREEN and REFACTOR step. |
-| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/healthz`, log redaction, `.env.example` lockstep. |
-| `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
-| `pattern-engineer-typescript` | When the task touches any `.ts` / `.tsx` / `tsconfig.json` — strictness flags, no `any`, discriminated unions, biome import order. |
-| `pattern-engineer-python` | When the task implements Python code — `.py` files, SQLAlchemy models, pytest tests. |
-| `pattern-engineer-fastapi` | When the task touches FastAPI routes, dependencies, middleware, exception handlers, or `create_app()` wiring. |
-| `pattern-engineer-vite` | When the task touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
-| `pattern-engineer-container` | When the task is container-related — editing `Dockerfile`, `docker-compose.yaml` / `.yml`, `compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
-| `pattern-engineer-observability` | When the task adds/edits instrumentation — log statements, spans, metrics, trace-context propagation, OTel SDK bootstrap, Collector config, or any `OTEL_*` env var. Iron rule: OpenTelemetry is the only instrumentation API; vendor SDKs only appear in the Collector. |
-| `pattern-architect-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
-| `pattern-architect-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
-| `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema shape and table/column/constraint naming. |
-| `pattern-engineer-database` | When the contract test or fixture has to ship an Alembic migration — for autogenerate, `pytest-alembic` assertions, and the `migrate` compose service. |
-
-Commit-message format is owned by the **dispatched caller skill**, not this one. When `workflow-engineer-tdd` is invoked by `workflow-engineer-implement-task`, `workflow-engineer-fix-pr`, `workflow-engineer-fix-task`, `workflow-e2e-author`, or `workflow-e2e-fix`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
+Commit-message format is owned by the **dispatched caller**, not this skill. Each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 
 ## Workflow
 
 ### Outside-in TDD loop
 
-0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller skill's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
+0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
 
-1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface (lean on `pattern-architect-deep-module`). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
+1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface using deep-module discipline (interface narrow relative to the functionality it hides). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
 
    - **a. RED.** Write ONE failing test against the module's interface for ONE behavior. Use the fake adapters at seams. Run it. Confirm it is a valid RED (see *What counts as a valid RED*). Commit: `test(<module>): add failing test for <behavior>`.
    - **b. GREEN.** Write the minimum implementation that makes the test pass. No speculative code, no extra branches, no "while I'm here" cleanup. Run the suite. Commit: `feat(<module>): implement <behavior>`.
@@ -205,7 +189,7 @@ These are non-negotiable. They are what makes the discipline a discipline.
 
 ### Commit history shape
 
-After the loop, `git log --oneline` should read like a story of behavior added one slice at a time. Use this exact cadence (format every commit per the dispatched caller skill's `templates/commit-messages.md`):
+After the loop, `git log --oneline` should read like a story of behavior added one slice at a time. Use this exact cadence (format every commit per the dispatched caller's `templates/commit-messages.md`):
 
 ```
 test(feature): add failing acceptance test for cart total recalculation

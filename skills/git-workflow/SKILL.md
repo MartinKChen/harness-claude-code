@@ -23,7 +23,7 @@ Do NOT activate when the user is asking about git internals unrelated to our wor
 
 ## References and scripts
 
-When this skill is active, route to the asset that matches the task. Read references on demand; invoke scripts via `bash` (or directly — they are executable). The PR-body template ships with the `workflow-orchestrator-prepare-slice-pr` skill (at `workflow-orchestrator-prepare-slice-pr/templates/pr-body.md`), not here — `workflow-orchestrator-create-draft-pr` dispatches an `engineer` in its `workflow-orchestrator-prepare-slice-pr` mode, and that skill owns the body composition + draft-PR creation.
+When this skill is active, route to the asset that matches the task. Read references on demand; invoke scripts via `bash` (or directly — they are executable). PR-body composition for slice draft PRs is handled outside this skill, by the lane that prepares the slice for review.
 
 | Asset | Type | When to use |
 |-------|------|-------------|

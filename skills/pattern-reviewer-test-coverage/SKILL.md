@@ -7,19 +7,19 @@ description: "Test-coverage patterns for the code gate on any `type:*` task. Eve
 
 Encodes the canonical patterns for evaluating whether the tests in a scoped diff are *enough* — every acceptance criterion the task promised has a test that actually exercises it, every Gherkin scenario walks Given → When → Then, and the obvious edge cases (boundary, error, empty input, concurrency, idempotency) are covered at the appropriate layer. This skill describes **what counts as a coverage gap and how to format the finding**. Driving the review (fetch issue, scope commits, post the comment, flip the gate) and computing the overall verdict (APPROVE / BLOCK) belong to the dispatched caller (the `reviewer` agent).
 
-Code-quality patterns live in `pattern-reviewer-coding-standard`. Security patterns live in `pattern-reviewer-security`. This skill is the third pillar of the code gate — invoked on every task whose code gate is being reviewed, regardless of `type:*`.
+This skill is the test-coverage pillar of the code gate — invoked on every task whose code gate is being reviewed, regardless of `type:*`.
 
 ## When to activate
 
 - The dispatched caller is reviewing the **code gate** on any `type:backend` / `type:frontend` / `type:e2e` task. Run this skill on every code-gate dispatch.
 - A user says "are the tests enough", "did we cover the acceptance criteria", "review test coverage on this diff".
-- Do NOT activate on the security gate — security has its own catalogue (`pattern-reviewer-security`).
+- Do NOT activate on the security gate — security has its own catalogue.
 
 ## References
 
 | Reference | When to read |
 |-----------|--------------|
-| `templates/review-comment.md` | Always read before composing the comment body. The finding rows must match this shape verbatim so downstream skills (`workflow-engineer-fix-task`, `workflow-e2e-fix`) can parse them. |
+| `templates/review-comment.md` | Always read before composing the comment body. The finding rows must match this shape verbatim so downstream fix passes can parse them. |
 
 ## Iron rules for every finding
 
@@ -117,4 +117,4 @@ Every finding emitted by this skill matches this shape (the template under `temp
 - Cross-references in the same comment use the AC/scenario label (`AC2`, `Scenario "Cancels pending order"`), the quoted finding title, or `F1` / `F2`.
 - BAD/GOOD code snippets are not required — the "fix" sentence + the AC reference is usually enough. Include a GOOD snippet only when the test's shape is non-obvious (e.g., a Playwright spec that needs a specific waitFor pattern).
 
-Hand the collected list of findings back to the dispatching `reviewer` agent — it owns the comment composition, severity-count summary, verdict line, scope note, and posting (folding these MEDIUM findings into the same `# Code Review` comment that carries the `pattern-reviewer-coding-standard` findings).
+Hand the collected list of findings back to the dispatching `reviewer` agent — it owns the comment composition, severity-count summary, verdict line, scope note, and posting (folding these MEDIUM findings into the same `# Code Review` comment that carries the code-quality findings).

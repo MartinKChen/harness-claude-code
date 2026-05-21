@@ -1,11 +1,11 @@
 ---
 name: workflow-engineer-fix-pr
-description: "Fix `{conflict, ci}` blockers on one open draft slice PR (dispatched by `workflow-orchestrator-fix-pr`) — work in a PR-head worktree, resolve conflicts by union (TDD on regressions), drive CI to GREEN, push, clear `status:fix-in-progress`. Bail to `status:need-attention` when CI needs an E2E-spec rewrite. Activate on `Fix PR #<n> in Mode B` / '/workflow-engineer-fix-pr'. Skip for merging, task reviewer fixes."
+description: "Fix `{conflict, ci}` blockers on one open draft slice PR — work in a PR-head worktree, resolve conflicts by union (TDD on regressions), drive CI to GREEN, push, clear `status:fix-in-progress`. Bail to `status:need-attention` when CI needs an E2E-spec rewrite. Activate on `Fix PR #<n> in Mode B` / '/workflow-engineer-fix-pr'. Skip for merging, task reviewer fixes."
 ---
 
 # workflow-engineer-fix-pr
 
-Fix the `conflict` and/or `ci` scenarios on a single open draft slice PR dispatched by `workflow-orchestrator-fix-pr`. The orchestrator added `status:fix-in-progress` to the PR as a lock; this skill removes that label as its terminal action once the push lands. Reviewer feedback no longer flows through PRs — the retired `review` scenario lives in `workflow-engineer-fix-task` against the task issue.
+Fix the `conflict` and/or `ci` scenarios on a single open draft slice PR dispatched by the orchestrator. The orchestrator added `status:fix-in-progress` to the PR as a lock; this skill removes that label as its terminal action once the push lands. Reviewer feedback no longer flows through PRs — the retired `review` scenario now lives against the task issue.
 
 ## When to activate
 
@@ -16,25 +16,10 @@ Activate this skill whenever:
 
 Do NOT activate when:
 
-- The PR is clean and green — merging is `workflow-orchestrator-close-pr`'s lane.
-- The dispatched scenario includes `review` — that scenario was retired; reviewer findings now live on the task issue via `workflow-engineer-fix-task`.
-- The unit of work is a task issue (not a PR) — use `workflow-engineer-implement-task` or `workflow-engineer-fix-task`.
+- The PR is clean and green — merging is handled by the close-pr lane.
+- The dispatched scenario includes `review` — that scenario was retired; reviewer findings now live on the task issue.
+- The unit of work is a task issue (not a PR) — that is the implement-task or fix-task lane.
 
-## References
-
-| Skill | When to route to it |
-|-------|---------------------|
-| `workflow-engineer-tdd` | For the `ci` branch (and for any merge-time regressions surfaced by `conflict`). **Required when `ci` is dispatched.** |
-| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
-| `pattern-engineer-backend-standard` | When the fix touches backend service code. |
-| `pattern-engineer-frontend-standard` | When the fix touches React frontend code. |
-| `pattern-engineer-typescript` | When the fix touches `.ts` / `.tsx` / `tsconfig.json`. |
-| `pattern-engineer-python` | When the fix touches Python code. |
-| `pattern-engineer-fastapi` | When the fix touches FastAPI routes / deps / middleware / handlers. |
-| `pattern-engineer-vite` | When the fix touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
-| `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
-| `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
-| `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
 | Asset | Purpose |
@@ -57,7 +42,7 @@ Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via 
 
 ## Workflow
 
-Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. The orchestrator (`workflow-orchestrator-fix-pr`) added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths, user directives) you discover yourself.
+Inputs from the orchestrator: a PR number **and** a list of fix scenarios — any non-empty subset of `{conflict, ci}`. The orchestrator added a `status:fix-in-progress` label to the PR as a lock and dispatched you. Everything else (slice branch, base branch, failing run id, conflicting paths, user directives) you discover yourself.
 
 ### 1. Read user directives newer than the last commit (binding overrides)
 
@@ -96,13 +81,13 @@ worktree_path="$(bash scripts/setup-worktree.sh "${slice_branch}")"
 cd "${worktree_path}"
 ```
 
-### 4. Load always-on security context
+### 4. Anchor security constraints
 
-Invoke `pattern-engineer-security` before any code is written, even when the immediate fix looks innocuous — a fix touching auth / input / output / logging must still satisfy the brief.
+Apply the always-on application-security baseline before any code is written, even when the immediate fix looks innocuous — a fix touching auth / input / output / logging must still satisfy the brief.
 
-### 5. Load the full fullstack pattern set
+### 5. Apply the full fullstack pattern set
 
-CI failures and merge conflicts can land in any layer of the slice. Load `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` so the fix can land anywhere without a second round-trip.
+CI failures and merge conflicts can land in any layer of the slice. Apply every fullstack engineer pattern relevant to the change upfront — coding standard always, plus backend / frontend / language / framework / container / observability patterns whenever their surface is in scope — so the fix can land anywhere without a second round-trip.
 
 ### 6. Address every dispatched scenario
 
@@ -117,7 +102,7 @@ Process each scenario from the dispatch prompt; if both were passed, do `conflic
   - **Production-code bug** — keep the failing test failing (it is already RED), make the minimum production change to take it to GREEN, then REFACTOR under green. Before declaring GREEN, `rg` the codebase for the same anti-pattern the failing log pointed at (same call, same missing guard, same broken idiom) — CI exercised one site, but the bug may live at every equivalent site. Each additional site gets its own RED → GREEN, per the pattern-propagation rule in *Iron rules*. Commit at each step.
   - **E2E-spec bug (must be edited by the user)** — route to step 6a's bail-out path. Do not partially patch production code, do not push a partial fix, and do not edit the E2E spec yourself — spec rewrites are out of scope for this skill; the user reviews the failing assertion and either rewrites the spec or clarifies the demand and re-dispatches.
 
-Invoke `workflow-engineer-tdd` for the `ci` branch's production-code path; the `conflict` branch only re-enters `workflow-engineer-tdd` if merge-time regressions surface failing tests.
+Drive the `ci` branch's production-code path via strict outside-in TDD (RED → GREEN → REFACTOR); the `conflict` branch only re-enters that loop if merge-time regressions surface failing tests.
 
 #### 6a. Bail out when the CI failure needs an E2E-spec edit
 
@@ -137,40 +122,40 @@ bash scripts/flip-need-attention.sh <pr-#> "${comment_file}"
 rm -f "${comment_file}"
 ```
 
-The script removes `status:fix-in-progress` from the PR, adds `status:need-attention`, and posts the diagnostic comment. Stop immediately after the script returns — do not push any partial fixes, do not run the container / env audit, do not loop. The user reviews the diagnostic, rewrites the spec(s) or clears the demand, then clears `status:need-attention` so `workflow-orchestrator-fix-pr` can re-pick the PR on a later fire.
+The script removes `status:fix-in-progress` from the PR, adds `status:need-attention`, and posts the diagnostic comment. Stop immediately after the script returns — do not push any partial fixes, do not run the container / env audit, do not loop. The user reviews the diagnostic, rewrites the spec(s) or clears the demand, then clears `status:need-attention` so the orchestrator can re-pick the PR on a later fire.
 
 If both scenarios were dispatched and the `conflict` scenario is already committed when the `ci` triage routes here, leave the merge commit in place — that work is independent of the spec rewrite and the user benefits from the up-to-date base. The bail still applies.
 
 Once the dispatched scenario(s) are clear (and the run did not route to step 6a), run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. A `conflict` merge can drop one of these (the base side deleted it intentionally — verify before re-adding) or a `ci` failure can surface a deployable surface that was added without its container artifacts. If any is missing for a surface that should ship, scaffold it now via `pattern-engineer-container` and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. A `conflict` merge can drop one of these (the base side deleted it intentionally — verify before re-adding) or a `ci` failure can surface a deployable surface that was added without its container artifacts. If any is missing for a surface that should ship, scaffold it now under the project's container patterns and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` against everything committed in this fix pass. A `ci` failure may have surfaced a missing runtime dep that needs to land in the image; a `conflict` merge may have brought container changes in from the base that leave equivalent slice-side container changes still on the old shape. If the runtime surface drifted, update the container files in the same slice and commit using `chore(docker): <what>` / `fix(docker): <what>` (format per `templates/commit-messages.md`) before moving to the push step. If it did not drift, leave the container files alone.
 
 Then run the `.env.example` audit: a `ci` failure can surface a missing env-var entry the app needs at boot, and a `conflict` merge can bring new env vars in from the base that leave `.env.example` out of date. If any env var the app reads was added, renamed, or removed by this fix pass (or by the merged-in base side), update `.env.example` in the same slice and commit using `chore(env): <what>` / `fix(env): <what>` (format per `templates/commit-messages.md`). If env vars did not drift, leave `.env.example` alone.
 
 ### 7. Push the slice branch and clear the lock label
 
-Push to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — running them locally beforehand is no longer required; if a hook denies the push, drop back into step 6 with a fresh red/green/refactor cycle; never force-push, never skip hooks), then remove the `status:fix-in-progress` lock from the PR so the next sweep can re-classify it (and `workflow-orchestrator-close-pr` can pick it up if it's now mergeable + green):
+Push to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — running them locally beforehand is no longer required; if a hook denies the push, drop back into step 6 with a fresh red/green/refactor cycle; never force-push, never skip hooks), then remove the `status:fix-in-progress` lock from the PR so the next sweep can re-classify it (and the close-pr lane can pick it up if it's now mergeable + green):
 
 ```bash
 bash scripts/push-and-clear-lock.sh <pr-#> "${slice_branch}"
 ```
 
-This is the terminal success action. Do **not** flip the PR back to ready-to-review (it stays draft until `workflow-orchestrator-close-pr` promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
+This is the terminal success action. Do **not** flip the PR back to ready-to-review (it stays draft until the close-pr lane promotes it), do **not** touch any `review:*` label on the PR (those don't exist on PRs anymore — reviews live on tasks), do **not** comment on the PR, do **not** loop. Exit after the label remove lands.
 
 ## Iron rules
 
 - **Read user directives newer than the last commit BEFORE pulling any CI / conflict evidence.** A user directive in that window OVERRIDES the failing log's surface text, the conflicting hunk's obvious side, any existing ADR, and any default convention. Skipping step 1 is the most common cause of round-trip fix passes that miss the user's actual ask.
 - **Treat the PR's failing CI logs and the live merge conflict as the contract.** If either evidence channel comes back empty when the orchestrator said otherwise, halt and surface — never guess a fix from a clean tree.
 - **Bail to `status:need-attention` when the `ci` failure points at an E2E-spec edit.** Spec rewrites are out of scope for this skill — the user owns the rewrite. Drop `status:fix-in-progress`, add `status:need-attention`, post the diagnostic, and exit. Do not partially patch production code, do not push a partial fix, and do not edit the spec yourself.
-- **Read `pattern-engineer-security` before writing any code**, even for innocuous-looking CI / conflict fixes.
-- **Always fullstack — load every language reference upfront.** Mode-B fixes can land in any layer; loading all four references upfront prevents a second round-trip.
+- **Apply security constraints before writing any code**, even for innocuous-looking CI / conflict fixes.
+- **Always fullstack — apply every fullstack pattern upfront.** Mode-B fixes can land in any layer; resolving every pattern upfront prevents a second round-trip.
 - **Do `conflict` before `ci` when both are dispatched.** The merge changes the working tree's baseline, so `ci` fixes layered on top stay clean.
 - **Resolve conflicts by union — never blindly take one side.** Read both sides and produce the merge that preserves the slice's intended behavior **and** the base's incoming change. If the conflict can't be resolved without scope expansion, abort the merge and surface.
 - **Treat each fix as a *class* of issue, not a single instance — propagate via `rg`.** A reviewer / CI failure / merge-import almost never points at the only vulnerable site. After identifying the fix, search the codebase for the same anti-pattern and apply the fix at every clearly equivalent site — each additional site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body so the reviewer can audit the scope. Only skip the propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors: a site qualifies only when it exhibits the same anti-pattern, not when it merely lives nearby.
-- **Read before every edit; verify after every edit; bundle co-dependent changes.** Same oscillating-revert prevention as `workflow-engineer-implement-task` — Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string`, verify immediately after each Edit before issuing the next one on the same file.
+- **Read before every edit; verify after every edit; bundle co-dependent changes.** Read the exact lines before each Edit, bundle imports with the code that uses them into one `old_string`/`new_string`, verify immediately after each Edit before issuing the next one on the same file. If you issue two sequential Edit calls that target overlapping regions of the same file, the second call's `old_string` must match the file's state *after* the first edit — otherwise the Edit tool silently reverts the first edit.
 - **Container setup is a pre-push gate, not optional polish.** Run the two-part audit (presence + drift) before push; the pre-push hook enforces presence. Update container files only when the runtime surface actually drifted — never as routine cleanup. Skip the audit entirely when bailing via step 6a — the run is incomplete by design.
 - **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads. Never commit a real `.env`; never put real secrets in `.env.example`.
-- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `workflow-engineer-implement-task`.
-- **Commit on the cadence prescribed by `workflow-engineer-tdd` and format every commit per `templates/commit-messages.md`.** Never skip hooks; never force-push.
-- **Stop and exit after the terminal action.** Success path: push and remove `status:fix-in-progress`. Bail path: `flip-need-attention.sh` removes `status:fix-in-progress` and adds `status:need-attention`. Either way: do not flip the PR back to ready-to-review (that's `workflow-orchestrator-close-pr`'s lane), do not touch `review:*` labels on the PR, do not comment further, do not loop.
+- **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Derive a deterministic slug from the slice branch and use it as both the image tag and the compose project name; if a host port is already in use, override the port via env vars on the same `docker compose` command rather than editing `Dockerfile` / `docker-compose.yaml`. Tear the stack down with `docker compose -p "${slug}" down -v` before exiting the worktree.
+- **Commit on the TDD cadence and format every commit per `templates/commit-messages.md`.** Never skip hooks; never force-push.
+- **Stop and exit after the terminal action.** Success path: push and remove `status:fix-in-progress`. Bail path: `flip-need-attention.sh` removes `status:fix-in-progress` and adds `status:need-attention`. Either way: do not flip the PR back to ready-to-review (that's the close-pr lane), do not touch `review:*` labels on the PR, do not comment further, do not loop.

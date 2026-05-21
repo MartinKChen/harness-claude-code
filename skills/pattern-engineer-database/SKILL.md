@@ -7,7 +7,7 @@ description: "Ship migrations safely. Models are the source of truth; generate w
 
 ## When to activate
 
-Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), or adding the `migrate` service to `compose.yaml`. Skip for schema/naming design (use `pattern-architect-data-model`).
+Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), or adding the `migrate` service to `compose.yaml`. Skip for schema/naming design.
 
 ## Patterns
 

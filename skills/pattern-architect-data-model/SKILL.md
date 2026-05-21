@@ -1,6 +1,6 @@
 ---
 name: pattern-architect-data-model
-description: "Data-model shape and naming guidance: tables, columns, indexes, constraints, views, and the SQLAlchemy `MetaData` naming convention that emits predictable names. Activate when designing or reviewing a new table, model, or schema, or when asked 'how should I name this table/column/index/constraint?'. Skip for application-level query logic that doesn't change schema, and for code-first / migration / `migrate` compose / `alembic` mechanics — those live in `pattern-engineer-database`."
+description: "Data-model shape and naming guidance: tables, columns, indexes, constraints, views, and the SQLAlchemy `MetaData` naming convention that emits predictable names. Activate when designing or reviewing a new table, model, or schema, or when asked 'how should I name this table/column/index/constraint?'. Skip for application-level query logic that doesn't change schema, and for code-first / migration / `migrate` compose / `alembic` mechanics."
 ---
 
 # pattern-architect-data-model

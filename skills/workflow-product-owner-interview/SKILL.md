@@ -7,7 +7,7 @@ description: "Drive a depth-first product-requirement discovery interview for a 
 
 Drive a depth-first product-requirement discovery interview against a single feature request. Walk a one-question-at-a-time conversation with the user until the feature's user, problem, scope boundaries, success metric, primary critical path, and domain vocabulary are all clarified. Once the user approves and the new flow has been classified against the existing critical paths, the interview is finished — a separate publisher skill materializes the artifacts.
 
-This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 5) and the approval request (step 6) are bookkeeping in conversation context only; the artifacts themselves are written downstream by `workflow-writer-publish-requirement`.
+This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 5) and the approval request (step 6) are bookkeeping in conversation context only; the artifacts themselves are written downstream by a separate publisher agent named by the orchestrator at invocation time.
 
 ## When to activate
 

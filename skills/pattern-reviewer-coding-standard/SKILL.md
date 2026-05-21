@@ -9,13 +9,13 @@ description: "Language-agnostic code-quality review patterns: code-quality bars 
 
 - The dispatched caller is reviewing a `type:backend` / `type:frontend` task's production-code diff.
 - A user says "review this diff for quality", "look for bugs", "audit the change".
-- Do NOT activate for `type:e2e` (use `pattern-reviewer-test-coverage`).
+- Do NOT activate for `type:e2e`.
 
 ## References
 
 | Reference | When to read |
 |-----------|--------------|
-| `templates/review-comment.md` | Always read before composing the comment body. The finding rows must match this shape verbatim so downstream skills (`workflow-engineer-fix-task`) can parse them. |
+| `templates/review-comment.md` | Always read before composing the comment body. The finding rows must match this shape verbatim so downstream fix passes can parse them. |
 
 ## Iron rules for every finding
 

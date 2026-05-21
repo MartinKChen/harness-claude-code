@@ -1,6 +1,6 @@
 ---
 name: workflow-engineer-implement-task
-description: "Implement one `type:backend`/`type:frontend` GitHub task end-to-end via outside-in TDD on the slice branch — slice-scoped worktree, scaffold missing structure first, RED/GREEN/REFACTOR via `workflow-engineer-tdd` with `Refs #<task-#>` trailers, push, add `review:code-pending` + `review:security-pending`. Activate on `Implement GitHub task issue #<n>` / '/workflow-engineer-implement-task'. Skip for `type:e2e`, PR blockers, reviewer fixes."
+description: "Implement one `type:backend`/`type:frontend` GitHub task end-to-end via outside-in TDD on the slice branch — slice-scoped worktree, scaffold missing structure first, RED/GREEN/REFACTOR with `Refs #<task-#>` trailers, push, add `review:code-pending` + `review:security-pending`. Activate on `Implement GitHub task issue #<n>` / '/workflow-engineer-implement-task'. Skip for `type:e2e`, PR blockers, reviewer fixes."
 ---
 
 # workflow-engineer-implement-task
@@ -16,31 +16,16 @@ Activate this skill whenever:
 
 Do NOT activate when:
 
-- The issue carries `type:e2e` — that is `workflow-e2e-author`'s lane; a `type:e2e` dispatch arriving here is a routing bug, surface and stop.
-- The dispatched unit of work is an open PR with `conflict` and/or `ci` scenarios — use `workflow-engineer-fix-pr`.
-- The dispatched unit of work is a task with reviewer `need-fix` verdicts — use `workflow-engineer-fix-task`.
+- The issue carries `type:e2e` — that is the e2e-author's lane; a `type:e2e` dispatch arriving here is a routing bug, surface and stop.
+- The dispatched unit of work is an open PR with `conflict` and/or `ci` scenarios — that is the PR-fix lane.
+- The dispatched unit of work is a task with reviewer `need-fix` verdicts — that is the task-fix lane.
 - The issue is closed, missing `Delivery` / `Done criteria`, or carries no `type:*` label — surface and stop.
 
-## References
-
-| Skill | When to route to it |
-|-------|---------------------|
-| `workflow-engineer-tdd` | To drive the entire implementation loop (acceptance → red/green/refactor → wiring). **Required.** |
-| `pattern-engineer-security` | At the start of every dispatch, before writing any code; re-open whenever the change touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. **Required (always).** |
-| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
-| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/healthz`, log redaction. |
-| `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
-| `pattern-engineer-typescript` | When the task touches `.ts` / `.tsx` / `tsconfig.json`. |
-| `pattern-engineer-python` | When the task implements Python code — `.py` files, models, pytest tests. |
-| `pattern-engineer-fastapi` | When the task touches FastAPI routes, dependencies, middleware, exception handlers, or app wiring. |
-| `pattern-engineer-vite` | When the task touches `vite.config.*` / `vitest.config.*` / `import.meta.env`. |
-| `pattern-engineer-container` | When the task touches `Dockerfile`, compose files, or `.dockerignore`. |
-| `pattern-engineer-observability` | When the task adds/edits OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
 ## Templates
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure is owned by `workflow-orchestrator-close-task-issue`) is spelled out in step 7 below. |
+| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure happens later in the lifecycle) is spelled out in step 7 below. |
 
 ## Scripts
 
@@ -64,11 +49,11 @@ Pull the full sub-issue so the rest of the work has its `Delivery`, `Done criter
 gh issue view <issue-#> --json number,title,body,labels,milestone,state,url
 ```
 
-Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, carries no `type:<type>` label, or carries `type:e2e` (a `type:e2e` dispatch is a routing bug — e2e tasks go to `workflow-e2e-author`). Do not invent acceptance criteria.
+Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, carries no `type:<type>` label, or carries `type:e2e` (a `type:e2e` dispatch is a routing bug — e2e tasks go to the e2e-author's lane). Do not invent acceptance criteria.
 
 ### 2. Materialize the slice branch in a worktree
 
-The slice branch was attached to the **parent slice issue** at creation time by `create-issues` (via `gh issue develop --create`), not to each task sub-issue. Resolve it, then check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
+The slice branch was attached to the **parent slice issue** at slice-creation time (via `gh issue develop --create`), not to each task sub-issue. Resolve it, then check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
 
 ```bash
 slice_branch="$(bash scripts/resolve-slice-branch.sh <issue-#>)"
@@ -78,13 +63,13 @@ cd "${worktree_path}"
 
 If either script exits non-zero, halt and surface the diagnostic it printed — there is no branch to implement against.
 
-### 3. Load always-on security context
+### 3. Anchor security constraints
 
-Invoke `pattern-engineer-security` to anchor security constraints before any code is written. Carry them through every red/green/refactor step.
+Apply the always-on application-security baseline (env-only secrets, schema-validated input, parameterized queries, httpOnly + Secure + SameSite session cookies, authorize-before-act, sanitized output + CSP, CSRF + per-route rate limits on state-changing endpoints, redacted logs, generic 5xx messages, locked dependencies, zero shipped CRITICAL / HIGH CVEs) before any code is written. Carry them through every red/green/refactor step.
 
-### 4. Load the full fullstack pattern set
+### 4. Apply the full fullstack pattern set
 
-Load every engineer pattern skill upfront, alongside `workflow-engineer-tdd`: `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` (when instrumentation is in scope). The engineer is fullstack by default — even when this particular task only touches one side, having the other side's patterns resolved means a follow-up cycle that crosses the boundary doesn't pay a re-read tax. The `type:<type>` label still informs which patterns will drive *most* of the red/green/refactor cycles for this task; it does not narrow which skills you load.
+Apply every fullstack engineer pattern relevant to the change upfront — coding standard always, plus backend / frontend / language / framework / container / observability patterns whenever their surface is in scope. The engineer is fullstack by default — even when this particular task only touches one side, having the other side's patterns resolved means a follow-up cycle that crosses the boundary doesn't pay a re-read tax. The `type:<type>` label still informs which patterns will drive *most* of the red/green/refactor cycles for this task; it does not narrow which patterns you apply.
 
 ### 5. Pull entity-scoped architecture context (only when the issue needs it)
 
@@ -105,38 +90,38 @@ If the index doesn't mention an axis the task touches, **halt and surface** "no 
 
 ### 6. Drive implementation via TDD
 
-Invoke `workflow-engineer-tdd` and follow its outside-in loop (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure is owned by `workflow-orchestrator-close-task-issue` once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
+Drive the entire implementation via strict outside-in TDD (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure happens later in the lifecycle once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
 
 ### 7. Verify against acceptance criteria, then audit the container surface and `.env.example`
 
 Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 7 with a fresh RED — do not declare done. Then run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If anything is still missing after step 6 (e.g. the task created a new deployable surface mid-loop), scaffold it now via `pattern-engineer-container` and commit using the `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). Skipping this is not a valid choice — the pre-push hook will deny the push if any deployable surface lacks a `Dockerfile`.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If anything is still missing after step 6 (e.g. the task created a new deployable surface mid-loop), scaffold it now under the project's container patterns and commit using the `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). Skipping this is not a valid choice — the pre-push hook will deny the push if any deployable surface lacks a `Dockerfile`.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` and decide whether the changes in this task added or removed a runtime dep, env var, exposed port, mounted volume, build stage, or entrypoint. If yes, update the container files in the same slice and commit using a `chore(docker): <what>` (or `fix(docker): <what>`) subject (format per `templates/commit-messages.md`) before moving to the push step. If the runtime surface did not change, leave the container files alone.
 
 Then run the `.env.example` audit: if this task added, renamed, or removed any env var the app reads, update `.env.example` to match and commit using a `chore(env): <what>` (or `fix(env): <what>`) subject (format per `templates/commit-messages.md`). If no env vars changed, leave `.env.example` alone.
 
 ### 8. Push the slice branch and open both review gates
 
-Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `reviewer` agent for both gates:
+Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so the orchestrator dispatches the reviewer for both gates:
 
 ```bash
 bash scripts/push-and-open-reviews.sh <issue-#> "${slice_branch}"
 ```
 
-This is the terminal action. Exit after the label add lands — do not close the task (that's `workflow-orchestrator-close-task-issue`'s job once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is owned outside this lane), do not message reviewers, do not loop.
+This is the terminal action. Exit after the label add lands — do not close the task (that happens later in the lifecycle once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is handled outside this lane), do not message reviewers, do not loop.
 
 ## Iron rules
 
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
-- **Read `pattern-engineer-security` before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy its rules (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
+- **Apply security constraints before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy the baseline (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
 - **Pull architecture context per-entity, on demand — never bulk-load.** Read only the specific entity file(s) the change actually touches under `docs/data-model/<entity>.yaml` and `docs/api-contract/<entity>.yaml`. If the change touches no persistence and exposes/consumes no API, skip those files entirely.
 - **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the task actually touches.** The index points at the decision files; the detail files own the rules (error-envelope shape, rate-limit keying, idempotency-key lifecycle, repository-pattern stance, storage-backend choice, sessions/cookies, config loader, etc.). Quote the rules into the test plan so the RED encodes them directly — never implement an axis from memory and never hard-code an ADR number into this skill. If an axis the task touches has no ADR row in the index, halt and surface — the architect owns adding it.
 - **Mirror an already-shipped sibling before inventing shape.** Before writing a new endpoint, hook, form, or service module, `rg` for a sibling already in `git log` that performs the same kind of work (another endpoint on the same router, another mutation hook, another auth form) and mirror its conventions exactly: response headers (`Cache-Control: private, no-store` on authenticated and session-setting routes), Pydantic input schema with `max_length` on every string field, structured-log keys + the redaction allow-list, rate-limit decorator and key-func, idempotency wiring on POST, error mapping to the project's error envelope; on the frontend, the hook's return-tuple shape, `onSuccess` cache invalidation, referential stability of returned mutators, submit-disabled-while-pending, idempotency-key rotation on 4xx. If no sibling exists, surface that in the implementation plan and ask which one to mirror — do not invent shape from memory.
 - **Paths, status codes, and response shapes come from the api-contract doc, never from the keyboard.** Any URL this task introduces (route decorator, frontend `fetch` target, test assertion path, `curl` in a script or CI step), the status code the route returns on each error class (400 / 404 / 409 / 422 — the choice is the contract's, not the engineer's intuition), and the response body shape on both success and error paths are all sourced from `docs/api-contract/<entity>.yaml`. If the task body cites a status code or path that disagrees with the contract, the **contract wins** — surface the disagreement on the task issue and proceed against the contract. Define the path once as a module constant near the route and have the test import the same constant; hand-typing the same string twice (once in the route, once in the test) is the failure mode that lets implementation and contract drift apart. Same rule for status codes — never `raise HTTPException(status_code=401)` inline; bind the status to a named error class so the route, the test, and the error-mapper agree by construction. If the contract is missing for a path / status / response the task needs, STOP and surface it — the architect owns contract authorship, not the engineer.
 - **Trailing slash matters — pick the contract's spelling and pin it.** FastAPI routes `/me` and `/me/` are different URLs; the framework's default redirect-to-trailing-slash returns a 307 that breaks Set-Cookie persistence on cross-site responses and silently slows every authenticated call. Match the contract's spelling exactly, and add a test that asserts the contracted URL returns 200 (not 307) so the next router change can't drift the trailing slash unnoticed.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
-- **Always fullstack — load every pattern skill upfront.** Mode-A work always loads `pattern-engineer-coding-standard`, `pattern-engineer-backend-standard`, `pattern-engineer-frontend-standard`, `pattern-engineer-typescript`, `pattern-engineer-python`, `pattern-engineer-fastapi`, `pattern-engineer-vite`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` before writing any code.
+- **Always fullstack — apply every fullstack pattern upfront.** Apply every fullstack engineer pattern relevant to the change before writing any code, even when the current task only touches one side of the stack.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed or where a behavior lives.
 - **Read before every edit; verify after every edit; make logically coupled changes in one Edit call.** Before touching any file, Read the full region that will be affected. After each Edit call, run the relevant static-analysis check (`uv run mypy <file>`, `uv run ruff check <file>`, or `tsc --noEmit`) immediately. When a single logical change requires editing two or more lines that must be true simultaneously (e.g. adding a new import and updating the signature to use it), include all affected lines in a single `old_string`/`new_string` pair — never make them as separate sequential edits.
 
@@ -156,6 +141,6 @@ This is the terminal action. Exit after the label add lands — do not close the
   IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d
   ```
   If a host port is already in use, **override the port via env vars on the same `docker compose` command** (e.g. `HTTP_PORT=18000 IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d` against a `${HTTP_PORT:-8000}:8000` mapping). **Do NOT edit `Dockerfile` or `docker-compose.yaml` to dodge a port conflict** — those files codify the standard runtime contract and must stay identical across slices. The only legitimate compose-file change here is adding `${VAR:-<standard-port>}` indirection when the port previously had none — a one-time conventionalization, not a workaround. Tear the stack down with `docker compose -p "${slug}" down -v` before exiting the worktree.
-- **Commit on the cadence prescribed by `workflow-engineer-tdd`** (per RED / GREEN / REFACTOR step where applicable); never skip hooks or force-push.
+- **Commit on the TDD cadence** (per RED / GREEN / REFACTOR step where applicable); never skip hooks or force-push.
 - **Scaffold first, test second.** Scaffolding goes in discrete `chore(scaffold): <what>` (or `build: <what>` for tooling/dep changes) commits BEFORE the first RED. Bundling scaffolding into a `feat:` commit pollutes the TDD trail. If a needed dependency surfaces *mid-loop*, pause the loop, land a `build: add <dep>` commit, then resume the RED — never fake an import or skip a test to dodge a missing dependency.
 - **Stop and report when the acceptance criteria are met.** Do not bundle unrequested improvements.

@@ -11,6 +11,11 @@ description: "Migration audit: code-first (models drive migration, not the rever
 
 ## Iron rules
 
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
+
 ## Patterns to review
 
 ### Code-first (HIGH)

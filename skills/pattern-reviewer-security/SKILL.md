@@ -1,13 +1,11 @@
 ---
 name: pattern-reviewer-security
-description: "Detailed security-review catalogue + iteration flow for a scoped diff and a freshly built container image. Walks fourteen patterns in order across backend / frontend / dependencies / image (never test files): container CVEs, secrets handling, schema-validated input, parameterized queries, auth / sessions / cookies / IDOR / JWT / password reset, XSS + the security-header set, CSRF, rate limits, log + error redaction, dependency hygiene, SSRF / outbound requests, CORS, webhook + OAuth integrations, and race conditions on critical mutations. Each pattern carries an exact bar that becomes the `Required end state` quoted on every finding. Findings cite `file:line` or `image:<tag>`, include evidence + fix, and use a non-numeric handle (never `#N`). Comment shape under `# Security Review` lives in `templates/review-comment.md`. Skip for `type:e2e`. Engineers writing code load the brief variant — `pattern-engineer-security` — which points back here for depth."
+description: "Detailed security-review catalogue + iteration flow for a scoped diff and a freshly built container image. Walks fourteen patterns in order across backend / frontend / dependencies / image (never test files): container CVEs, secrets handling, schema-validated input, parameterized queries, auth / sessions / cookies / IDOR / JWT / password reset, XSS + the security-header set, CSRF, rate limits, log + error redaction, dependency hygiene, SSRF / outbound requests, CORS, webhook + OAuth integrations, and race conditions on critical mutations. Each pattern carries an exact bar that becomes the `Required end state` quoted on every finding. Findings cite `file:line` or `image:<tag>`, include evidence + fix, and use a non-numeric handle (never `#N`). Comment shape under `# Security Review` lives in `templates/review-comment.md`. Skip for `type:e2e`."
 ---
 
 # pattern-reviewer-security
 
 The canonical security-review catalogue. This skill is BOTH the catalogue of patterns (each with its exact bar — the string a finding's `Required end state` quotes verbatim) AND the iteration / finding-construction flow used on a security-gate dispatch.
-
-Engineers writing or editing code load `pattern-engineer-security` — a tight bullet-point summary of the non-negotiables (always do / ask first / never do + quick-lookup table + red flags). That brief skill is the *implementation* lens; this skill is the *review* lens. When the engineer brief is unclear on what "pass" means for a given pattern, this skill's `Required end state` lines are the source of truth.
 
 ## When to activate
 
@@ -19,7 +17,7 @@ Engineers writing or editing code load `pattern-engineer-security` — a tight b
 
 | Reference | When to read |
 |-----------|--------------|
-| `templates/review-comment.md` | Always read before composing the comment body. The finding rows + the per-image CVE table must match this shape verbatim so downstream skills (`workflow-engineer-fix-task`) can parse them. |
+| `templates/review-comment.md` | Always read before composing the comment body. The finding rows + the per-image CVE table must match this shape verbatim so downstream fix passes can parse them. |
 
 ## Severity classification
 
@@ -285,7 +283,7 @@ Two properties this shape protects:
 1. **Test isolation.** Fixtures can build the app with overrides (`create_app(settings=fake_settings)`) without populating the full `Settings` env. The cookie knob still resolves — defaulting to secure — without dragging the rest of `Settings` along.
 2. **Production safety.** The default when the env var is absent is `True` (secure cookies on). The only way to get insecure cookies is to explicitly set `SECURE_COOKIES=false`, which lives in `compose.yaml` for local/CI and is never set in production.
 
-`scaffold-project` does NOT add this knob — the auth feature task that first introduces session cookies owns adding the `SECURE_COOKIES` line to `.env.example`, the compose env block, and the `_secure_cookies()` helper.
+Project scaffold does NOT pre-add this knob — the auth feature task that first introduces session cookies owns adding the `SECURE_COOKIES` line to `.env.example`, the compose env block, and the `_secure_cookies()` helper.
 
 **Password hashing.** Argon2id (preferred) or bcrypt (≥12 rounds) or scrypt. Never store plaintext. Never use SHA-256/MD5 for passwords (those are checksums, not password hashes). Never compare passwords with `==` — use the library's verify function in constant time.
 

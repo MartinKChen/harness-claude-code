@@ -1,11 +1,11 @@
 ---
 name: workflow-e2e-author
-description: "Author Playwright E2E tests for a single `type:e2e` GitHub task on the parent slice branch — translate the task's test cases into specs, smoke-run, commit, push, and add `review:code-pending` so `workflow-orchestrator-review-task-issue` dispatches the reviewer. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:e2e` issue, or on '/workflow-e2e-author'. Skip for fixing reviewer findings (`workflow-e2e-fix`) or production code (`workflow-engineer-implement-task`)."
+description: "Author Playwright E2E tests for a single `type:e2e` GitHub task on the parent slice branch — translate the task's test cases into specs, smoke-run, commit, push, and add `review:code-pending` so the orchestrator dispatches the reviewer. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:e2e` issue, or on '/workflow-e2e-author'. Skip for fixing reviewer findings or for production code (engineer's lane)."
 ---
 
 # workflow-e2e-author
 
-Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is owned outside this lane — the push updates the remote slice branch and the label flip is enough to trigger the `reviewer` agent.
+Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is handled outside this lane — the push updates the remote slice branch and the label flip is enough to trigger the reviewer.
 
 ## When to activate
 
@@ -17,9 +17,9 @@ Activate this skill whenever:
 
 Do NOT activate when:
 
-- The dispatched gate is `code` returning `need-fix` — use `workflow-e2e-fix` instead.
-- The task carries `type:backend` or `type:frontend` — those are `engineer`'s lane via `workflow-engineer-implement-task`.
-- The user wants to write production code to make a red E2E test pass — production fixes belong to `engineer`.
+- The dispatched gate is `code` returning `need-fix` — that is the fix lane, not the author lane.
+- The task carries `type:backend` or `type:frontend` — those are the engineer's lane.
+- The user wants to write production code to make a red E2E test pass — production fixes belong to the engineer.
 
 ## Templates
 
@@ -44,7 +44,7 @@ Inputs from the orchestrator: just the **task issue ID, title, and URL**. Everyt
 
 ### 1. Find the parent slice issue, then the slice branch attached to it
 
-The slice branch is attached to the parent slice issue (set by `create-issues`), not to each task sub-issue. Resolve and print the slice branch:
+The slice branch is attached to the parent slice issue (set when the slice was created), not to each task sub-issue. Resolve and print the slice branch:
 
 ```bash
 slice_branch="$(bash scripts/resolve-slice-branch.sh <task-#>)"
@@ -89,11 +89,11 @@ Bring up the docker-compose stack if needed and run only the touched specs (`npx
 
 ### 6. Commit the changes directly on the slice branch
 
-Format commit messages per `templates/commit-messages.md` (Conventional Commits) — one commit per logical test addition/extension. The commit message is the report; it must clearly state which test cases were authored and which acceptance criteria they map to. **Every commit MUST mention the task issue — include a `Refs #<task-#>` trailer (use `Refs`, not `Closes`, so the PR merge does not auto-close the task issue — closure is owned by `workflow-orchestrator-close-task-issue` once `review:code-passed` lands).** All commits land on `${slice_branch}` inside the worktree. Do not flip `status:in-progress` here — the label stays in place until `workflow-orchestrator-close-task-issue` clears it after the review gate passes.
+Format commit messages per `templates/commit-messages.md` (Conventional Commits) — one commit per logical test addition/extension. The commit message is the report; it must clearly state which test cases were authored and which acceptance criteria they map to. **Every commit MUST mention the task issue — include a `Refs #<task-#>` trailer (use `Refs`, not `Closes`, so the PR merge does not auto-close the task issue — closure happens later in the lifecycle once `review:code-passed` lands).** All commits land on `${slice_branch}` inside the worktree. Do not flip `status:in-progress` here — the label stays in place until the close-task stage clears it after the review gate passes.
 
 ### 7. Push the slice branch and add `review:code-pending` to the task issue
 
-Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so `workflow-orchestrator-review-task-issue` dispatches the `reviewer` agent against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is owned outside this lane.
+Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so the orchestrator dispatches the reviewer against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is handled outside this lane.
 
 ```bash
 bash scripts/push-and-request-code-review.sh <task-#> "${slice_branch}"
@@ -122,7 +122,7 @@ This is the terminal action in implement mode. Exit after the label add lands �
 - **Extend, don't fragment.** If the issue's test cases advance an existing critical-path flow (e.g. existing test covers `a→b→c`, new criterion covers `c→d`), extend the existing spec to `a→b→c→d`. Create a new file only when the flow is genuinely independent.
 - **Scope strictly to the issue's acceptance criteria.** The task issue body lists the test cases to write; the parent slice issue carries the matching Gherkin / EARS scenarios. Anything outside those is out of scope — skip it.
 - **Red is expected; broken is not.** A test that fails because the feature is unimplemented is correct output. A test that fails to *load* (syntax error, bad import, wrong locator API) is not. Smoke-run each new/edited spec once and confirm the failure is an assertion failure, not a parse/load/locator error, before committing.
-- **Never patch the implementation.** If a smoke run reveals a missing or broken implementation, that is the expected red state — do not "fix" production code to silence the failure. Production fixes belong to `engineer`.
+- **Never patch the implementation.** If a smoke run reveals a missing or broken implementation, that is the expected red state — do not "fix" production code to silence the failure. Production fixes belong to the engineer.
 - **Truth is in Git and on the task-issue labels.** Commit messages on the slice branch and the `review:code-*` label state on the task issue are the only report. Do not return a structured summary, do not `SendMessage` the orchestrator, do not post issue comments. After push and the terminal label flip, you are done.
 - **Surface unrecoverable blockers, don't silently abandon.** If a precondition fails (no slice branch attached to the parent, rebase conflicts onto main, smoke run reveals a parse error you can't fix, etc.), STOP and surface back to whoever invoked you with the diagnostic — do not push half-baked work and do not pretend to succeed.
 - **Format every commit per `templates/commit-messages.md`** when authoring produces test files; never skip hooks.

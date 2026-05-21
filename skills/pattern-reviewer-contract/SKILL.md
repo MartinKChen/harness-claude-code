@@ -5,7 +5,7 @@ description: "Contract-conformance audit. Every implemented API endpoint matches
 
 # pattern-reviewer-contract
 
-Contract-conformance audit. The api contract (`docs/api-contract/<entity>.yaml`) and data-model contract (`docs/data-model/<entity>.yaml`) are the source of truth for endpoint shape and model shape; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are reviewed elsewhere (`pattern-reviewer-backend-standard`, `pattern-reviewer-fastapi`, `pattern-reviewer-database`).
+Contract-conformance audit. The api contract (`docs/api-contract/<entity>.yaml`) and data-model contract (`docs/data-model/<entity>.yaml`) are the source of truth for endpoint shape and model shape; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are out of scope here.
 
 ## When to activate
 
@@ -25,13 +25,14 @@ The contracts are project-level, not feature-scoped. For each entity the diff to
 - **API endpoint** at `<router-or-handler>.py` / `<router>.ts` → read `docs/api-contract/<entity>.yaml` for the path + verb + body / status / envelope decisions.
 - **ORM model** at `models/<entity>.py` / `prisma/schema.prisma` → read `docs/data-model/<entity>.yaml` for the table + columns + constraint decisions.
 
-If a touched implementation has no matching contract file, that itself is a finding — the architect owes the contract (`pattern-architect-api-endpoint` or `pattern-architect-data-model`); flag and halt the audit for that entity.
+If a touched implementation has no matching contract file, that itself is a finding — the contract is owed by the architect; flag and halt the audit for that entity.
 
 ## Iron rules
 
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules. Two extras specific to this skill:
-
-- **Quote the contract.** Every finding cites both the implementation `file:line` AND the contract `file:line`, and quotes the exact contract clause being violated. "Contract says X; code does Y" is the finding shape.
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite both sides.** Every finding cites the implementation `file:line` AND the contract `file:line`, and quotes the exact contract clause being violated. "Contract says X; code does Y" is the finding shape.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 - **Contract wins.** If the implementation disagrees with the contract, the contract is right — even when the implementation "makes more sense." If the contract is genuinely wrong, the engineer halts and surfaces; do not approve a deviation from the contract.
 
 ## Patterns to review
@@ -138,7 +139,7 @@ For every constraint in the contract:
 - **Indexes** named `idx_<table>_<col>` for the contracted columns.
 - **Check constraints** named `ck_<table>_<rule>` with the contracted SQL expression.
 
-Both the ORM model (`__table_args__ = (UniqueConstraint(..., name="uq_users_email"),)`) AND the migration (`op.create_unique_constraint("uq_users_email", "users", ["email"])`) must carry the contracted name — parity verified by `pattern-reviewer-database`'s name-by-name assertions.
+Both the ORM model (`__table_args__ = (UniqueConstraint(..., name="uq_users_email"),)`) AND the migration (`op.create_unique_constraint("uq_users_email", "users", ["email"])`) must carry the contracted name — verify parity name-by-name.
 
 #### Relationships + cardinality (HIGH)
 

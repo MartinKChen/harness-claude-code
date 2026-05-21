@@ -1,11 +1,11 @@
 ---
 name: workflow-orchestrator-create-draft-pr
-description: "For every `level:slice`+`kind:feature` slice whose subtasks have closed and isn't `status:prepare-pr`/`status:need-attention`: lock with `status:prepare-pr` and dispatch `engineer` Mode D (`workflow-orchestrator-prepare-slice-pr`) to open the draft PR (or flip to `status:need-attention`). Activate on 'open the draft PRs', '/workflow-orchestrator-create-draft-pr'. Skip for open subtasks, merging, failing PRs, `kind:bug`/`enhancement`."
+description: "For every `level:slice`+`kind:feature` slice whose subtasks have closed and isn't `status:prepare-pr`/`status:need-attention`: lock with `status:prepare-pr` and dispatch an engineer sub-agent to open the draft PR (or flip to `status:need-attention`). Activate on 'open the draft PRs', '/workflow-orchestrator-create-draft-pr'. Skip for open subtasks, merging, failing PRs, `kind:bug`/`enhancement`."
 ---
 
 # workflow-orchestrator-create-draft-pr
 
-Pick every slice issue whose task work is complete and dispatch an `engineer` (in its `workflow-orchestrator-prepare-slice-pr` mode) to verify the slice's E2E coverage, fix any production-code regressions surfaced, and open the draft PR. The orchestrator (this skill) owns candidate selection, the `status:prepare-pr` lock flip, and the dispatch handshake; everything else — worktree setup, E2E run, production-code fixes, PR body composition, `gh pr create`, terminal label flip — is the engineer's responsibility under `workflow-orchestrator-prepare-slice-pr`.
+Pick every slice issue whose task work is complete and dispatch an `engineer` sub-agent to verify the slice's E2E coverage, fix any production-code regressions surfaced, and open the draft PR. This skill owns candidate selection, the `status:prepare-pr` lock flip, and the dispatch handshake; everything else — worktree setup, E2E run, production-code fixes, PR body composition, `gh pr create`, terminal label flip — is the engineer's responsibility.
 
 This skill never checks out, edits, or pushes any branch; code-touching work and PR creation are delegated to the dispatched engineer.
 
@@ -14,22 +14,22 @@ This skill never checks out, edits, or pushes any branch; code-touching work and
 Activate this skill whenever the user:
 
 - Types `/workflow-orchestrator-create-draft-pr` (with or without a numeric cap argument).
-- Asks to "open draft PRs for the ready slices", "create draft PRs for slices whose tasks are done", "scaffold PRs for the closed-out slices", or "prepare draft PRs for `workflow-orchestrator-close-pr` to land".
+- Asks to "open draft PRs for the ready slices", "create draft PRs for slices whose tasks are done", "scaffold PRs for the closed-out slices", or "prepare draft PRs to land".
 
-Do NOT activate when the user wants to merge a PR (use `workflow-orchestrator-close-pr`), wants to fix a failing PR (use `workflow-orchestrator-fix-pr`), wants to open a PR for a slice whose task sub-issues are still open, or wants to open PRs for `kind:bug` / `kind:enhancement` slices (this skill is `kind:feature` only).
+Do NOT activate when the user wants to merge a PR, wants to fix a failing PR, wants to open a PR for a slice whose task sub-issues are still open, or wants to open PRs for `kind:bug` / `kind:enhancement` slices (this skill is `kind:feature` only).
 
 ## Arguments
 
 Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
 
-- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone used by `create-issues`). Empty / unset → scan every milestone.
+- `<milestone-name>` — when set, scope the slice scan to issues attached to that GitHub milestone (the feature name passed by `/implement-feature <feature-name>`). Empty / unset → scan every milestone.
 - `<cap>` — optional positive integer; stop after N engineers have been dispatched. Empty / unset → process every eligible slice.
 
 When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
 
 ## Scripts and templates
 
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The dispatch-prompt skeleton lives under `templates/`. The PR body template, the open-PR script, and the worktree / E2E run logic now live with the engineer in `workflow-orchestrator-prepare-slice-pr` (its skill owns PR creation end-to-end).
+Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable). The dispatch-prompt skeleton lives under `templates/`. The PR body template, the open-PR script, and the worktree / E2E run logic live with the dispatched engineer (the engineer owns PR creation end-to-end).
 
 | Asset | Purpose |
 |-------|---------|
@@ -39,7 +39,7 @@ Every gh / shell operation below is factored into `scripts/`. Invoke each via `b
 | `scripts/find-existing-pr.sh <head-branch>` | Print an existing PR # for the branch (empty if none). |
 | `scripts/lock-slice.sh <slice-#>` | Add the `status:prepare-pr` lock label to the slice. |
 | `scripts/unlock-slice.sh <slice-#>` | Remove `status:prepare-pr` (rollback on synchronous dispatch failure). |
-| `templates/dispatch-prompt.md` | Skeleton for the `engineer` `workflow-orchestrator-prepare-slice-pr` dispatch prompt; fill placeholders and pass as the `Agent` call's `prompt`. |
+| `templates/dispatch-prompt.md` | Skeleton for the engineer dispatch prompt; fill placeholders and pass as the `Agent` call's `prompt`. |
 
 ## Workflow
 
@@ -71,11 +71,11 @@ Local decision on the response JSON:
 
 - `open_subissues = subIssues.nodes | map(select(.state == "OPEN")) | length`
 - `open_subissues > 0` → track as skipped (`<count>` open sub-issues) and continue.
-- `open_subissues == 0` → keep the slice. The engineer will re-read the sub-issues itself in step 1 of `workflow-orchestrator-prepare-slice-pr` (for the linked-issues block in the PR body) — the orchestrator does not need to pass the task numbers in the dispatch prompt.
+- `open_subissues == 0` → keep the slice. The engineer will re-read the sub-issues itself when composing the linked-issues block in the PR body — the orchestrator does not need to pass the task numbers in the dispatch prompt.
 
 ### 4. Resolve the slice branch and skip if a PR is already open
 
-The slice branch is attached to the slice issue (set by `create-issues` via `gh issue develop --create`). Pull it; skip the slice if no branch is attached.
+The slice branch is attached to the slice issue (set when the issue was created via `gh issue develop --create`). Pull it; skip the slice if no branch is attached.
 
 ```bash
 slice_branch="$(bash scripts/resolve-branch.sh "${slice_number}")"
@@ -113,7 +113,7 @@ The lock MUST happen **before** the `Agent` dispatch in step 6. If the dispatch 
 bash scripts/unlock-slice.sh <slice-#>
 ```
 
-Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and removes `status:prepare-pr` as part of its terminal action (either step 7 success of `workflow-orchestrator-prepare-slice-pr` or step 5c's bail-out into `status:need-attention`).
+Do NOT roll back on internal sub-agent failure — once the engineer is running, it owns the lifecycle and removes `status:prepare-pr` as part of its terminal action (either the success path of opening the draft PR, or the bail-out into `status:need-attention`).
 
 ### 6. Create an orchestrator tracking task, then dispatch one `engineer` per slice
 
@@ -141,7 +141,7 @@ Spawn each slice with the `Agent` tool, passing:
 - `mode` — `auto`
 - `name` — the chosen agent name (e.g. `engineer-prep-142`)
 - `run_in_background` — `true` (mandatory; see below)
-- `prompt` — minimal; only the **slice number and the orchestrator `taskId`** (the engineer's `workflow-orchestrator-prepare-slice-pr` skill resolves the slice branch, milestone, and task sub-issues itself).
+- `prompt` — minimal; only the **slice number and the orchestrator `taskId`** (the engineer resolves the slice branch, milestone, and task sub-issues itself).
 
 `run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the engineer fully terminates, which (a) serializes slices that were supposed to fan out in parallel and (b) lets the engineer's own terminal `TaskUpdate({ status: "completed" })` land before the orchestrator's `TaskUpdate({ owner })` — at which point the owner assignment races a finalized task and the harness UI never shows who owned the row.
 
@@ -167,9 +167,9 @@ Track dispatched / skipped counts internally per slice; do **not** print per-sli
 - **Skip slices already labeled `status:prepare-pr` or `status:need-attention`.** The first means a sibling fire's engineer is mid-prep; the second means a prior fire flagged the slice for human review. `list-candidates.sh` filters both out at the GitHub side.
 - **Lock the slice with `status:prepare-pr` BEFORE dispatching the engineer.** The label is the lock that prevents concurrent fires from double-picking the same slice. The engineer removes it on both terminal paths (success → `push-create-pr-clear-prepare.sh`; bail → `mark-slice-need-attention.sh`).
 - **Idempotent on the PR.** If a PR (draft or ready) already exists for the slice branch, this skill is a no-op for that slice — never dispatch a duplicate engineer.
-- **No PR creation, no commits, no branch creation in this skill.** The orchestrator only picks candidates, locks the slice, and dispatches. Worktree setup, E2E run, production-code fixes, PR body composition, `gh pr create`, and the terminal label flip all live in `workflow-orchestrator-prepare-slice-pr`.
+- **No PR creation, no commits, no branch creation in this skill.** The orchestrator only picks candidates, locks the slice, and dispatches. Worktree setup, E2E run, production-code fixes, PR body composition, `gh pr create`, and the terminal label flip all live with the dispatched engineer.
 - **One orchestrator tracking task per dispatched engineer.** Every dispatched slice gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across slices and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, remove `status:prepare-pr` from the slice and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers (engineer removes the lock label and flips the tracking task to `completed`).
-- **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Same rationale as `workflow-orchestrator-fix-pr` — foreground dispatch serializes parallel slices and races the orchestrator's owner assignment against the engineer's terminal task update.
+- **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch serializes parallel slices and races the orchestrator's owner assignment against the engineer's terminal task update.
 - **`kind:feature` only.** Bugs / enhancements are out of scope; if a fast-track flow is added later, give it its own skill rather than widening the label filter here.
 - **Skip, don't fail, on benign outcomes.** "Open sub-issues remain", "no linked branch", "PR already exists", "slice already locked", "cap reached", "TaskCreate failed" are all expected — track internally and continue, never surface per-slice or abort the whole run.

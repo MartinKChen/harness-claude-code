@@ -5,11 +5,11 @@ description: "FastAPI bullets — wire what the contract already decided. `APIRo
 
 # pattern-engineer-fastapi
 
-FastAPI implementation patterns layered on top of `pattern-engineer-python` and `pattern-engineer-backend-standard`. The api contract (`pattern-architect-api-endpoint`) decides path / verb / status / shape — this skill is HOW you wire them in FastAPI without contradicting the contract.
+FastAPI implementation patterns for routes, dependencies, middleware, exception handlers, and app wiring. The api contract (`docs/api-contract/<entity>.yaml`) decides path / verb / status / shape — this skill is HOW you wire them in FastAPI without contradicting the contract.
 
 ## When to activate
 
-Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / …), `APIRouter` mounts, `Depends()` graphs, Pydantic request/response models, middleware (`app.add_middleware(...)`), exception handlers (`@app.exception_handler(...)`), `create_app()` / `main.py` wiring, OpenAPI customization, or `Depends`-based dependency injection. Skip for non-FastAPI Python code (use `pattern-engineer-python` only).
+Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / …), `APIRouter` mounts, `Depends()` graphs, Pydantic request/response models, middleware (`app.add_middleware(...)`), exception handlers (`@app.exception_handler(...)`), `create_app()` / `main.py` wiring, OpenAPI customization, or `Depends`-based dependency injection. Skip for non-FastAPI Python code.
 
 ## Patterns
 
