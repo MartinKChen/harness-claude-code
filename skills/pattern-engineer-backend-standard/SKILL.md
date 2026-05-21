@@ -11,9 +11,9 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 ## Follow the contract — don't redecide
 
-Before implementing any endpoint, open the api contract at `docs/product-requirement-document/<feature>/api-contract/<entity>.md`. Take from the contract — never invent — the **path** (including trailing-slash spelling), **HTTP verb**, **request body schema**, **response body schema**, **status codes per outcome**, **error envelope shape + `code` values**, **Idempotency-Key policy**, **rate-limit budget**, and **versioning notes**. If the contract is missing or ambiguous for an endpoint the task touches, halt and surface "no api contract for `<endpoint>`" — `pattern-architect-api-endpoint` owns adding it.
+Before implementing any endpoint, open the api contract at `docs/api-contract/<entity>.yaml`. Take from the contract — never invent — the **path** (including trailing-slash spelling), **HTTP verb**, **request body schema**, **response body schema**, **status codes per outcome**, **error envelope shape + `code` values**, **Idempotency-Key policy**, **rate-limit budget**, and **versioning notes**. If the contract is missing or ambiguous for an endpoint the task touches, halt and surface "no api contract for `<endpoint>`" — `pattern-architect-api-endpoint` owns adding it.
 
-Same rule for the data model: `docs/product-requirement-document/<feature>/data-model/<entity>.md` is the source of truth for table names, column types, constraints, indexes. The migration / ORM model implements the contract verbatim.
+Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of truth for table names, column types, constraints, indexes. The migration / ORM model implements the contract verbatim.
 
 ## Implementation patterns (not in the contract)
 

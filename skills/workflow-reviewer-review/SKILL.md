@@ -27,7 +27,7 @@ Do NOT activate when:
 |-------|---------------------|
 | `pattern-reviewer-test-coverage` | On every code-gate dispatch (every `type:*`). Emits MEDIUM findings for AC / scenario / migration-scenario gaps and shallow coverage. **Required on the code gate.** |
 | `pattern-reviewer-coding-standard` | On the code gate for `type:backend` / `type:frontend`. Language-agnostic code-quality patterns (large functions, deep nesting, mutation, dead code, performance, best practices, AI-generated-code addendum). **Required on the code gate for non-e2e types.** |
-| `pattern-reviewer-contract` | On the code gate when the touched paths include API route handlers OR ORM models AND a sibling contract file exists in `docs/product-requirement-document/<feature>/api-contract/` or `data-model/`. Audits implementation conformance to the contract (path / verb / status / shape; table / columns / constraint names / relationships). **Required when contract files cover the touched entity.** |
+| `pattern-reviewer-contract` | On the code gate when the touched paths include API route handlers OR ORM models AND a sibling contract file exists in `docs/api-contract/` or `data-model/`. Audits implementation conformance to the contract (path / verb / status / shape; table / columns / constraint names / relationships). **Required when contract files cover the touched entity.** |
 | `pattern-reviewer-backend-standard` | On the code gate when the touched paths include backend code. Backend best-practice audit (unvalidated input, unbounded queries, N+1, missing timeouts, 5xx leakage, atomic mutations, `/healthz` shape, `RequestIdMiddleware` order, log redaction, `.env.example` lockstep, locked deps, CORS). Contract-conformance lives in `pattern-reviewer-contract`. |
 | `pattern-reviewer-frontend-standard` | On the code gate when the touched paths include React code. React audit (hook correctness, route registration, TanStack Query guards, mutation invalidation, API via `src/lib/api`, error boundaries, native a11y, Tailwind ↔ tokens). |
 | `pattern-reviewer-typescript` | On the code gate when the touched paths include `.ts` / `.tsx` / `tsconfig.json`. TypeScript audit (strictness flags, `any`, `!`, discriminated unions, biome import order). |
@@ -127,7 +127,7 @@ The pattern skills are loaded at agent kickoff; the **References section above**
 - Code gate, `type:backend` / `type:frontend` → walk the skills in this order, invoking each only when its trigger paths appear in `${touched_paths}`:
   1. `pattern-reviewer-test-coverage` — always.
   2. `pattern-reviewer-coding-standard` — always.
-  3. `pattern-reviewer-contract` — when API route handlers OR ORM models are touched AND a sibling contract file exists under `docs/product-requirement-document/<feature>/api-contract/` or `data-model/`. Walk before the per-tech reviewers so a contract violation is named first.
+  3. `pattern-reviewer-contract` — when API route handlers OR ORM models are touched AND a sibling contract file exists under `docs/api-contract/` or `data-model/`. Walk before the per-tech reviewers so a contract violation is named first.
   4. `pattern-reviewer-backend-standard` — when backend code is touched.
   5. `pattern-reviewer-frontend-standard` — when React code is touched.
   6. `pattern-reviewer-typescript` — when any `.ts` / `.tsx` / `tsconfig.json` is touched.

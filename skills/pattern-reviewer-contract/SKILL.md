@@ -1,31 +1,31 @@
 ---
 name: pattern-reviewer-contract
-description: "Contract-conformance audit. Every implemented API endpoint matches its api contract at `docs/product-requirement-document/<feature>/api-contract/<entity>.md` — path (with trailing-slash spelling), HTTP verb, request body schema, response body schema, status codes per outcome, error envelope shape, Idempotency-Key policy, rate-limit budget + headers. Every implemented ORM model matches its data-model contract at `docs/product-requirement-document/<feature>/data-model/<entity>.md` — table name, columns (name / type / nullability / default), constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships and cardinality. Cites both the implementation `file:line` and the contract `file:line`. Activate when the diff includes API routes or ORM models AND a sibling contract file exists."
+description: "Contract-conformance audit. Every implemented API endpoint matches its api contract at `docs/api-contract/<entity>.yaml` — path (with trailing-slash spelling), HTTP verb, request body schema, response body schema, status codes per outcome, error envelope shape, Idempotency-Key policy, rate-limit budget + headers. Every implemented ORM model matches its data-model contract at `docs/data-model/<entity>.yaml` — table name, columns (name / type / nullability / default), constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships and cardinality. Cites both the implementation `file:line` and the contract `file:line`. Activate when the diff includes API routes or ORM models AND a sibling contract file exists."
 ---
 
 # pattern-reviewer-contract
 
-Contract-conformance audit. The api contract (`docs/product-requirement-document/<feature>/api-contract/<entity>.md`) and data-model contract (`docs/product-requirement-document/<feature>/data-model/<entity>.md`) are the source of truth for endpoint shape and model shape; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are reviewed elsewhere (`pattern-reviewer-backend-standard`, `pattern-reviewer-fastapi`, `pattern-reviewer-database`).
+Contract-conformance audit. The api contract (`docs/api-contract/<entity>.yaml`) and data-model contract (`docs/data-model/<entity>.yaml`) are the source of truth for endpoint shape and model shape; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are reviewed elsewhere (`pattern-reviewer-backend-standard`, `pattern-reviewer-fastapi`, `pattern-reviewer-database`).
 
 ## When to activate
 
 - The dispatched caller is reviewing a `type:backend` task whose touched paths include API route handlers OR ORM model files.
-- The corresponding contract file(s) exist in the worktree under `docs/product-requirement-document/<feature>/api-contract/` and/or `docs/product-requirement-document/<feature>/data-model/`.
+- The corresponding contract file(s) exist in the worktree under `docs/api-contract/` and/or `docs/data-model/`.
 - A user says "review the endpoints against the contract", "did we honor the api spec", "does the model match the data contract".
 
 Do NOT activate when:
 
 - The diff has no API routes and no ORM model changes.
-- The project has no `docs/product-requirement-document/` directory (no contracts to compare against — surface the absence to the user rather than inventing a verdict).
+- The project has no `docs/api-contract/` or `docs/data-model/` directory (no contracts to compare against — surface the absence to the user rather than inventing a verdict).
 
 ## Resolving the contract files
 
-Resolve `<feature>` from the task issue's **milestone** (or, for PR-mode work, from the PR's linked closing issue). For each entity the diff touches:
+The contracts are project-level, not feature-scoped. For each entity the diff touches:
 
-- **API endpoint** at `<router-or-handler>.py` / `<router>.ts` → read `docs/product-requirement-document/<feature>/api-contract/<entity>.md` for the path + verb + body / status / envelope decisions.
-- **ORM model** at `models/<entity>.py` / `prisma/schema.prisma` → read `docs/product-requirement-document/<feature>/data-model/<entity>.md` for the table + columns + constraint decisions.
+- **API endpoint** at `<router-or-handler>.py` / `<router>.ts` → read `docs/api-contract/<entity>.yaml` for the path + verb + body / status / envelope decisions.
+- **ORM model** at `models/<entity>.py` / `prisma/schema.prisma` → read `docs/data-model/<entity>.yaml` for the table + columns + constraint decisions.
 
-If a touched implementation has no sibling contract file, that itself is a finding — the architect owes the contract (`pattern-architect-api-endpoint` or `pattern-architect-data-model`); flag and halt the audit for that entity.
+If a touched implementation has no matching contract file, that itself is a finding — the architect owes the contract (`pattern-architect-api-endpoint` or `pattern-architect-data-model`); flag and halt the audit for that entity.
 
 ## Iron rules
 
@@ -47,7 +47,7 @@ For every endpoint declared in the contract whose handler is in the diff, walk t
 - Path uses the same parameter style and parameter names as the contract (`{order_id}` not `{orderId}` if the contract is snake_case).
 
 ```python
-# Contract (api-contract/orders.md):
+# Contract (docs/api-contract/orders.yaml):
 #   POST /v1/orders            → 201
 #   GET  /v1/orders/{order_id} → 200 | 404
 
@@ -155,7 +155,7 @@ Both the ORM model (`__table_args__ = (UniqueConstraint(..., name="uq_users_emai
 ```markdown
 ### [SEVERITY] <one-line title — no leading `#N`>
 **Implementation:** `path/to/route.py:42`
-**Contract:** `docs/product-requirement-document/<feature>/api-contract/<entity>.md:<line>`
+**Contract:** `docs/api-contract/<entity>.yaml:<line>`
 **Contract clause:** "<quote the exact clause>"
 **Implementation does:** <one or two sentences>
 **Fix:** <align the implementation to the contract — quote what should change>

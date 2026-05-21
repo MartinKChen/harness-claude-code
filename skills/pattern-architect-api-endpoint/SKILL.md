@@ -1,6 +1,6 @@
 ---
 name: pattern-architect-api-endpoint
-description: "Resource-oriented REST design — the single authority for API endpoint shape decisions (paths, verbs, request / response body, status codes, error envelope, pagination, sorting, filtering, versioning, idempotency policy, rate-limit policy, trailing-slash spelling). Activate when designing, adding, or refactoring an HTTP endpoint, controller, or handler. Every decision lands in the api contract at `docs/product-requirement-document/<feature>/api-contract/<entity>.md` and downstream engineer / reviewer skills follow the contract verbatim — they do NOT redecide what this skill owns."
+description: "Resource-oriented REST design — the single authority for API endpoint shape decisions (paths, verbs, request / response body, status codes, error envelope, pagination, sorting, filtering, versioning, idempotency policy, rate-limit policy, trailing-slash spelling). Activate when designing, adding, or refactoring an HTTP endpoint, controller, or handler. Every decision lands in the api contract at `docs/api-contract/<entity>.yaml` and downstream engineer / reviewer skills follow the contract verbatim — they do NOT redecide what this skill owns."
 ---
 
 # pattern-architect-api-endpoint
@@ -168,7 +168,7 @@ Every public endpoint is rate-limited. Defaults live at the gateway/middleware l
 
 ## Recording the decision in the api contract
 
-Every decision this skill produces lands in **`docs/product-requirement-document/<feature>/api-contract/<entity>.md`** — one file per API resource. The contract is the single source of truth that engineers implement against and reviewers verify; do NOT decide endpoint shape in code, in commit messages, or in PR descriptions.
+Every decision this skill produces lands in **`docs/api-contract/<entity>.yaml`** — one file per API resource. The contract is the single source of truth that engineers implement against and reviewers verify; do NOT decide endpoint shape in code, in commit messages, or in PR descriptions.
 
 What the contract file declares, per endpoint:
 
@@ -185,7 +185,7 @@ What the contract file declares, per endpoint:
 
 Cross-references:
 
-- Data model decisions (table names, column types, constraints, indexes) live in the **sibling** `docs/product-requirement-document/<feature>/data-model/<entity>.md` written by `pattern-architect-data-model`.
+- Data model decisions (table names, column types, constraints, indexes) live in the **sibling** `docs/data-model/<entity>.yaml` written by `pattern-architect-data-model`.
 - Project-wide axes that span every endpoint (error-envelope spelling, rate-limit defaults, idempotency-key TTL) live in the relevant **ADR** under `docs/ADRs/`; this contract inherits them rather than redefining.
 
 If the contract is missing for an endpoint the engineer is about to touch, this skill — not the engineer — owns adding it. The engineer halts and surfaces "no api contract for `<endpoint>`" rather than guessing.
