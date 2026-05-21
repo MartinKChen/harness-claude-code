@@ -5,15 +5,11 @@ description: "Migration audit: code-first (models drive migration, not the rever
 
 # pattern-reviewer-database
 
-Alembic migration audit catalogue. Engineer-side bullets live in `pattern-engineer-database`. Schema/naming design lives in `pattern-architect-data-model`.
-
 ## When to activate
 
 - Reviewing a diff that touches `alembic/versions/*.py`, ORM models with new tables / columns / constraints, `compose.yaml` `migrate` service, or `pytest-alembic` test files.
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 

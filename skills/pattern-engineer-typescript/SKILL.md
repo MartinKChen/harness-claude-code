@@ -5,8 +5,6 @@ description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exact
 
 # pattern-engineer-typescript
 
-TypeScript-specific bullets layered on top of `pattern-engineer-coding-standard`. Detailed audit criteria live in `pattern-reviewer-typescript`.
-
 ## When to activate
 
 Activate when editing any `.ts` / `.tsx` file, `tsconfig.json`, type-only declarations, generics, or TypeScript-specific tooling (tsc, biome's TS rules). Applies to both frontend and Node/TS backend code. Skip for `.js` / `.jsx` files in JS-only projects.

@@ -5,8 +5,6 @@ description: "Ship migrations safely. Models are the source of truth; generate w
 
 # pattern-engineer-database
 
-Engineer-side bullet reminders for Alembic migrations. Detailed audit criteria + assertion shapes live in `pattern-reviewer-database`. Schema/naming design lives in `pattern-architect-data-model`.
-
 ## When to activate
 
 Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), or adding the `migrate` service to `compose.yaml`. Skip for schema/naming design (use `pattern-architect-data-model`).
@@ -63,13 +61,3 @@ Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`)
 | Asset | Purpose |
 |-------|---------|
 | `templates/compose-migrate.yaml` | The `migrate` service + `depends_on` edits for `backend`. Copy verbatim and resolve `${PRODUCT}` / `<DB_NAME>` / `<DB_USER>` to the worktree's values. |
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-architect-data-model` | Schema + naming design (decides what the migration creates). |
-| `pattern-engineer-python` | Always — Python practices apply to the revision file. |
-| `pattern-engineer-container` | When adding the `migrate` service to compose. |
-| `pattern-engineer-backend-standard` | When wiring the backend's entrypoint around the `migrate` service. |
-| `pattern-reviewer-database` | Detailed audit criteria + assertion shapes (reviewer lens). |

@@ -5,16 +5,12 @@ description: "React-specific code-quality audit for a frontend diff: component d
 
 # pattern-reviewer-frontend-standard
 
-React audit catalogue. Engineer-side bullets live in `pattern-engineer-frontend-standard`. TypeScript-specific audit lives in `pattern-reviewer-typescript`; Vite specifics in `pattern-reviewer-vite`.
-
 ## When to activate
 
 - The dispatched caller is reviewing a `type:frontend` task's production-code diff (React).
 - A user says "review the React components / hooks / forms / routing".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules. All findings in this skill follow that shape.
 
 ## Patterns to review
 

@@ -5,8 +5,6 @@ description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SE
 
 # pattern-engineer-vite
 
-Vite-specific bullets layered on top of `pattern-engineer-frontend-standard` and `pattern-engineer-typescript`. Detailed audit criteria live in `pattern-reviewer-vite`.
-
 ## When to activate
 
 Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, scaffolding a Vite-based React app, switching between Vite and Next.js, configuring dev-server proxy / plugins / aliases, or touching `import.meta.env`. Skip for Next.js apps (use Next-specific patterns instead) or non-frontend code.
@@ -63,13 +61,3 @@ Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, s
 - `npm run build` produces hashed assets in `dist/`.
 - The container image's `final` stage copies `dist/` into nginx (see `pattern-engineer-container`).
 - `vite preview` is for sanity-checking the built bundle locally; never serve `preview` in production.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-frontend-standard` | Always — React patterns apply. |
-| `pattern-engineer-typescript` | Always — TS strictness applies. |
-| `pattern-engineer-coding-standard` | Always — language-agnostic standards. |
-| `pattern-engineer-container` | When packaging the built `dist/` into an image. |
-| `pattern-reviewer-vite` | Detailed audit criteria (reviewer lens). |

@@ -5,8 +5,6 @@ description: "React frontend bullets: composition-first components, custom hooks
 
 # pattern-engineer-frontend-standard
 
-Engineer-side React bullets. Detailed audit criteria + trap stories live in `pattern-reviewer-frontend-standard`. TypeScript specifics live in `pattern-engineer-typescript`; Vite specifics in `pattern-engineer-vite`.
-
 ## When to activate
 
 Activate when writing or editing React components, hooks, pages, routes, layouts, forms, modals, lists, tables, or navigation in any React-based app (Next.js or Vite). Skip for pure backend code or non-React frontends.
@@ -128,14 +126,3 @@ Activate when writing or editing React components, hooks, pages, routes, layouts
 - No hard-coded color values; no hard-coded pixel sizes (`[420px]`, `[#3b82f6]`); no ad-hoc inline `style={{ color, padding }}` for visual properties.
 - Need a value the scale doesn't have? Extend the token in `tailwind.config` (mirrored in `tokens.md`) — don't reach for arbitrary `[...]` classes.
 - Dynamic values that genuinely can't be tokens (e.g. chart bar's computed height) go through `style={{ height: \`${pct}%\` }}` — the exception, not a pattern.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-coding-standard` | Always. |
-| `pattern-engineer-typescript` | Always (every component is a `.tsx`). |
-| `pattern-engineer-vite` | When the app is Vite-based. |
-| `pattern-engineer-backend-standard` | When wiring a new endpoint the frontend will call. |
-| `pattern-engineer-observability` | When emitting frontend spans / metrics / logs. |
-| `pattern-reviewer-frontend-standard` | Detailed audit criteria + trap stories (reviewer lens). |

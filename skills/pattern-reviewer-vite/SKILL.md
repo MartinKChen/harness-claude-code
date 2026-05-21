@@ -5,16 +5,12 @@ description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO — p
 
 # pattern-reviewer-vite
 
-Vite-specific audit catalogue. Engineer-side bullets live in `pattern-engineer-vite`. React patterns live in `pattern-reviewer-frontend-standard`; TypeScript in `pattern-reviewer-typescript`.
-
 ## When to activate
 
 - Reviewing a diff that touches `vite.config.*`, `vitest.config.*`, `import.meta.env` reads, or Vite-served static assets.
 - A user says "review the Vite config / dev-server proxy / bundle setup".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 

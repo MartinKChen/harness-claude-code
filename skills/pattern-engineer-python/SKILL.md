@@ -5,8 +5,6 @@ description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char l
 
 # pattern-engineer-python
 
-Engineer-side bullet reminders for Python implementation. Detailed audit criteria + bandit-specific failure modes live in `pattern-reviewer-python`. FastAPI-specific bullets live in `pattern-engineer-fastapi`; Alembic migrations live in `pattern-engineer-database`.
-
 ## When to activate
 
 Activate when writing or editing any `.py` file, scaffolding a Python service, modifying `pyproject.toml`, working with FastAPI / Flask / Django / SQLAlchemy / Pydantic / pytest, or running `mypy` / `ruff` / `bandit` / `pytest` / `uv`. Skip for non-Python code.
@@ -121,14 +119,3 @@ uv run ruff check --fix .  # Auto-fix lint (includes import sorting)
 | Asset | Purpose |
 |-------|---------|
 | `templates/backend-layout.md` | Canonical `src/`-layout backend tree — package under `src/<package>/{api,models,utils}/`, tests mirrored under `tests/{database,unit,integration}/`, single `pyproject.toml` with tool configs. |
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-coding-standard` | Always. |
-| `pattern-engineer-fastapi` | When the framework is FastAPI. |
-| `pattern-engineer-backend-standard` | Always (server-side patterns). |
-| `pattern-engineer-database` | When writing migrations / ORM models. |
-| `pattern-engineer-observability` | When wiring OTel into a Python service. |
-| `pattern-reviewer-python` | Detailed audit criteria + bandit findings (reviewer lens). |

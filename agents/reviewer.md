@@ -48,7 +48,7 @@ A `type:e2e` task dispatched on the security gate is a routing bug — the secur
 | `workflow-reviewer-review` | Every dispatch. The skill owns the full single-`(task, gate)` review pipeline. | Yes (every dispatch) |
 | `pattern-reviewer-test-coverage` | Code gate, every `type:*`. | Yes (code gate, every type) |
 | `pattern-reviewer-coding-standard` | Code gate, `type:backend` / `type:frontend`. Language-agnostic code-quality patterns. | Yes (code gate, non-e2e) |
-| `pattern-reviewer-backend-standard` | Code gate, when touched paths include backend code (validation, rate limits, queries, error envelope, idempotency, `/health`, log redaction, `.env.example` lockstep). | Yes when triggered |
+| `pattern-reviewer-backend-standard` | Code gate, when touched paths include backend code (validation, rate limits, queries, error envelope, idempotency, `/healthz`, log redaction, `.env.example` lockstep). | Yes when triggered |
 | `pattern-reviewer-frontend-standard` | Code gate, when touched paths include React code (hooks, route registration, query guards, mutation invalidation, error boundaries, a11y, Tailwind tokens). | Yes when triggered |
 | `pattern-reviewer-typescript` | Code gate, when touched paths include `.ts` / `.tsx` / `tsconfig.json` (strictness flags, `any`, `!`, discriminated unions, biome import order). | Yes when triggered |
 | `pattern-reviewer-python` | Code gate, when touched paths include `.py` (bandit-banned APIs, type annotations, EAFP, modern hints, `Protocol`, dataclass DTOs, context managers). | Yes when triggered |

@@ -1,15 +1,13 @@
 ---
 name: pattern-engineer-backend-standard
-description: "Language-agnostic backend bullets: REST shape, schema-validated input at the boundary, authorize-before-act + ownership check, structured error envelope, Idempotency-Key on POST, atomic mutations on balance/quota/token, per-route rate limits, CSRF on cookie-auth state changes, generic 5xx + correlation id, structured logs, fast `/health` + with-dep `/ready`, graceful SIGTERM, migrations as compose service, `.env.example` lockstep, locked deps. Activate when implementing backend code."
+description: "Language-agnostic backend bullets: REST shape, schema-validated input at the boundary, authorize-before-act + ownership check, structured error envelope, Idempotency-Key on POST, atomic mutations on balance/quota/token, per-route rate limits, CSRF on cookie-auth state changes, generic 5xx + correlation id, structured logs, fast `/healthz` + with-dep `/readyz`, graceful SIGTERM, migrations as compose service, `.env.example` lockstep, locked deps. Activate when implementing backend code."
 ---
 
 # pattern-engineer-backend-standard
 
-Engineer-side bullet reminders for every backend implementation task. Detailed audit criteria live in `pattern-reviewer-backend-standard`; route to the framework-specific skill (`pattern-engineer-fastapi`, etc.) for syntax and idioms.
-
 ## When to activate
 
-Activate whenever you write or edit backend code: HTTP routes/handlers, service modules, middleware, database queries, background workers, queue consumers, auth flows, webhook receivers, container entrypoints, env-var loading, logging bootstrap. Skip for pure database schema design (use `pattern-architect-data-model` / `pattern-engineer-database`) or frontend code.
+Activate whenever you write or edit backend code: HTTP routes/handlers, service modules, middleware, database queries, background workers, queue consumers, auth flows, webhook receivers, container entrypoints, env-var loading, logging bootstrap.
 
 ## Patterns
 
@@ -17,7 +15,7 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 - Resource-oriented paths (`/users/{id}/orders`, not `/getUsersOrders`).
 - HTTP verbs map to intent: `GET` read, `POST` create, `PUT` replace, `PATCH` partial update, `DELETE` remove.
-- Status codes match contract: 200/201/202/204 success; 400 client error; 401 unauth; 403 forbidden; 404 not found; 409 conflict; 422 unprocessable; 429 rate-limited; 5xx server. Match the `api-contract/<entity>.md` doc when it disagrees with intuition.
+- Status codes match contract: 200/201/202/204 success; 400 client error; 401 unauth; 403 forbidden; 404 not found; 409 conflict; 422 unprocessable; 429 rate-limited; 5xx server. Match the `api-contract/<entity>.yaml` doc when it disagrees with intuition.
 - Trailing-slash spelling matches the contract — don't rely on framework redirects.
 - Define paths once as named constants shared by route + tests.
 
@@ -62,7 +60,7 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 ### Logging + errors
 
-- One structured logger per service. Bridge into OTel logs (see `pattern-engineer-observability`).
+- One structured logger per service.
 - Log identifiers (user_id, request_id), never secrets (passwords, tokens, full PANs, CVVs, session ids, raw user-supplied emails on failure paths).
 - Log a sensitive value at exactly one layer — never the same value at service AND router.
 - Redaction allow-list key names match the keys the code emits **exactly** (case-sensitive).
@@ -70,14 +68,13 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 ### Health endpoints
 
-- `/health`: 200 on normal boot; no auth; no DB or external-dep call; <100ms.
-- `/ready` (separate path) may check DB and dependencies; used by readiness probes.
+- `/healthz`: 200 on normal boot; no auth; no DB or external-dep call; <100ms.
+- `/readyz` (separate path) may check DB and dependencies; used by readiness probes.
 
 ### Migrations
 
 - Models are the source of truth; generate migrations from the model, never hand-write DDL first.
 - Migrations run in a dedicated `migrate` compose service before the backend starts — not inside the backend image's entrypoint.
-- See `pattern-engineer-database` for Alembic specifics + `pytest-alembic` round-trip.
 
 ### Deployment + ops
 
@@ -96,15 +93,3 @@ Activate whenever you write or edit backend code: HTTP routes/handlers, service 
 
 - Webhook receivers verify HMAC signature **before** parsing the body; constant-time compare; dedupe by event-id or timestamp window.
 - OAuth callbacks validate `state`; public clients use PKCE.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every line. |
-| `pattern-engineer-security` | Always — security non-negotiables. |
-| `pattern-engineer-observability` | When touching logs / spans / metrics / `OTEL_*`. |
-| `pattern-engineer-database` | When writing migrations or ORM models. |
-| `pattern-engineer-fastapi` | When the framework is FastAPI (Python-specific bullets). |
-| `pattern-architect-api-endpoint` | Design-side — read for path/verb/shape decisions before implementing. |
-| `pattern-reviewer-backend-standard` | Detailed audit criteria + traps + examples (reviewer lens). |

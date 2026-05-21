@@ -5,8 +5,6 @@ description: "FastAPI bullets: `APIRouter` with explicit prefix; `Depends()` for
 
 # pattern-engineer-fastapi
 
-FastAPI-specific bullets layered on top of `pattern-engineer-python` and `pattern-engineer-backend-standard`. Detailed audit criteria live in `pattern-reviewer-fastapi`.
-
 ## When to activate
 
 Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / …), `APIRouter` mounts, `Depends()` graphs, Pydantic request/response models, middleware (`app.add_middleware(...)`), exception handlers (`@app.exception_handler(...)`), `create_app()` / `main.py` wiring, OpenAPI customization, or `Depends`-based dependency injection. Skip for non-FastAPI Python code (use `pattern-engineer-python` only).
@@ -59,20 +57,10 @@ Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / �
 
 - Tag every route (`tags=["users"]`) so the auto-generated docs group correctly.
 - `summary=` and `description=` on routes that aren't self-evident; the auto-generated names are usually fine.
-- Hide internal routes from the docs: `include_in_schema=False` on `/health`, debug endpoints.
+- Hide internal routes from the docs: `include_in_schema=False` on `/healthz`, debug endpoints.
 
 ### Testing FastAPI
 
 - Test via `TestClient(app)` (synchronous) for unit/integration; `httpx.AsyncClient(app=app, base_url=...)` for async-needs.
 - Override `Depends` via `app.dependency_overrides[real_dep] = fake_dep` — never monkeypatch the module.
 - Build the app per-test via a factory (`create_app(settings=fake_settings)`); never share a singleton across tests.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-python` | Always — pure Python practices apply. |
-| `pattern-engineer-backend-standard` | Always — REST / validation / error envelope / health / idempotency. |
-| `pattern-engineer-database` | When the route touches the DB or ships a migration. |
-| `pattern-engineer-observability` | When wiring OTel into the FastAPI app lifespan. |
-| `pattern-reviewer-fastapi` | Detailed audit criteria + traps + examples (reviewer lens). |

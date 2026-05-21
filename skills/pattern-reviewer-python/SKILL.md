@@ -5,16 +5,12 @@ description: "Python audit: bandit-banned APIs (B310 urlopen, B602 shell=True, B
 
 # pattern-reviewer-python
 
-Python-specific audit catalogue. Engineer-side bullets live in `pattern-engineer-python`. FastAPI specifics live in `pattern-reviewer-fastapi`. Migrations live in `pattern-reviewer-database`.
-
 ## When to activate
 
 - Reviewing a diff that includes `.py` files.
 - A user says "review the Python code / type hints / bandit findings".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 

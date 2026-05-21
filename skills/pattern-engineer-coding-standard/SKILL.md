@@ -5,8 +5,6 @@ description: "Language-agnostic coding standards. Priority: Readability → KISS
 
 # pattern-engineer-coding-standard
 
-Engineer-side bullet reminders for every implementation task, in every language. Detailed audit criteria + BAD/GOOD examples live in `pattern-reviewer-coding-standard`.
-
 ## When to activate
 
 Activate when writing, editing, refactoring, or reviewing any source file or test in any language. Skip for pure formatting, comment-only edits, or conceptual questions.
@@ -67,13 +65,3 @@ Apply in this order when principles conflict: **Readability → KISS → DRY →
 - Magic numbers / strings → named constants whose name explains the meaning.
 - `console.log` / `print` left behind → remove before commit.
 - Dead code (commented-out, unused imports, unreachable branches) → delete.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-backend-standard` | When writing server code. |
-| `pattern-engineer-frontend-standard` | When writing React components / hooks. |
-| `pattern-engineer-typescript` | When writing TypeScript. |
-| `pattern-engineer-python` | When writing Python. |
-| `pattern-reviewer-coding-standard` | Detailed audit criteria + BAD/GOOD examples (reviewer lens). |

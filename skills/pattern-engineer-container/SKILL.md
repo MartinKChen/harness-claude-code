@@ -1,11 +1,9 @@
 ---
 name: pattern-engineer-container
-description: "Containerized setups: every Dockerfile is multi-stage (`base`/`build`/`final`), pinned (no `:latest`) and vetted via `docker scout`, non-root with writable paths redirected, no in-image virtualenvs, `.dockerignore` required. Backends `alembic upgrade head` in entrypoint before exec'ing the server; expose fast `/health`. Frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback. Secrets are runtime env vars. Activate on Dockerfile, compose, `.dockerignore`."
+description: "Containerized setups: every Dockerfile is multi-stage (`base`/`build`/`final`), pinned (no `:latest`) and vetted via `docker scout`, non-root with writable paths redirected, no in-image virtualenvs, `.dockerignore` required. Backends `alembic upgrade head` in entrypoint before exec'ing the server; expose fast `/healthz`. Frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback. Secrets are runtime env vars. Activate on Dockerfile, compose, `.dockerignore`."
 ---
 
 # pattern-engineer-container
-
-Engineer-side bullet reminders for container work. Detailed audit criteria + trap stories live in `pattern-reviewer-container`. Drop-in starting files live in `templates/`.
 
 ## When to activate
 
@@ -30,15 +28,15 @@ Activate when editing `Dockerfile`, `docker-compose.yaml` / `.yml`, `compose.yam
 - Copy the migration CLI into the final stage explicitly (or copy from build stage); `alembic` in the build stage is not enough.
 - Use `exec` on the server line so PID 1 is the server (not the shell) and SIGTERM forwards correctly.
 
-### `/health` endpoint
+### `/healthz` endpoint
 
-- Every backend exposes HTTP `/health`: 200 on normal boot, no auth, no DB / external-dep call, <100ms.
-- Separate `/ready` path (different URL) for readiness checks that DO touch the DB.
+- Every backend exposes HTTP `/healthz`: 200 on normal boot, no auth, no DB / external-dep call, <100ms.
+- Separate `/readyz` path (different URL) for readiness checks that DO touch the DB.
 
 ### Frontend nginx
 
 - **API `location` blocks go ABOVE the SPA `try_files` fallback.** Putting `try_files $uri $uri/ /index.html` at the top catches `/api/...` too and returns `index.html` as the response body.
-- Order: `/health` → API prefixes (each with its own `location`) → root `location /` with `try_files`.
+- Order: `/healthz` → API prefixes (each with its own `location`) → root `location /` with `try_files`.
 - `try_files $uri $uri/ /index.html` is mandatory for any SPA — without `$uri/`, directory-path requests 404.
 - Pre-push hook's `container:smoke-api-proxy` probe catches misconfig by `Content-Type` (`text/html` on an API probe = SPA catch-all intercepted).
 
@@ -80,13 +78,3 @@ Prefer `docker compose` (V2 plugin) over the legacy `docker-compose` binary.
 | `templates/Dockerfile` | Three-stage Node Dockerfile (base + build + final), pinned `node:20.11.1-alpine`, non-root `app` user, `tini` as PID 1. |
 | `templates/docker-compose.yaml` | `app` + `db` (Postgres `16.3-alpine`) services with healthcheck, named `db_data` volume, host-bound `127.0.0.1:3000` mapping. |
 | `templates/.dockerignore` | Excludes `.git`, `node_modules`, `.env*`, build outputs, IDE folders, and `Dockerfile*` / `docker-compose*` from the build context. |
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-engineer-coding-standard` | Always. |
-| `pattern-engineer-database` | When the migration story touches the `migrate` compose service. |
-| `pattern-engineer-backend-standard` | When wiring `/health`, env-var loading, graceful shutdown. |
-| `pattern-engineer-security` | For CVE / secrets handling on the image. |
-| `pattern-reviewer-container` | Detailed audit criteria + trap stories (reviewer lens). |

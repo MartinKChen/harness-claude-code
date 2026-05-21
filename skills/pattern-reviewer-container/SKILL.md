@@ -1,11 +1,9 @@
 ---
 name: pattern-reviewer-container
-description: "Docker / compose audit: Dockerfile is multi-stage (`base`/`build`/`final`); tags pinned (no `:latest`) and `docker scout` shows zero MEDIUM+ CVEs with available fixes; non-root user with every writable path redirected (PID, cache, nginx `*_temp_path`); `.dockerignore` excludes secrets / build outputs / IDE folders; backend entrypoint runs `alembic upgrade head` before exec'ing the server; `/health` endpoint exists and is no-dep; frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback; no secrets baked into the image."
+description: "Docker / compose audit: Dockerfile is multi-stage (`base`/`build`/`final`); tags pinned (no `:latest`) and `docker scout` shows zero MEDIUM+ CVEs with available fixes; non-root user with every writable path redirected (PID, cache, nginx `*_temp_path`); `.dockerignore` excludes secrets / build outputs / IDE folders; backend entrypoint runs `alembic upgrade head` before exec'ing the server; `/healthz` endpoint exists and is no-dep; frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback; no secrets baked into the image."
 ---
 
 # pattern-reviewer-container
-
-Docker / compose audit catalogue. Engineer-side bullets live in `pattern-engineer-container`. Drop-in starting files live in `templates/`.
 
 ## When to activate
 
@@ -13,8 +11,6 @@ Docker / compose audit catalogue. Engineer-side bullets live in `pattern-enginee
 - A user says "review the Docker setup / image build / compose wiring".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 
@@ -62,12 +58,12 @@ See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, an
 - Migration CLI (`alembic`) missing from `final` stage even though entrypoint calls it (`command not found: alembic`) → flag; copy the CLI from the build stage or install it in `final`.
 - Missing `exec` on the server line in the entrypoint (`uvicorn ...` instead of `exec uvicorn ...`) → MEDIUM (SIGTERM doesn't forward to the server).
 
-### `/health` endpoint (HIGH)
+### `/healthz` endpoint (HIGH)
 
-- Backend exposes no `/health` route → flag; the pre-push hook's `container:smoke-health` probe can't pass.
-- `/health` requires auth → flag.
-- `/health` touches the DB or an external API → flag; move that to `/ready`.
-- `/health` takes >100ms → flag.
+- Backend exposes no `/healthz` route → flag; the pre-push hook's `container:smoke-health` probe can't pass.
+- `/healthz` requires auth → flag.
+- `/healthz` touches the DB or an external API → flag; move that to `/readyz`.
+- `/healthz` takes >100ms → flag.
 
 ### Frontend nginx ordering (HIGH)
 

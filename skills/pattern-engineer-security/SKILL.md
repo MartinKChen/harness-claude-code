@@ -10,7 +10,6 @@ Security guardrails for production-code authoring. This skill is a quiet referen
 ## When to activate
 
 - Writing or editing any production code that touches secrets, user input, queries, auth / sessions, output rendering, CSRF, rate limits, logging, errors, dependencies, outbound HTTP, webhooks, CORS, file uploads, or balance / quota / token mutations.
-- Loaded transitively by every engineer workflow (`workflow-engineer-implement-task`, `workflow-engineer-fix-task`, `workflow-engineer-fix-pr`, `workflow-orchestrator-prepare-slice-pr`) at the start of every dispatch.
 - Do NOT activate for purely cosmetic changes (formatting, renaming an internal-only variable, comment edits) or conceptual questions that don't touch code.
 
 ## Always do (no exceptions)

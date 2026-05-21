@@ -5,16 +5,12 @@ description: "FastAPI audit: `APIRouter` prefix discipline, `Depends()` injectio
 
 # pattern-reviewer-fastapi
 
-FastAPI-specific audit catalogue. Engineer-side bullets live in `pattern-engineer-fastapi`. General Python audit lives in `pattern-reviewer-python`; backend-agnostic audit in `pattern-reviewer-backend-standard`.
-
 ## When to activate
 
 - Reviewing a diff that includes FastAPI routes, dependencies, middleware, exception handlers, or `create_app()` / `main.py`.
 - A user says "review the FastAPI wiring / dependencies / middleware order".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 

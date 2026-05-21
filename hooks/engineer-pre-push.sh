@@ -39,7 +39,7 @@
 #   frontend:  biome check . / tsc --noEmit / npm audit / jest
 #   container-smoke: presence ≠ correctness. `docker compose up -d --build`
 #              the worktree's stack with a slug-tagged image + slug-named
-#              project, poll `/health` (and the SPA root, and a sample
+#              project, poll `/healthz` (and the SPA root, and a sample
 #              `/api/...` route if declared) for 200s, then
 #              `docker compose down -v` on EXIT. Catches nginx misconfig
 #              (try_files, proxy_pass), missing /health, alembic-not-run,

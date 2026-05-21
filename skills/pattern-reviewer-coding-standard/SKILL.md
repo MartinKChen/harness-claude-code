@@ -5,8 +5,6 @@ description: "Language-agnostic code-quality review patterns: code-quality bars 
 
 # pattern-reviewer-coding-standard
 
-Language-agnostic code-quality audit catalogue for a scoped diff. Tech-specific audit (React, Node/backend, Python, TypeScript, FastAPI, Vite, container, database, observability) lives in the per-tech `pattern-reviewer-*` skills. Security lives in `pattern-reviewer-security`. Test coverage lives in `pattern-reviewer-test-coverage`.
-
 ## When to activate
 
 - The dispatched caller is reviewing a `type:backend` / `type:frontend` task's production-code diff.
@@ -122,19 +120,3 @@ Cost-awareness:
 - LOW findings can collapse the BAD/GOOD block when a one-line `**Fix:**` suffices.
 
 Hand the collected findings back to the dispatching `reviewer` agent — it owns comment composition, severity counts, verdict, scope note, posting.
-
-## Related skills
-
-| Skill | Purpose |
-|-------|---------|
-| `pattern-reviewer-frontend-standard` | React-specific audit (HIGH). |
-| `pattern-reviewer-backend-standard` | Node/Backend-agnostic audit (HIGH). |
-| `pattern-reviewer-typescript` | TypeScript-specific audit. |
-| `pattern-reviewer-python` | Python-specific audit. |
-| `pattern-reviewer-fastapi` | FastAPI-specific audit. |
-| `pattern-reviewer-vite` | Vite-specific audit. |
-| `pattern-reviewer-container` | Docker / compose audit. |
-| `pattern-reviewer-database` | Migration audit. |
-| `pattern-reviewer-observability` | OTel instrumentation audit. |
-| `pattern-reviewer-security` | Detailed security catalogue. |
-| `pattern-reviewer-test-coverage` | Test-coverage audit. |

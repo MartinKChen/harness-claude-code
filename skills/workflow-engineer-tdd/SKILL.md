@@ -30,7 +30,7 @@ Pattern skills are not loaded as files under this one — route to them as sibli
 | Skill | When to route to it |
 |-------|---------------------|
 | `pattern-engineer-coding-standard` | Always. Naming, KISS/DRY/YAGNI, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests apply to every GREEN and REFACTOR step. |
-| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/health`, log redaction, `.env.example` lockstep. |
+| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/healthz`, log redaction, `.env.example` lockstep. |
 | `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
 | `pattern-engineer-typescript` | When the task touches any `.ts` / `.tsx` / `tsconfig.json` — strictness flags, no `any`, discriminated unions, biome import order. |
 | `pattern-engineer-python` | When the task implements Python code — `.py` files, SQLAlchemy models, pytest tests. |

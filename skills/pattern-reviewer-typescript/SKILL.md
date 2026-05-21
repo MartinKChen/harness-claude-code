@@ -5,8 +5,6 @@ description: "TypeScript audit: `tsconfig.json` strictness (`strict`, `noUncheck
 
 # pattern-reviewer-typescript
 
-TypeScript-specific audit catalogue. Engineer-side bullets live in `pattern-engineer-typescript`. General code quality lives in `pattern-reviewer-coding-standard`.
-
 ## When to activate
 
 - Reviewing a diff that includes `.ts` / `.tsx` / `tsconfig.json` files.

@@ -28,7 +28,7 @@ Do NOT activate when:
 | `workflow-engineer-tdd` | To drive the entire implementation loop (acceptance → red/green/refactor → wiring). **Required.** |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code; re-open whenever the change touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. **Required (always).** |
 | `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
-| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/health`, log redaction. |
+| `pattern-engineer-backend-standard` | When the task touches backend service code — REST shape, validation, error envelope, idempotency, atomic mutations, `/healthz`, log redaction. |
 | `pattern-engineer-frontend-standard` | When the task implements React frontend code — components, hooks, pages, forms, route registration. |
 | `pattern-engineer-typescript` | When the task touches `.ts` / `.tsx` / `tsconfig.json`. |
 | `pattern-engineer-python` | When the task implements Python code — `.py` files, models, pytest tests. |

@@ -1,11 +1,9 @@
 ---
 name: pattern-reviewer-backend-standard
-description: "Language-agnostic backend audit: unvalidated input at the boundary, missing rate limiting, unbounded queries (`SELECT *` / no `LIMIT`), N+1 queries, missing timeouts on outbound HTTP, error-message leakage, missing CORS, error-envelope conformance, idempotency-key wiring on POST, atomic mutations, `/health` shape (no DB), `RequestIDMiddleware` registration order, log redaction, `.env.example` ↔ code lockstep, locked lock files. Each finding cites `file:line` with BAD/GOOD snippets. Activate on backend diffs."
+description: "Language-agnostic backend audit: unvalidated input at the boundary, missing rate limiting, unbounded queries (`SELECT *` / no `LIMIT`), N+1 queries, missing timeouts on outbound HTTP, error-message leakage, missing CORS, error-envelope conformance, idempotency-key wiring on POST, atomic mutations, `/healthz` shape (no DB), `RequestIDMiddleware` registration order, log redaction, `.env.example` ↔ code lockstep, locked lock files. Each finding cites `file:line` with BAD/GOOD snippets. Activate on backend diffs."
 ---
 
 # pattern-reviewer-backend-standard
-
-Language-agnostic backend audit catalogue. Framework-specific audit lives in `pattern-reviewer-fastapi` (or per-framework skills). Engineer-side bullets live in `pattern-engineer-backend-standard`.
 
 ## When to activate
 
@@ -13,8 +11,6 @@ Language-agnostic backend audit catalogue. Framework-specific audit lives in `pa
 - A user says "review the API routes / queries / auth flow / error handling".
 
 ## Iron rules
-
-See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 
@@ -136,10 +132,10 @@ def withdraw(user_id: int, amount: int) -> None:
             raise InsufficientFunds()
 ```
 
-### `/health` shape (HIGH)
+### `/healthz` shape (HIGH)
 
-- `/health`: 200 on normal boot, no auth, no DB / external-dep call, <100ms.
-- Touching DB inside `/health` → flag; move to `/ready`.
+- `/healthz`: 200 on normal boot, no auth, no DB / external-dep call, <100ms.
+- Touching DB inside `/healthz` → flag; move to `/readyz`.
 
 ### Request-id middleware order (MEDIUM)
 
