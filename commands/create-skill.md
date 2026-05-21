@@ -1,11 +1,13 @@
 ---
-description: Author a Claude Code skill under .claude/skills/<name>/SKILL.md. Walks through naming, summary, trigger phrases, and which optional sections apply, then writes SKILL.md.
+description: Author a Claude Code skill under <skill-name>/SKILL.md. Walks through naming, summary, trigger phrases, and which optional sections apply (workflow, pattern, templates, scripts), then writes SKILL.md and any sibling files under <skill-name>/templates and <skill-name>/scripts.
 argument-hint: [optional: skill name or short description]
 ---
 
 # create-skill
 
-Author a Claude Code skill as a markdown file under `.claude/skills/<skill-name>/SKILL.md`. Each skill has YAML frontmatter (`name`, `description`) and a body composed of a fixed core (summary + when to activate) plus opt-in sections (sub-skill routing, workflow, pattern, template, command) included only when they apply.
+Author a Claude Code skill as a directory containing `SKILL.md` plus optional `templates/` and `scripts/` subdirectories. Each skill has YAML frontmatter (`name`, `description`) and a body composed of a fixed core (summary + when to activate) plus opt-in sections (workflow, pattern, templates pointer, scripts pointer) included only when they apply.
+
+Skills no longer chain into other skills — do not generate a "sub-skill routing" section. Each skill stands on its own; the invoking agent decides which skills to load.
 
 ## Initial input
 
@@ -13,32 +15,33 @@ The user may have provided a seed (a name or a short description of the skill) i
 
 ## Required information
 
-Before writing the file, collect these. If the user already supplied a value (in `$ARGUMENTS` or the conversation), do not re-ask. Otherwise consolidate gaps into one AskUserQuestion call:
+Before writing the files, collect these. If the user already supplied a value (in `$ARGUMENTS` or the conversation), do not re-ask. Otherwise consolidate gaps into one AskUserQuestion call:
 
-1. **Skill name** — kebab-case, becomes the directory name (`.claude/skills/<name>/`) and the `name:` frontmatter field.
+1. **Skill name** — kebab-case. Becomes the directory name (`<skill-name>/`) and the `name:` frontmatter field.
 2. **Summary** — 1–3 sentences: what the skill does and what problem it solves. Becomes the opening paragraph of the body.
-3. **Activation triggers** — verbs, nouns, file types, or phrases that should make the dispatcher reach for this skill. Folded into the `description:` field for auto-invoke and listed under `## When to activate`.
+3. **Activation triggers** — verbs, nouns, file types, or phrases that should make the dispatcher reach for this skill. Folded into the `description:` field for auto-invoke and listed under `## When to activate`. The `description:` value MUST stay **under 500 characters** total — pack triggers densely; pick verbs over adjectives; trim prose before you trim trigger words.
 4. **Which optional sections apply** — confirm one-by-one whether the skill needs:
-   - **Sub-skill routing** — does this skill delegate to other skills? (Yes → include `## Sub-skill routing`)
-   - **Workflow** — does the skill walk through ordered steps? (Yes → include `## Workflow`)
-   - **Pattern** — does the skill standardize a coding style or design pattern? (Yes → include `## Pattern`)
-   - **Template** — does the skill produce structured artifacts? (Yes → include `## Template`)
-   - **Command** — does the skill expose CLI interaction or run shell commands? (Yes → include `## Command`)
+   - **Workflow (optional)** — does the skill walk through ordered steps? (Yes → include `## Workflow`.)
+   - **Pattern (optional)** — does the skill standardize a coding style or design pattern? (Yes → include `## Pattern`.)
+   - **Templates (optional)** — does the skill produce structured artifacts? (Yes → generate each artifact as a sibling file under `<skill-name>/templates/<artifact>.md` and reference it from SKILL.md.)
+   - **Scripts (optional)** — does the skill ship shell commands or helper scripts? (Yes → generate each as a sibling file under `<skill-name>/scripts/<name>.sh` (or `.py`, …) and reference it from SKILL.md.)
 
-   Only include sections the user confirms apply. Empty placeholders are forbidden.
+   Only include sections the user confirms apply. Empty placeholders are forbidden. Do not auto-include any section just because the original draft had one.
 
 ## File location & format
 
-Write to `.claude/skills/<skill-name>/SKILL.md` in the current project. Create the directory if it doesn't exist. Use this exact frontmatter:
+Write `<skill-name>/SKILL.md`. Create the `templates/` and `scripts/` subdirectories only when the user confirms those sections apply — do not create empty directories.
+
+Use this exact frontmatter:
 
 ```yaml
 ---
 name: <skill-name>
-description: "<one-paragraph description that bakes in WHEN to activate — verbs, nouns, file types, example phrases. The dispatcher reads this for auto-invoke, so be concrete and trigger-rich.>"
+description: "<one-paragraph description that bakes in WHEN to activate — verbs, nouns, file types, example phrases. STRICT: under 500 characters total. The dispatcher reads this for auto-invoke, so be concrete and trigger-rich.>"
 ---
 ```
 
-The `description` field is the single most important line in the file — it is what the harness uses to decide auto-invocation. Pack it with concrete trigger words (verbs the user might say, file extensions the skill applies to, example phrases). Generic descriptions like "helps with code" will not auto-invoke reliably.
+The `description` field is the single most important line in the file — it is what the harness uses to decide auto-invocation. Pack it with concrete trigger words (verbs the user might say, file extensions the skill applies to, example phrases). Generic descriptions like "helps with code" will not auto-invoke reliably. **Stay under 500 characters; trim adjectives before you trim triggers.**
 
 ## Standard body sections
 
@@ -50,48 +53,52 @@ The first paragraph(s) under the `# <skill-name>` heading. 1–3 sentences expla
 
 ### 2. When to activate (required)
 
-Header: `## When to activate`. A bulleted list of concrete trigger conditions, plus a "Do NOT activate when…" clause. This duplicates intent with the `description:` field but in a longer, more readable form for the model itself once the skill is loaded.
+Header: `## When to activate`. A bulleted list of concrete trigger conditions, plus a "Do NOT activate when…" clause. This duplicates intent with the `description:` field but in a longer, more readable form for the model once the skill is loaded.
 
-### 3. Sub-skill routing (optional)
-
-Header: `## Sub-skill routing`. Include only if this skill delegates to other skills. Use a table:
-
-| Sub-skill | When to route to it |
-|-----------|---------------------|
-| `<skill-name>` | <trigger> |
-
-### 4. Workflow (optional)
+### 3. Workflow (optional)
 
 Header: `## Workflow`. Include only if the skill walks through ordered steps. Numbered list. Each step should bottom out in a concrete action ("write the file", "ask the user", "run the command"). If the skill has multiple distinct workflows, give each a `### <Workflow name>` subsection with its own numbered steps.
 
-### 5. Pattern (optional)
+### 4. Pattern (optional)
 
 Header: `## Pattern`. Include only if the skill standardizes a coding style or design pattern. Show the canonical form with a fenced code block, then bullet the rules. Include a "Bad" / "Good" pair when contrast clarifies the rule.
 
-### 6. Template (optional)
+### 5. Templates (optional)
 
-Header: `## Template`. Include only if the skill produces structured artifacts (reports, configs, file scaffolds). Provide a fenced code block with the exact structure to populate. Use `<…>` placeholders.
+Header: `## Templates`. Include only if the skill produces structured artifacts. Reference each template by its relative path; do NOT paste the artifact structure inline — the file under `templates/` is the source of truth.
 
-### 7. Command (optional)
+| Template | Purpose |
+|----------|---------|
+| `templates/<artifact>.md` | <what the artifact is + when to use it> |
 
-Header: `## Command`. Include only if the skill involves CLI interaction. Document each command in its own subsection: the exact invocation, what it does, expected output, and common failure modes. Mention any required permissions.
+Generate each template as a sibling file under `<skill-name>/templates/`. The file contains the actual structure (with `<…>` placeholders); SKILL.md only points at it.
+
+### 6. Scripts (optional)
+
+Header: `## Scripts`. Include only if the skill ships executable helpers. Reference each script by its relative path; document parameters / expected output / failure modes inside the script as header comments, not inline in SKILL.md.
+
+| Script | What it does |
+|--------|--------------|
+| `scripts/<name>.sh` | <one-line description> |
+
+Generate each script as a sibling file under `<skill-name>/scripts/`. Mark it executable (`chmod +x`).
 
 ## Workflow
 
-1. **Parse the request.** Extract whatever the user already provided in `$ARGUMENTS` and the conversation (name, summary, triggers, which sections apply).
-2. **Ask for the rest.** Use one AskUserQuestion call to fill gaps. At minimum, confirm name, summary, triggers, and which optional sections apply. If the user is vague about triggers, push back — a description without concrete trigger words will not auto-invoke.
-3. **Draft the file in memory.** Fill the required sections (summary, when to activate) and only the optional sections the user confirmed. Tailor every line to the specific skill — no boilerplate. If a section has nothing meaningful to say, omit it instead of padding.
-4. **Create the directory** (`.claude/skills/<skill-name>/`) and write `SKILL.md` with Write.
-5. **Confirm.** Report the path written and which optional sections were included, in one or two sentences. Mention that the skill is auto-loaded on next session start and can also be invoked manually as `/<skill-name>`.
+1. **Parse the request.** Extract whatever the user already provided in `$ARGUMENTS` and the conversation (name, summary, triggers, which optional sections apply, which template / script files).
+2. **Ask for the rest.** Use one AskUserQuestion call to fill gaps. At minimum, confirm name, summary, triggers, and which optional sections apply. If the user is vague about triggers, push back — a description without concrete trigger words will not auto-invoke. Confirm the description fits under 500 characters before writing.
+3. **Draft the files in memory.** Fill the required sections (summary, when to activate) and only the optional sections the user confirmed. Tailor every line to the specific skill — no boilerplate. For each template / script the user confirmed, draft its sibling file alongside SKILL.md.
+4. **Create the directory tree** (`<skill-name>/`, and `<skill-name>/templates/` / `<skill-name>/scripts/` as needed) and write the files with Write. Run `chmod +x` on each generated script.
+5. **Confirm.** Report the paths written (SKILL.md, every template, every script) in one or two sentences. Mention that the skill is auto-loaded on next session start and can also be invoked manually as `/<skill-name>`.
 
 ## Template
 
-Use this skeleton when drafting the SKILL.md. Required sections are unmarked; optional sections are flagged — delete the ones that don't apply rather than shipping empty headers.
+Use this skeleton when drafting SKILL.md. Required sections are unmarked; optional sections are flagged — delete the ones that don't apply rather than shipping empty headers.
 
 ```markdown
 ---
 name: <skill-name>
-description: "<trigger-rich one-paragraph description for auto-invoke>"
+description: "<trigger-rich one-paragraph description for auto-invoke — STRICT: under 500 characters>"
 ---
 
 # <skill-name>
@@ -107,13 +114,6 @@ Activate this skill whenever the user:
 - <concrete trigger 3>
 
 Do NOT activate when <out-of-scope condition>.
-
-<!-- OPTIONAL: include only if the skill delegates to other skills -->
-## Sub-skill routing
-
-| Sub-skill | When to route to it |
-|-----------|---------------------|
-| `<skill>` | <trigger> |
 
 <!-- OPTIONAL: include only if the skill walks through ordered steps -->
 ## Workflow
@@ -132,17 +132,17 @@ Do NOT activate when <out-of-scope condition>.
 - <rule 1>
 - <rule 2>
 
-<!-- OPTIONAL: include only if the skill produces artifacts -->
-## Template
+<!-- OPTIONAL: include only if the skill produces artifacts under templates/ -->
+## Templates
 
-​```<lang>
-<artifact structure to populate>
-​```
+| Template | Purpose |
+|----------|---------|
+| `templates/<artifact>.md` | <when + why> |
 
-<!-- OPTIONAL: include only if the skill involves CLI interaction -->
-## Command
+<!-- OPTIONAL: include only if the skill ships executable helpers under scripts/ -->
+## Scripts
 
-### `<command name>`
-
-<exact invocation, what it does, expected output, failure modes>
+| Script | What it does |
+|--------|--------------|
+| `scripts/<name>.sh` | <one-line description> |
 ```
