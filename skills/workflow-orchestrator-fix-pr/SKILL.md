@@ -1,11 +1,11 @@
 ---
 name: workflow-orchestrator-fix-pr
-description: "Scan draft PRs (skipping `status:fix-in-progress`/`status:need-attention`) for failing CI or merge conflicts; lock with `status:fix-in-progress` and dispatch an engineer sub-agent with scenarios (any subset of `{conflict, ci}`). `need-attention` PRs stay skipped until a human clears the label. Activate on 'fix the failing PRs', '/workflow-orchestrator-fix-pr'. Skip for clean PRs, task reviews, task fixes."
+description: "Scan draft PRs (skipping `status:fix-in-progress`/`status:need-attention`) for any merge-blocking signal (failing CI and/or merge conflict); lock with `status:fix-in-progress` and dispatch an engineer sub-agent — the engineer determines what to fix from the live PR state. `need-attention` PRs stay skipped until a human clears the label. Activate on 'fix the failing PRs', '/workflow-orchestrator-fix-pr'. Skip for clean PRs, task reviews, task fixes."
 ---
 
 # workflow-orchestrator-fix-pr
 
-Drive the fix-routing pass for draft PRs that can't merge yet — either at least one Actions workflow check failed on the head branch, or the branch conflicts with its merge target. Classify each affected PR's scenarios, lock it so concurrent fires don't double-pick, and dispatch a one-shot `engineer` to fix.
+Drive the fix-routing pass for draft PRs that can't merge yet — either at least one Actions workflow check failed on the head branch, or the branch conflicts with its merge target. Decide whether each PR needs a fix at all, lock it so concurrent fires don't double-pick, and dispatch a one-shot `engineer` to fix. The engineer determines **what** to fix (conflict, CI, or both) by inspecting the live PR state itself.
 
 This skill does **not** review PRs, does **not** flip `review:*` labels, and does **not** merge PRs. It targets a single concern: clear the CI and merge-conflict blockers that stand between a draft slice PR and the merge sweep. Reviews live on task issues; merging happens in a separate lifecycle stage.
 
@@ -36,8 +36,8 @@ Every gh / shell operation below is factored into `scripts/`. Invoke each via `b
 | Asset | Purpose |
 |-------|---------|
 | `scripts/list-candidates.sh [--milestone <name>]` | List draft open PRs as JSON. |
-| `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. |
-| `scripts/inspect-checks.sh <pr-#>` | Emit `{running, failing}` for the head SHA's check rollup. |
+| `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. Used only to gate on terminal state and detect blockers — the orchestrator does **not** classify the specific fix scope. |
+| `scripts/inspect-checks.sh <pr-#>` | Emit `{running, failing}` for the head SHA's check rollup. Used only to gate on terminal state and detect blockers — the orchestrator does **not** classify the specific fix scope. |
 | `scripts/lock-pr.sh <pr-#>` | Add the `status:fix-in-progress` lock label. |
 | `scripts/unlock-pr.sh <pr-#>` | Remove the lock label (rollback on dispatch failure). |
 | `templates/dispatch-prompt.md` | Skeleton for the engineer dispatch prompt; fill placeholders and pass as the `Agent` call's `prompt`. |
@@ -64,31 +64,21 @@ Defense in depth on the orchestrator side: even though the search qualifier alre
 
 If the filtered list is empty, report "nothing to pick up" and stop. When a milestone filter was applied, include it: `nothing to pick up (milestone: <milestone-name>)`.
 
-### 3. Classify scenarios per PR
+### 3. Decide whether the PR needs a fix
 
-For each candidate, derive the fix scenario set — 0–2 of:
+For each candidate, gate on **terminal state** of both signals (mergeability and the head SHA's check rollup), then decide if any blocker is present. The orchestrator only answers "does this PR need a fix at all?" — it does **not** enumerate which fix scope applies. The engineer determines the specific scope (conflict, CI, or both) from the live PR state in its own step 2.
 
-| Scenario   | Trigger                                                                                                                                                                                          |
-|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `conflict` | `wait-mergeability.sh <n>` returns `CONFLICTING`. `UNKNOWN` is benign — GitHub still computing; skip the PR this run and let a later fire re-classify.                                           |
-| `ci`       | `inspect-checks.sh <n>` returns a non-empty `failing` array.                                                                                                                                     |
+**Both signals must be in their terminal state before this PR is eligible for locking.** "Terminal" means: mergeability is `MERGEABLE` or `CONFLICTING` (never `UNKNOWN`), AND every workflow check on the head SHA is `completed` (never `IN_PROGRESS` / `QUEUED` / `PENDING` / `WAITING` / `null`). A PR with even one mid-flight signal is skipped this fire — the engineer mustn't be dispatched while either input is still moving, or it wastes a worktree inspecting incomplete data.
 
-**Both signals must be in their terminal state before this PR is eligible for locking.** "Terminal" means: mergeability is `MERGEABLE` or `CONFLICTING` (never `UNKNOWN`), AND every workflow check on the head SHA is `completed` (never `IN_PROGRESS` / `QUEUED` / `PENDING` / `WAITING` / `null`). A PR with even one mid-flight signal is skipped this fire — the engineer mustn't be dispatched while either input is still moving (a `conflict`-only dispatch can become a `conflict`+`ci` dispatch as CI lands, and an engineer dispatched on incomplete data wastes a worktree on the wrong fix surface).
-
-#### 3.1 Mergeability scan
+#### 3.1 Mergeability gate
 
 ```bash
 status="$(bash scripts/wait-mergeability.sh <pr-#>)"
 ```
 
-Cap at ~10 s. `UNKNOWN` past the cap → skip with `mergeability still UNKNOWN`.
+Cap at ~10 s. `UNKNOWN` past the cap → skip with `mergeability still UNKNOWN`. Otherwise record whether the value is `CONFLICTING` (a blocker) or `MERGEABLE` (clean on this axis).
 
-#### 3.2 Workflow-check scan
-
-The script returns two facets keyed off the head SHA's `statusCheckRollup`:
-
-1. **Any check still running?** If so, the PR is not yet eligible — skip with `checks still running`.
-2. **Among the completed checks, any non-`SUCCESS`/non-`SKIPPED` conclusion?** That populates the `ci` scenario.
+#### 3.2 Workflow-check gate
 
 ```bash
 checks_json="$(bash scripts/inspect-checks.sh <pr-#>)"
@@ -102,17 +92,17 @@ fi
 failing="$(printf '%s' "$checks_json" | jq -c '.failing')"
 ```
 
-If `failing` is a non-empty JSON array → add `ci` to the scenario set.
+If `running > 0` → skip with `checks still running`. Otherwise record whether `failing` is non-empty (a blocker) or empty (clean on this axis).
 
-#### 3.3 Scenario decision
+#### 3.3 Needs-fix decision
 
-- Both signals terminal **and** scenario set non-empty → continue to step 4 (lock + dispatch).
-- Both signals terminal **and** scenario set empty → track as skipped (nothing to fix) and continue. Clean PRs are merged by a separate lifecycle stage.
-- Either signal mid-flight (mergeability `UNKNOWN` or any workflow still running) → skip with the matching reason; a later fire re-classifies once everything has landed.
+- Both signals terminal **and** at least one is a blocker (`CONFLICTING` mergeability OR non-empty `failing`) → continue to step 4 (lock + dispatch). Pass no scope info to the engineer — it inspects the PR itself.
+- Both signals terminal **and** neither is a blocker (`MERGEABLE` mergeability AND empty `failing`) → track as skipped (nothing to fix) and continue. Clean PRs are merged by a separate lifecycle stage.
+- Either signal mid-flight (mergeability `UNKNOWN` or any workflow still running) → skip with the matching reason; a later fire re-checks once everything has landed.
 
-### 4. Lock with `status:fix-in-progress` (only when both signals are terminal)
+### 4. Lock with `status:fix-in-progress` (only when both signals are terminal and at least one is a blocker)
 
-Only PRs that made it through step 3.3 with a non-empty scenario set reach this step. Mergeability is decided (`MERGEABLE` / `CONFLICTING`, never `UNKNOWN`), every workflow check is `COMPLETED`, and at least one of `conflict` / `ci` is in the scenario set. Now add the lock label in one atomic `gh` call:
+Only PRs that made it through step 3.3 as `needs-fix` reach this step. Mergeability is decided (`MERGEABLE` / `CONFLICTING`, never `UNKNOWN`), every workflow check is `COMPLETED`, and at least one of those signals is a blocker. Now add the lock label in one atomic `gh` call:
 
 ```bash
 bash scripts/lock-pr.sh <pr-#>
@@ -141,7 +131,7 @@ Pick a unique agent name of the form `engineer-pr-<pr-#>` (e.g. `engineer-pr-128
 Call `TaskCreate` with:
 
 - `subject`: `Fix PR #<pr-#>: <pr-title>`
-- `description`: one short paragraph — the PR URL, the comma-list of scenarios (`conflict` and/or `ci`), and a one-liner saying the engineer owns the lifecycle until it pushes and removes `status:fix-in-progress` from the PR.
+- `description`: one short paragraph — the PR URL and a one-liner saying the engineer determines the fix scope itself and owns the lifecycle until it pushes and removes `status:fix-in-progress` from the PR.
 - `activeForm`: `Fixing PR #<pr-#>`
 
 Capture the returned `taskId`.
@@ -156,7 +146,7 @@ Spawn each PR with the `Agent` tool, passing:
 - `mode` — `auto`
 - `name` — the chosen agent name (e.g. `engineer-pr-128`)
 - `run_in_background` — `true` (mandatory; see below)
-- `prompt` — minimal; only the **PR number, scenarios list, and the orchestrator `taskId`**
+- `prompt` — minimal; only the **PR number and the orchestrator `taskId`**. The engineer determines the fix scope itself.
 
 `run_in_background: true` is non-negotiable. A foreground `Agent` call blocks the orchestrator turn until the engineer fully terminates, which (a) serializes PRs that were supposed to fan out in parallel and (b) lets the engineer's own terminal `TaskUpdate({ status: "completed" })` land before the orchestrator's `TaskUpdate({ owner })` — at which point the owner assignment races a finalized task and the harness UI never shows who owned the row.
 
@@ -166,7 +156,7 @@ Independent PRs fan out in parallel: emit all the `Agent` calls AND their matchi
 
 If the `Agent` dispatch fails synchronously (bad `subagent_type`, missing tool, etc.), roll back BOTH the lock (per step 4) and the tracking task via `TaskUpdate({ taskId, status: "deleted" })`. Once the engineer is running, ownership transfers — it owns the terminal `status:fix-in-progress` removal and the tracking task's `completed` flip.
 
-Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<pr-#>`, `<taskId>`) and prune the scenario bullet list down to only the scenarios that classified for this PR — never leave a bullet for a scenario that didn't trigger.
+Use `templates/dispatch-prompt.md` as the prompt skeleton. Fill placeholders (`<pr-#>`, `<taskId>`) and pass as the `Agent` call's `prompt`. The template carries no scenario list — the engineer reads the PR's live mergeability and CI state via `gh` in its own step 2.
 
 ### 6. Honor the cap and report
 
@@ -185,7 +175,8 @@ Track dispatched / skipped counts internally per PR; do **not** print per-PR dec
 - **One orchestrator tracking task per dispatched engineer.** Every dispatched PR gets exactly one `TaskCreate` row, and the same agent `name` is used as the task `owner`. Never reuse a `taskId` across PRs and never spawn an `Agent` without a paired tracking task.
 - **Roll back lock AND tracking task on synchronous dispatch failure.** If `Agent` errors synchronously, remove `status:fix-in-progress` from the PR and call `TaskUpdate({ taskId, status: "deleted" })`. Once the agent is running, ownership transfers (engineer removes the lock label and flips the tracking task to `completed`).
 - **Background dispatch + same-message owner assignment.** Every `Agent` call MUST set `run_in_background: true` and MUST be emitted in the same response as its `TaskUpdate({ taskId, owner: <agent-name> })`. Foreground dispatch blocks the turn, serializes parallel PRs, and races the orchestrator's owner assignment against the engineer's own terminal task update.
-- **Lock only when both signals are terminal.** Mergeability and the workflow-check rollup must both be in a settled state before the lock + dispatch fires. `UNKNOWN` mergeability or any `IN_PROGRESS` / `QUEUED` / `PENDING` workflow check is benign — skip the PR and let a later fire re-classify once everything has landed.
-- **One engineer per PR; pass scenarios in the prompt.** Each `Agent` call owns one PR and lists every scenario the engineer must handle (1–2 of `conflict` / `ci`). Independent PRs fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same response.
+- **Lock only when both signals are terminal AND at least one is a blocker.** Mergeability and the workflow-check rollup must both be in a settled state before the lock + dispatch fires, and at least one of them must indicate a blocker (`CONFLICTING` mergeability or a non-empty `failing` array). `UNKNOWN` mergeability or any `IN_PROGRESS` / `QUEUED` / `PENDING` workflow check is benign — skip the PR and let a later fire re-check once everything has landed.
+- **Do not classify the fix scope — the engineer determines it.** The orchestrator decides only whether a PR needs a fix at all. Which specific scope (conflict, CI, or both) applies is the engineer's job: it inspects the live PR via `gh` in its own step 2. Never enumerate `conflict` / `ci` in the dispatch prompt.
+- **One engineer per PR.** Each `Agent` call owns one PR. Independent PRs fan out as parallel `Agent` + `TaskUpdate(owner)` calls in the same response.
 - **Skip clean PRs.** If a PR has green CI and is mergeable, leave it alone — clean PRs are merged in a separate lifecycle stage.
 - **Skip, don't fail, on benign outcomes.** "Nothing to fix", "mergeability UNKNOWN", "lock race", "cap reached", "TaskCreate failed" are all expected — track internally and continue, never surface per-PR.
