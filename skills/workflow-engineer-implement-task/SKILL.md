@@ -5,7 +5,7 @@ description: "Implement one `type:backend`/`type:frontend` GitHub task end-to-en
 
 # workflow-engineer-implement-task
 
-Take one assigned GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Apply the full fullstack pattern set upfront and the always-on security context — even when the task only touches one side of the stack — so a follow-up cycle that crosses the boundary doesn't pay a re-read tax. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
+Take one assigned GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
 
 ## When to activate
 
@@ -25,7 +25,7 @@ Do NOT activate when:
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure happens later in the lifecycle) is spelled out in step 7 below. |
+| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure happens later in the lifecycle) is spelled out in step 4 below. |
 
 ## Scripts
 
@@ -63,47 +63,33 @@ cd "${worktree_path}"
 
 If either script exits non-zero, halt and surface the diagnostic it printed — there is no branch to implement against.
 
-### 3. Anchor security constraints
+### 3. Pull entity-scoped architecture context (only when the issue needs it)
 
-Apply the always-on application-security baseline (env-only secrets, schema-validated input, parameterized queries, httpOnly + Secure + SameSite session cookies, authorize-before-act, sanitized output + CSP, CSRF + per-route rate limits on state-changing endpoints, redacted logs, generic 5xx messages, locked dependencies, zero shipped CRITICAL / HIGH CVEs) before any code is written. Carry them through every red/green/refactor step.
-
-### 4. Apply the full fullstack pattern set
-
-Apply every fullstack engineer pattern relevant to the change upfront — coding standard always, plus backend / frontend / language / framework / container / observability patterns whenever their surface is in scope. The engineer is fullstack by default — even when this particular task only touches one side, having the other side's patterns resolved means a follow-up cycle that crosses the boundary doesn't pay a re-read tax. The `type:<type>` label still informs which patterns will drive *most* of the red/green/refactor cycles for this task; it does not narrow which patterns you apply.
-
-### 5. Pull entity-scoped architecture context (only when the issue needs it)
-
-The contracts are project-level, not feature-scoped. From the issue body, identify which entities the change actually touches:
+The contracts are project-level, not feature-scoped. From the issue body, identify what the change actually touches and read only the matching files — one at a time, by name. Do NOT `ls` the directory and bulk-read every entity. If a referenced file is missing, halt and surface it rather than guessing.
 
 - For each **persistence entity** the change reads/writes/migrates, read `docs/data-model/<entity>.yaml`.
 - For each **API resource** the change exposes or consumes, read `docs/api-contract/<entity>.yaml`.
+- **Understand all ADRs from `docs/architecture-decision-record/README.md`** — read the index's one-line summaries so the engineer knows which decision lives where.
+- **For each axis the task touches** (error responses, rate limiting, idempotency, sessions/cookies, config loading, async vs sync, storage backend choice, validation strategy, observability, etc.), drill into the matching ADR detail file at `docs/architecture-decision-record/<adr-file>.md` and quote its rules into the test plan so the RED encodes them directly.
 
-Read these files one at a time, by name. Do NOT `ls` the directory and bulk-read every entity. If the issue is pure plumbing (no persistence, no API surface), skip this step entirely. If a referenced entity file is missing, halt and surface it rather than guessing.
+If the issue is pure plumbing (no persistence, no API surface, no decided axis), skip the relevant sub-bullets. If an axis the task touches has no row in the ADR index, halt and surface "no ADR covers `<axis>` — need a decision before implementation" rather than inventing one. If the index points at a detail file that doesn't exist, halt with the same shape. The architect owns ADR authorship; the engineer reads and applies, never extends silently.
 
-**Then read the ADR index, and only the ADR detail(s) the change actually touches.** Architecture decisions vary per project (error-envelope shape, rate-limit keying and budgets, idempotency-key lifecycle, repository-pattern ban or allowance, in-memory vs Postgres-backed state, config-loader convention, sliding-window session bump, atomic-token consumption, enumeration-prevention rules) — the engineer must not implement from memory, and must not hard-code an ADR number. Read the index first to learn which decision lives where, then drill into the matching detail file(s):
-
-1. Open `docs/ADRs/README.md` (the architect's index of decisions for this project) and read its one-line summaries.
-2. For each axis the current task touches — error responses, rate limiting, idempotency, sessions/cookies, config loading, async vs sync, storage backend choice, validation strategy, observability — find the matching ADR row in the index and open the detail file it points to (`docs/ADRs/<adr-file>.md`).
-3. Quote the rules the detail file imposes (e.g. "error envelope is `{error: {code, message, request_id}}`", "authenticated routes key rate limit by user_id, anonymous by IP", "Idempotency-Key lifecycle is owned by the caller, stable across user-initiated retries") into the test plan so the RED encodes them directly.
-
-If the index doesn't mention an axis the task touches, **halt and surface** "no ADR covers `<axis>` — need a decision before implementation" rather than inventing one. If the index points to a detail file that doesn't exist, halt with the same shape. The architect owns ADR authorship; the engineer reads and applies, never extends silently.
-
-### 6. Drive implementation via TDD
+### 4. Drive implementation via TDD
 
 Drive the entire implementation via strict outside-in TDD (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure happens later in the lifecycle once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
 
-### 7. Verify against acceptance criteria, then audit the container surface and `.env.example`
+### 5. Verify against acceptance criteria, then audit the container surface and `.env.example`
 
-Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 7 with a fresh RED — do not declare done. Then run the **two-part container-setup audit**:
+Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 4 with a fresh RED — do not declare done. Then run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If anything is still missing after step 6 (e.g. the task created a new deployable surface mid-loop), scaffold it now under the project's container patterns and commit using the `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). Skipping this is not a valid choice — the pre-push hook will deny the push if any deployable surface lacks a `Dockerfile`.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If anything is still missing after step 4 (e.g. the task created a new deployable surface mid-loop), scaffold it now under the project's container patterns and commit using the `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). Skipping this is not a valid choice — the pre-push hook will deny the push if any deployable surface lacks a `Dockerfile`.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` and decide whether the changes in this task added or removed a runtime dep, env var, exposed port, mounted volume, build stage, or entrypoint. If yes, update the container files in the same slice and commit using a `chore(docker): <what>` (or `fix(docker): <what>`) subject (format per `templates/commit-messages.md`) before moving to the push step. If the runtime surface did not change, leave the container files alone.
 
 Then run the `.env.example` audit: if this task added, renamed, or removed any env var the app reads, update `.env.example` to match and commit using a `chore(env): <what>` (or `fix(env): <what>`) subject (format per `templates/commit-messages.md`). If no env vars changed, leave `.env.example` alone.
 
-### 8. Push the slice branch and open both review gates
+### 6. Push the slice branch and open both review gates
 
-Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 7; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so the orchestrator dispatches the reviewer for both gates:
+Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 4; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so the orchestrator dispatches the reviewer for both gates:
 
 ```bash
 bash scripts/push-and-open-reviews.sh <issue-#> "${slice_branch}"
@@ -114,14 +100,12 @@ This is the terminal action. Exit after the label add lands — do not close the
 ## Iron rules
 
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
-- **Apply security constraints before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy the baseline (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
 - **Pull architecture context per-entity, on demand — never bulk-load.** Read only the specific entity file(s) the change actually touches under `docs/data-model/<entity>.yaml` and `docs/api-contract/<entity>.yaml`. If the change touches no persistence and exposes/consumes no API, skip those files entirely.
-- **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the task actually touches.** The index points at the decision files; the detail files own the rules (error-envelope shape, rate-limit keying, idempotency-key lifecycle, repository-pattern stance, storage-backend choice, sessions/cookies, config loader, etc.). Quote the rules into the test plan so the RED encodes them directly — never implement an axis from memory and never hard-code an ADR number into this skill. If an axis the task touches has no ADR row in the index, halt and surface — the architect owns adding it.
+- **Understand all ADRs from `docs/architecture-decision-record/README.md`, then drill into the detail(s) the task actually touches at `docs/architecture-decision-record/<adr-file>.md`.** The index points at the decision files; the detail files own the rules (error-envelope shape, rate-limit keying, idempotency-key lifecycle, repository-pattern stance, storage-backend choice, sessions/cookies, config loader, etc.). Quote the rules into the test plan so the RED encodes them directly — never implement an axis from memory and never hard-code an ADR number into this skill. If an axis the task touches has no ADR row in the index, halt and surface — the architect owns adding it.
 - **Mirror an already-shipped sibling before inventing shape.** Before writing a new endpoint, hook, form, or service module, `rg` for a sibling already in `git log` that performs the same kind of work (another endpoint on the same router, another mutation hook, another auth form) and mirror its conventions exactly: response headers (`Cache-Control: private, no-store` on authenticated and session-setting routes), Pydantic input schema with `max_length` on every string field, structured-log keys + the redaction allow-list, rate-limit decorator and key-func, idempotency wiring on POST, error mapping to the project's error envelope; on the frontend, the hook's return-tuple shape, `onSuccess` cache invalidation, referential stability of returned mutators, submit-disabled-while-pending, idempotency-key rotation on 4xx. If no sibling exists, surface that in the implementation plan and ask which one to mirror — do not invent shape from memory.
 - **Paths, status codes, and response shapes come from the api-contract doc, never from the keyboard.** Any URL this task introduces (route decorator, frontend `fetch` target, test assertion path, `curl` in a script or CI step), the status code the route returns on each error class (400 / 404 / 409 / 422 — the choice is the contract's, not the engineer's intuition), and the response body shape on both success and error paths are all sourced from `docs/api-contract/<entity>.yaml`. If the task body cites a status code or path that disagrees with the contract, the **contract wins** — surface the disagreement on the task issue and proceed against the contract. Define the path once as a module constant near the route and have the test import the same constant; hand-typing the same string twice (once in the route, once in the test) is the failure mode that lets implementation and contract drift apart. Same rule for status codes — never `raise HTTPException(status_code=401)` inline; bind the status to a named error class so the route, the test, and the error-mapper agree by construction. If the contract is missing for a path / status / response the task needs, STOP and surface it — the architect owns contract authorship, not the engineer.
 - **Trailing slash matters — pick the contract's spelling and pin it.** FastAPI routes `/me` and `/me/` are different URLs; the framework's default redirect-to-trailing-slash returns a 307 that breaks Set-Cookie persistence on cross-site responses and silently slows every authenticated call. Match the contract's spelling exactly, and add a test that asserts the contracted URL returns 200 (not 307) so the next router change can't drift the trailing slash unnoticed.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
-- **Always fullstack — apply every fullstack pattern upfront.** Apply every fullstack engineer pattern relevant to the change before writing any code, even when the current task only touches one side of the stack.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed or where a behavior lives.
 - **Read before every edit; verify after every edit; make logically coupled changes in one Edit call.** Before touching any file, Read the full region that will be affected. After each Edit call, run the relevant static-analysis check (`uv run mypy <file>`, `uv run ruff check <file>`, or `tsc --noEmit`) immediately. When a single logical change requires editing two or more lines that must be true simultaneously (e.g. adding a new import and updating the signature to use it), include all affected lines in a single `old_string`/`new_string` pair — never make them as separate sequential edits.
 

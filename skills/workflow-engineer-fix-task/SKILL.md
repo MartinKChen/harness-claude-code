@@ -24,7 +24,7 @@ Do NOT activate when:
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this fix pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<task-#>`, never `Closes`) is spelled out in step 5 below. |
+| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this fix pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<task-#>`, never `Closes`) is spelled out in step 3 below. |
 
 ## Scripts
 
@@ -90,17 +90,7 @@ worktree_path="$(bash scripts/setup-worktree.sh "${slice_branch}")"
 cd "${worktree_path}"
 ```
 
-### 3. Anchor security constraints
-
-Apply the always-on application-security baseline before any code is written.
-
-### 4. Apply the full fullstack pattern set
-
-Apply every fullstack engineer pattern relevant to the change upfront — coding standard always, plus backend / frontend / language / framework / container / observability patterns whenever their surface is in scope — even when the fix only touches one side of the stack.
-
-**Then read the ADR index, and the ADR detail(s) the reviewer's findings touch.** Reviewer findings on this codebase routinely flag deviations from project-specific architecture decisions (error-envelope shape, rate-limit keying, idempotency-key lifecycle, storage backend, config loader, sessions/cookies, atomic-token consumption, enumeration-prevention rules) — but the ADR numbers and detail-file names vary per project. Open `docs/ADRs/README.md` first to learn which detail file covers each axis the reviewer flagged, then read those detail files to ground the fix in what the project has actually decided. If the reviewer cites an ADR by number, follow the index to the matching detail file rather than trusting the number across projects. If a reviewer finding points at an axis with no ADR row in the index, halt and surface — the user needs to either add the decision or rescope the fix.
-
-### 5. Address every must-fix finding from the reviewer comment(s)
+### 3. Address every must-fix finding from the reviewer comment(s)
 
 For each finding, BEFORE writing the RED, `rg` the codebase for the same anti-pattern the reviewer flagged — a "missing CSRF check on endpoint X", a "raw SQL string in handler Y", a "secret read from a config file in module Z" is rarely a one-off, and the re-review will fail (or worse, the security gate will pass while the bug still lives elsewhere) if you only fix the cited site. Treat each equivalent site as its own RED → GREEN → REFACTOR cycle so the regression suite locks the pattern out everywhere, per the pattern-propagation rule in *Iron rules*. The RED test must encode the demand as a failing test (security: a regression test that proves the fix prevents the documented attack vector; code: a unit/integration test that asserts the corrected behavior). Drive GREEN with the minimum production change; REFACTOR under green. Format every commit per `templates/commit-messages.md` at the prescribed cadence. Each commit message must reference the finding(s) it addresses, list any additional sites fixed via pattern propagation, and include a `Refs #<task-#>` trailer so the reviewer can scope the re-review correctly.
 
@@ -111,9 +101,9 @@ After the last must-fix finding is GREEN, run the **two-part container-setup aud
 
 Then run the `.env.example` audit: reviewer-driven fixes routinely add env vars (a security fix that pulls a secret out of a config file, a code fix that exposes a new feature flag, a config-cleanup fix that renames an existing var). If any env var the app reads was added, renamed, or removed by this fix pass, update `.env.example` in the same slice and commit using `chore(env): <what>` / `fix(env): <what>` (format per `templates/commit-messages.md`). If env vars did not drift, leave `.env.example` alone.
 
-### 6. Push the slice branch and reset every `review:*` gate to pending
+### 4. Push the slice branch and reset every `review:*` gate to pending
 
-Push to remote (the pre-push hooks gate the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 5 if any hook denies; never force-push, never skip hooks), then idempotently reset every `review:{code,security}-*` label back to `review:*-pending`. A fix can invalidate a previously-passed gate, so even passed gates are reopened:
+Push to remote (the pre-push hooks gate the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 3 if any hook denies; never force-push, never skip hooks), then idempotently reset every `review:{code,security}-*` label back to `review:*-pending`. A fix can invalidate a previously-passed gate, so even passed gates are reopened:
 
 ```bash
 bash scripts/push-and-reset-all-reviews.sh <task-#> "${slice_branch}"
@@ -126,9 +116,6 @@ This is the terminal action. Exit after the label flip lands — do not close th
 - **User directives in the comment window override everything else.** Before reading reviewer findings, read every non-reviewer comment newer than the slice branch's last commit. An explicit instruction there beats a reviewer's suggested fix path, an ADR, or a default convention.
 - **Scope is read from the dispatch prompt verbatim — never from labels.** The orchestrator's lock flipped `review:*-need-fix` to `review:*-pending`, so the labels alone can't tell you which gates returned `need-fix`. Read the gates list from the dispatch prompt.
 - **Skip previously-addressed rounds.** Only consider reviewer comments created **strictly after** the slice branch's last commit timestamp. Earlier comments are previous rounds — the fixes they demanded are already in `git log`, and re-reading them would re-do completed work.
-- **Apply security constraints before writing any code.**
-- **Always fullstack — apply every fullstack pattern upfront**, even when the fix only touches one side of the stack.
-- **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the reviewer's findings touch.** Project-specific decisions (error envelope, rate-limit keying, idempotency, storage backend, sessions/cookies, config, atomic-token, enumeration prevention) live in the per-project ADR files behind the index — never trust an ADR number across projects, never re-derive the rule from memory. If a finding cites an axis with no ADR row, halt and surface.
 - **Treat each finding as a *class* of issue, not a single instance — propagate via `rg` before declaring the fix done.** Each additional equivalent site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body. Only skip propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors.
 - **Each must-fix finding starts with a failing test.** Security findings: a regression test proving the fix prevents the documented attack vector. Code findings: a unit/integration test asserting the corrected behavior. Drive GREEN with the minimum production change; REFACTOR under green.
 - **Read before every edit; verify after every edit; bundle co-dependent changes.** If you issue two sequential Edit calls that target overlapping regions of the same file, the second call's `old_string` must match the file's state *after* the first edit, not its original state — otherwise the Edit tool silently reverts the first edit. One Read per edit; bundle co-dependent changes (imports + the code that uses them) into a single `old_string`/`new_string` pair; verify immediately by reading back the changed region or running the linter after every Edit before issuing the next Edit on the same file.
