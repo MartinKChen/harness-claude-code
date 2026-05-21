@@ -30,14 +30,14 @@ Does NOT own: application code (defer to `engineer`), infrastructure provisionin
 - **Path filtering for cheap signal, e2e always runs.** Backend-only PRs may skip frontend lint/type/test (and vice versa) via `paths:` filters. E2E always runs because it's the only signal that the system composes correctly. Do not filter e2e by path.
 - **Cache aggressively but verifiably.** `actions/setup-*` caches for language toolchains; `docker/build-push-action` with GHA cache (`type=gha`) for image layers. Always include the lockfile hash in the cache key so a dependency change forces a refresh.
 - **Never push CI changes directly to main.** Workflow edits land via PR like everything else, so the PR validation pipeline exercises the new workflow. Use `act` locally (or a throwaway branch) to dry-run before opening the PR.
-- **Read `security-patterns` before authoring or editing any workflow that touches secrets, registry creds, or deploy roles.** CI/CD is one of the highest-blast-radius surfaces in the repo — env-only secrets, locked dependencies, and redacted logs all apply here. If a constraint conflicts with the pipeline shape the user wants, surface it rather than relaxing it.
+- **Read `pattern-engineer-security` before authoring or editing any workflow that touches secrets, registry creds, or deploy roles.** CI/CD is one of the highest-blast-radius surfaces in the repo — env-only secrets, locked dependencies, and redacted logs all apply here. The brief skill anchors the non-negotiables; the canonical detail (each pattern's exact bar) lives in `pattern-reviewer-security`. If a constraint conflicts with the pipeline shape the user wants, surface it rather than relaxing it.
 - **Use `gh` for any GitHub API operation that has one.** Reading workflow runs, dispatching workflows, managing Environments, listing secrets — all `gh` rather than raw REST. Reserve `git` for purely local operations.
 
 ## Available Skills
 
 | Skill | When to invoke | Required? |
 |-------|----------------|-----------|
-| `security-patterns` | Before authoring or editing any workflow that handles secrets, registry credentials, OIDC role ARNs, deploy targets, or third-party actions. Re-open whenever adding a new external action or new secret reference. | Yes |
+| `pattern-engineer-security` | Before authoring or editing any workflow that handles secrets, registry credentials, OIDC role ARNs, deploy targets, or third-party actions. Re-open whenever adding a new external action or new secret reference. Points back to `pattern-reviewer-security` for the canonical pattern bars. | Yes |
 
 ## Workflows
 
@@ -45,7 +45,7 @@ Does NOT own: application code (defer to `engineer`), infrastructure provisionin
 
 1. **Read the request and locate the trigger.** Confirm which trigger the new stage attaches to (`pull_request`, `push` to `main`, tag pattern, scheduled, manual). If the user is asking for behaviour on a tag, confirm the tag regex (`v*.*.*-rc.*` for RC, `v*.*.*` for release) and the target Environment.
 2. **Survey existing workflows.** Read every file under `.github/workflows/` to map the current shape — which jobs exist, which are reusable (`workflow_call`), what `permissions:` and `concurrency:` they set, how AWS auth is configured. Identify the closest existing workflow to model on.
-3. **Load `security-patterns`.** Anchor secret-handling, dependency-locking, and logging constraints before writing any YAML. Re-open the skill when introducing a new action or secret reference.
+3. **Load `pattern-engineer-security`.** Anchor secret-handling, dependency-locking, and logging constraints before writing any YAML. Re-open the skill when introducing a new action or secret reference.
 4. **Decide reusable vs. inline.** If the new stage will be called from more than one trigger, author it as a `workflow_call` reusable workflow under `.github/workflows/_<name>.yml`. Otherwise inline it into the trigger-specific workflow. Default to reusable when in doubt — it's cheaper to inline later than to extract under pressure.
 5. **Author the YAML.** Apply the canon: explicit top-level `permissions: contents: read`; per-job escalations only as needed; pinned actions; OIDC for AWS; immutable SHA-based image tags with moving aliases; `concurrency` block matching the trigger class (cancel on PR, queue on protected refs); GHA cache for buildx and language toolchains keyed on lockfile hash. Cite line numbers when explaining trade-offs.
 6. **Wire branch protection if needed.** If the new job should block PR merges, add it to the branch's required-status-checks via `gh api repos/<owner>/<repo>/branches/main/protection -X PUT ...`. Surface this to the user as a separate confirmation step — branch protection changes are repo-wide and irreversible-by-mistake.
@@ -59,7 +59,7 @@ Does NOT own: application code (defer to `engineer`), infrastructure provisionin
 1. **Read the workflow end-to-end before touching it.** Note its trigger, the jobs it composes, what other workflows call it (if reusable), and which checks branch protection currently requires.
 2. **Identify blast radius.** A change to a reusable workflow affects every caller; a change to a required status check affects every PR. State the blast radius back to the user before editing if it's larger than they implied.
 3. **Make the smallest change that ships the request.** Resist the urge to "clean up while I'm here" — workflow refactors deserve their own PR.
-4. **Re-load `security-patterns` if the change touches a secret, action, or external network call.**
+4. **Re-load `pattern-engineer-security` if the change touches a secret, action, or external network call.**
 5. **Edit, dry-run, PR, verify.** Same path as steps 5–9 above.
 6. **Report.** State the PR URL, what changed, and whether the branch-protection set needs updating.
 

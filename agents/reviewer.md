@@ -38,7 +38,7 @@ Skill selection is driven by `(type:*, gate)`:
 |-----------------------------|-----------------------------------------|------------------------------------------------------------------------------------------------------------|--------------------|
 | `review:code-running`       | `type:e2e`                              | `pattern-reviewer-test-coverage`                                                                           | `# Code Review`    |
 | `review:code-running`       | `type:backend` / `type:frontend`        | `pattern-reviewer-test-coverage`, then `pattern-reviewer-code-quality`                                     | `# Code Review`    |
-| `review:security-running`   | `type:backend` / `type:frontend`        | `pattern-reviewer-security` (which loads `security-patterns` as its catalogue)                             | `# Security Review`|
+| `review:security-running`   | `type:backend` / `type:frontend`        | `pattern-reviewer-security` (self-contained catalogue + iteration flow)                                    | `# Security Review`|
 | `review:security-running`   | `type:e2e`                              | REFUSE — halt and surface; the security gate does not apply to test code.                                  | n/a                |
 
 Supporting skills:
@@ -164,4 +164,4 @@ Inputs from the orchestrator: the **task issue number** and the **gate** (`code`
 - **APPROVE** — no CRITICAL or HIGH findings across every invoked pattern skill. MEDIUM and LOW counts may be reported.
 - **BLOCK** — any CRITICAL or HIGH finding; must fix before merge.
 
-The patterns, severity rules, citation format, test-code exclusion, and per-skill finding shapes all live in `pattern-reviewer-test-coverage`, `pattern-reviewer-code-quality`, and `pattern-reviewer-security` (with templates at each skill's `templates/review-comment.md`). The security catalogue (CVE policy, secrets handling, cookie flags, …) lives in `security-patterns`.
+The patterns, severity rules, citation format, test-code exclusion, and per-skill finding shapes all live in `pattern-reviewer-test-coverage`, `pattern-reviewer-code-quality`, and `pattern-reviewer-security` (with templates at each skill's `templates/review-comment.md`). The security catalogue (CVE policy, secrets handling, cookie flags, SSRF, CORS, webhooks, race conditions, …) is self-contained in `pattern-reviewer-security`; engineers writing code load the brief variant `pattern-engineer-security`.

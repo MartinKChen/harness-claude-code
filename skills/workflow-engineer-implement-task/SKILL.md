@@ -26,7 +26,7 @@ Do NOT activate when:
 | Skill | When to route to it |
 |-------|---------------------|
 | `tdd-workflow` | To drive the entire implementation loop (acceptance → red/green/refactor → wiring). **Required.** |
-| `security-patterns` | At the start of every dispatch, before writing any code; re-open whenever the change touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. **Required (always).** |
+| `pattern-engineer-security` | At the start of every dispatch, before writing any code; re-open whenever the change touches secrets, input, queries, auth/sessions, output rendering, CSRF, rate limits, logging, errors, or dependencies. **Required (always).** |
 ## Templates
 
 | Asset | Purpose |
@@ -71,7 +71,7 @@ If either script exits non-zero, halt and surface the diagnostic it printed — 
 
 ### 3. Load always-on security context
 
-Invoke `security-patterns` to anchor security constraints before any code is written. Carry them through every red/green/refactor step.
+Invoke `pattern-engineer-security` to anchor security constraints before any code is written. Carry them through every red/green/refactor step.
 
 ### 4. Load the full fullstack pattern set via `tdd-workflow`
 
@@ -120,7 +120,7 @@ This is the terminal action. Exit after the label add lands — do not close the
 ## Iron rules
 
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
-- **Read `security-patterns` before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy its rules (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
+- **Read `pattern-engineer-security` before writing any production code.** Every line written — and every test that locks behaviour in — must satisfy its rules (env-only secrets, schema-validated input at the boundary, parameterized queries, `HttpOnly; Secure; SameSite` session cookies, authorize-before-act, sanitized output, CSRF on cookie-auth state changes, per-route rate limits, redacted logs, generic 5xx messages, locked dependencies). If a constraint conflicts with the task, stop and surface it rather than silently relaxing it.
 - **Pull architecture context per-entity, on demand — never bulk-load.** Read only the specific entity file(s) the change actually touches under `docs/product-requirement-document/<feature-name>/data-model/<entity>.md` and `docs/product-requirement-document/<feature-name>/api-contract/<entity>.md`. If the change touches no persistence and exposes/consumes no API, skip those files entirely.
 - **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the task actually touches.** The index points at the decision files; the detail files own the rules (error-envelope shape, rate-limit keying, idempotency-key lifecycle, repository-pattern stance, storage-backend choice, sessions/cookies, config loader, etc.). Quote the rules into the test plan so the RED encodes them directly — never implement an axis from memory and never hard-code an ADR number into this skill. If an axis the task touches has no ADR row in the index, halt and surface — the architect owns adding it.
 - **Mirror an already-shipped sibling before inventing shape.** Before writing a new endpoint, hook, form, or service module, `rg` for a sibling already in `git log` that performs the same kind of work (another endpoint on the same router, another mutation hook, another auth form) and mirror its conventions exactly: response headers (`Cache-Control: private, no-store` on authenticated and session-setting routes), Pydantic input schema with `max_length` on every string field, structured-log keys + the redaction allow-list, rate-limit decorator and key-func, idempotency wiring on POST, error mapping to the project's error envelope; on the frontend, the hook's return-tuple shape, `onSuccess` cache invalidation, referential stability of returned mutators, submit-disabled-while-pending, idempotency-key rotation on 4xx. If no sibling exists, surface that in the implementation plan and ask which one to mirror — do not invent shape from memory.

@@ -25,7 +25,7 @@ Do NOT activate when:
 | Skill | When to route to it |
 |-------|---------------------|
 | `tdd-workflow` | To drive each finding's RED → GREEN → REFACTOR cycle (and each propagated site's). **Required.** |
-| `security-patterns` | At the start of every dispatch, before writing any code. **Required (always).** |
+| `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
 | Asset | Purpose |
@@ -98,7 +98,7 @@ cd "${worktree_path}"
 
 ### 3. Load always-on security context
 
-Invoke `security-patterns` before any code is written.
+Invoke `pattern-engineer-security` before any code is written.
 
 ### 4. Load the full fullstack pattern set via `tdd-workflow`
 
@@ -132,7 +132,7 @@ This is the terminal action. Exit after the label flip lands — do not close th
 - **User directives in the comment window override everything else.** Before reading reviewer findings, read every non-reviewer comment newer than the slice branch's last commit. An explicit instruction there beats a reviewer's suggested fix path, an ADR, or a default convention.
 - **Scope is read from the dispatch prompt verbatim — never from labels.** The orchestrator's lock flipped `review:*-need-fix` to `review:*-pending`, so the labels alone can't tell you which gates returned `need-fix`. Read the gates list from the dispatch prompt.
 - **Skip previously-addressed rounds.** Only consider reviewer comments created **strictly after** the slice branch's last commit timestamp. Earlier comments are previous rounds — the fixes they demanded are already in `git log`, and re-reading them would re-do completed work.
-- **Read `security-patterns` before writing any code.**
+- **Read `pattern-engineer-security` before writing any code.**
 - **Always fullstack — load every language reference upfront.** Same as `workflow-engineer-implement-task`.
 - **Read `docs/ADRs/README.md` first, then drill into the ADR detail(s) the reviewer's findings touch.** Project-specific decisions (error envelope, rate-limit keying, idempotency, storage backend, sessions/cookies, config, atomic-token, enumeration prevention) live in the per-project ADR files behind the index — never trust an ADR number across projects, never re-derive the rule from memory. If a finding cites an axis with no ADR row, halt and surface.
 - **Treat each finding as a *class* of issue, not a single instance — propagate via `rg` before declaring the fix done.** Each additional equivalent site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body. Only skip propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors.

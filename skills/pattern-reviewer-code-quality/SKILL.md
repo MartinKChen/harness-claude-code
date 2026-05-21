@@ -7,7 +7,7 @@ description: "Code-quality review patterns for a `type:backend`/`type:frontend` 
 
 Encodes the canonical patterns for reviewing production-code quality on a scoped diff — security, framework conventions, performance, and code hygiene. This skill describes **what to flag and how to format the finding**. Driving the review (fetch issue, set up worktree, scope commits, post the comment, flip the gate) belongs to the dispatched caller (the `reviewer` agent). Computing the overall verdict (APPROVE / BLOCK) also lives with the agent.
 
-Test-coverage review (AC / scenario / edge-case coverage) lives in `pattern-reviewer-test-coverage`. Security-only review (the `security-patterns` catalogue) lives in `pattern-reviewer-security`. This skill does not duplicate either.
+Test-coverage review (AC / scenario / edge-case coverage) lives in `pattern-reviewer-test-coverage`. Security-only review (the full detailed catalogue) lives in `pattern-reviewer-security`. This skill does not duplicate either.
 
 ## When to activate
 
@@ -68,7 +68,7 @@ const result = await db.query(query, [userId]);
 <div>{userComment}</div>
 ```
 
-For depth on a security pattern's exact bar (CVE policy, cookie flags, CSP, rate limits, log redaction), defer to `security-patterns` — the catalogue is authoritative. If the project's `security-patterns` is invoked, do not duplicate its findings here.
+For depth on a security pattern's exact bar (CVE policy, cookie flags, CSP, rate limits, log redaction, SSRF, CORS, webhooks, race conditions), defer to `pattern-reviewer-security` — that catalogue is authoritative. If `pattern-reviewer-security` is invoked in parallel on the same change (security gate), do not duplicate its findings here.
 
 ### Code Quality (HIGH)
 

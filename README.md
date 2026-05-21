@@ -77,7 +77,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | Skill | What it does |
 | --- | --- |
 | `pattern-engineer-database` | Ship migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip, named-artifact, extension cleanup), run via the one-shot `migrate` compose service. |
-| `security-patterns` | Baseline app-sec checks: CVEs, secret handling, input validation, parameterized queries, auth/cookies, CSRF + rate limits, redacted logs. |
+| `pattern-engineer-security` | Engineer-facing security brief — non-negotiables (always do / ask first / never do) + quick-lookup table + red flags. Points back to `pattern-reviewer-security` for the canonical pattern bars. |
 
 ### Design
 
@@ -95,7 +95,7 @@ Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the 
 | --- | --- |
 | `pattern-reviewer-test-coverage` | Test-adequacy patterns for every `type:*` on the code gate: AC coverage from `Done criteria (EARS)`, scenario coverage from `Scenarios (Gherkin)` (and `Migration scenarios`), happy path + edges (boundary, error, empty, concurrency, idempotency, authz) for backend / frontend, parent-slice scenario coverage through the UI with semantic selectors for `type:e2e`. |
 | `pattern-reviewer-code-quality` | Production-code patterns for `type:backend` / `type:frontend` on the code gate: Security (CRITICAL), Code Quality (HIGH), React/Next.js (frontend), Node.js/Backend (backend), Performance (MEDIUM), Best Practices (LOW), AI-generated-code addendum. |
-| `pattern-reviewer-security` | Iterates the `security-patterns` catalogue one pattern at a time on the security gate for `type:backend` / `type:frontend` (refuses `type:e2e`). Cites `file:line` or `image:<tag>` with the catalogue's exact `Required end state`. |
+| `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for the security gate on `type:backend` / `type:frontend` (refuses `type:e2e`). Fourteen patterns (CVEs, secrets, input validation, SQL injection, auth/cookies/IDOR/JWT, XSS + security headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions). Cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
 
 ### `tdd-workflow` references
 

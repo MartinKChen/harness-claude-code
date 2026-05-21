@@ -28,7 +28,7 @@ Do NOT activate when:
 | Skill | When to route to it |
 |-------|---------------------|
 | `tdd-workflow` | For each production-code fix driven by a red E2E spec. **Required when any spec fails for a production-side reason.** |
-| `security-patterns` | At the start of every dispatch, before writing any code. **Required (always).** |
+| `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 
 ## Templates
 
@@ -86,7 +86,7 @@ cd "${worktree_path}"
 
 ### 3. Load always-on security context
 
-Invoke `security-patterns` before any code is written, even if no production fix is required — a fix that does land must satisfy the checklist.
+Invoke `pattern-engineer-security` before any code is written, even if no production fix is required — a fix that does land must satisfy the brief.
 
 ### 4. Load the full fullstack pattern set via `tdd-workflow`
 
@@ -253,7 +253,7 @@ If `gh pr create` inside the script fails because a PR already raced into existe
 - **No force-style push is permitted in this skill — step 8 uses a plain `git push`.** Because step 5 merges (rather than rebases) `origin/main` into the slice branch, the slice branch's history is never rewritten and the push is always a strict fast-forward over `origin/<slice-branch>`. Anywhere else, never force-push and never skip hooks.
 - **Failing E2E specs are the contract for production-code fixes — never duplicate the demand in a unit test.** The spec IS the RED test; the production change is what takes it to GREEN. A separate unit test for the same behavior locks the demand in twice and creates conflicting GREEN cycles.
 - **Bail the whole run on the first E2E-spec bug — do not partially fix production code.** A mixed exit (some production fixes committed, slice flipped to need-attention) leaves the slice branch with a non-green suite and forces the next dispatch to either revert or re-triage. Step 6a triages first, then step 6b or 6c runs — never both.
-- **Read `security-patterns` before writing any code**, even when the immediate fix looks innocuous.
+- **Read `pattern-engineer-security` before writing any code**, even when the immediate fix looks innocuous.
 - **Always fullstack — load every language reference upfront.** A failing E2E spec or a merge conflict can point at any layer; loading all four references upfront prevents a second round-trip.
 - **Treat each production-code fix as a *class* of issue, not a single instance — propagate via `rg`.** A failing spec exercises one site; the bug usually lives at every equivalent site. The same rule applies to patterns brought in by the step 5 merge: when `main` ships a new helper / renamed import / new validation hook, `rg` the slice's touched files for clearly equivalent sites still on the old pattern and bring them onto the new one. Each additional site gets its own RED → GREEN. List the additional sites in the commit body. Only skip propagation when a search confirms isolation. This is not license to expand into unrelated refactors.
 - **Re-run the full touched-spec set after every commit.** A fix can regress a previously-passing spec; finding that out after the PR opens wastes a review cycle.

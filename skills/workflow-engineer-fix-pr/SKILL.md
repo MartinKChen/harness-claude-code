@@ -25,7 +25,7 @@ Do NOT activate when:
 | Skill | When to route to it |
 |-------|---------------------|
 | `tdd-workflow` | For the `ci` branch (and for any merge-time regressions surfaced by `conflict`). **Required when `ci` is dispatched.** |
-| `security-patterns` | At the start of every dispatch, before writing any code. **Required (always).** |
+| `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
 | Asset | Purpose |
@@ -89,7 +89,7 @@ cd "${worktree_path}"
 
 ### 4. Load always-on security context
 
-Invoke `security-patterns` before any code is written, even when the immediate fix looks innocuous — a fix touching auth / input / output / logging must still satisfy the checklist.
+Invoke `pattern-engineer-security` before any code is written, even when the immediate fix looks innocuous — a fix touching auth / input / output / logging must still satisfy the brief.
 
 ### 5. Load the full fullstack pattern set via `tdd-workflow`
 
@@ -154,7 +154,7 @@ This is the terminal success action. Do **not** flip the PR back to ready-to-rev
 - **Read user directives newer than the last commit BEFORE pulling any CI / conflict evidence.** A user directive in that window OVERRIDES the failing log's surface text, the conflicting hunk's obvious side, any existing ADR, and any default convention. Skipping step 1 is the most common cause of round-trip fix passes that miss the user's actual ask.
 - **Treat the PR's failing CI logs and the live merge conflict as the contract.** If either evidence channel comes back empty when the orchestrator said otherwise, halt and surface — never guess a fix from a clean tree.
 - **Bail to `status:need-attention` when the `ci` failure points at an E2E-spec edit.** Spec rewrites are out of scope for this skill — the user owns the rewrite. Drop `status:fix-in-progress`, add `status:need-attention`, post the diagnostic, and exit. Do not partially patch production code, do not push a partial fix, and do not edit the spec yourself.
-- **Read `security-patterns` before writing any code**, even for innocuous-looking CI / conflict fixes.
+- **Read `pattern-engineer-security` before writing any code**, even for innocuous-looking CI / conflict fixes.
 - **Always fullstack — load every language reference upfront.** Mode-B fixes can land in any layer; loading all four references upfront prevents a second round-trip.
 - **Do `conflict` before `ci` when both are dispatched.** The merge changes the working tree's baseline, so `ci` fixes layered on top stay clean.
 - **Resolve conflicts by union — never blindly take one side.** Read both sides and produce the merge that preserves the slice's intended behavior **and** the base's incoming change. If the conflict can't be resolved without scope expansion, abort the merge and surface.
