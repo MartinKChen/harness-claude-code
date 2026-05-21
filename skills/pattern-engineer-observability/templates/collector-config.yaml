@@ -55,7 +55,7 @@ processors:
         probabilistic: { sampling_percentage: 5 }
 
   # Backstop redaction. The application MUST NOT log secrets in the first
-  # place (see references/observability-patterns.md section 4d); this is a
+  # place (see pattern-engineer-observability section 4d); this is a
   # second line of defence, not the rule.
   attributes/redact:
     actions:

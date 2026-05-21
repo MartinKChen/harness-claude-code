@@ -27,7 +27,12 @@ Do NOT activate when:
 
 | Skill | When to route to it |
 |-------|---------------------|
-| `tdd-workflow` | For each production-code fix driven by a red E2E spec. **Required when any spec fails for a production-side reason.** |
+| `workflow-engineer-tdd` | For each production-code fix driven by a red E2E spec. **Required when any spec fails for a production-side reason.** |
+| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
+| `pattern-engineer-frontend-standard` | When the fix touches frontend code. |
+| `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
+| `pattern-engineer-python` | When the fix touches backend Python code. |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 
 ## Templates
@@ -88,9 +93,9 @@ cd "${worktree_path}"
 
 Invoke `pattern-engineer-security` before any code is written, even if no production fix is required — a fix that does land must satisfy the brief.
 
-### 4. Load the full fullstack pattern set via `tdd-workflow`
+### 4. Load the full fullstack pattern set
 
-A failing E2E spec can point at a bug in any layer of the slice. Instruct `tdd-workflow` to load `references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, and `references/docker-patterns.md` so the fix can land anywhere without a second round-trip.
+A failing E2E spec can point at a bug in any layer of the slice. Load `pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` so the fix can land anywhere without a second round-trip.
 
 ### 5. Merge `origin/main` into the slice branch and resolve any conflicts
 
@@ -109,9 +114,9 @@ If the merge completes cleanly (exit 0, no conflicts), continue to step 6.
 
 If conflicts surface, the script exits non-zero with the working tree mid-merge. Resolve every conflicting hunk by reading both sides and producing the **union** that preserves the slice's intended behavior **and** the base's incoming change — never blindly take one side. After resolving every conflict, `git add <path>` the resolved files and finalize the merge with `git commit --no-edit` (or `git commit` with a clarifying message that lists the unioned paths). Do not amend or rewrite the original slice commits; the merge commit is the only new commit this step should produce.
 
-If the merge brings a new pattern in from `main` (a new safety helper, a renamed import, a new validation hook), `rg` the slice's other touched files for clearly equivalent sites still on the old pattern and bring them onto the new one in the same prep pass — per the pattern-propagation rule in *Iron rules*. Each such site gets its own RED → GREEN via `tdd-workflow` after the merge completes, and each lands as its own commit on top of the merge commit.
+If the merge brings a new pattern in from `main` (a new safety helper, a renamed import, a new validation hook), `rg` the slice's other touched files for clearly equivalent sites still on the old pattern and bring them onto the new one in the same prep pass — per the pattern-propagation rule in *Iron rules*. Each such site gets its own RED → GREEN via `workflow-engineer-tdd` after the merge completes, and each lands as its own commit on top of the merge commit.
 
-If the merge introduces test-visible regressions (existing unit/integration tests fail because of merged-in code), drop into a fresh RED → GREEN → REFACTOR cycle for each broken test via `tdd-workflow` **before** continuing to E2E execution in step 6.
+If the merge introduces test-visible regressions (existing unit/integration tests fail because of merged-in code), drop into a fresh RED → GREEN → REFACTOR cycle for each broken test via `workflow-engineer-tdd` **before** continuing to E2E execution in step 6.
 
 **If the conflict cannot be resolved without scope expansion** (e.g. `main` rewrote a module the slice also rewrites and the two intents are incompatible), `git merge --abort` and route to the bail-out path in step 6c with a diagnostic listing every conflicting path, both incoming and slice-side intents per path, and a one-line explanation of why union resolution would require scope expansion. The user resolves the divergence and re-dispatches by clearing `status:need-attention`.
 
@@ -159,7 +164,7 @@ After every commit, re-run the full set of `touched_specs` (not just the one you
 
 Once every spec is GREEN, run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If any is missing, scaffold it via `docker-patterns` and commit `chore(scaffold): <what>`.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If any is missing, scaffold it via `pattern-engineer-container` and commit `chore(scaffold): <what>`.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` against everything committed in this prep pass. If a fix added a runtime dep, exposed a new port, changed an entrypoint, or moved a secret to env, update the container files in the same slice (commit `chore(docker): <what>` or `fix(docker): <what>`). If the runtime surface did not drift, leave the container files alone.
 
 Then run the `.env.example` audit: a fix that added, renamed, or removed an env var the app reads requires a matching update to `.env.example` (commit `chore(env): <what>` or `fix(env): <what>`). If env vars did not drift, leave it alone.
@@ -263,5 +268,5 @@ If `gh pr create` inside the script fails because a PR already raced into existe
 - **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `workflow-engineer-implement-task`.
 - **`Closes #<slice-#>` MUST be the first closing-keyword reference in the PR body.** `workflow-orchestrator-close-pr` reads `closingIssuesReferences[0]` to find the slice issue it strips `status:in-progress` from. Putting a task ahead of the slice would point `workflow-orchestrator-close-pr` at the wrong issue.
 - **Milestone inherits from the slice issue.** If the slice has no milestone, open the PR without one — never fabricate.
-- **Commit on the cadence prescribed by `tdd-workflow` and format every commit per `templates/commit-messages.md`.** Never skip hooks.
+- **Commit on the cadence prescribed by `workflow-engineer-tdd` and format every commit per `templates/commit-messages.md`.** Never skip hooks.
 - **Stop and exit after the terminal action.** Do not flip the PR to ready-to-review (that's `workflow-orchestrator-close-pr`), do not touch `review:*` labels (those live on tasks), do not comment further, do not loop.

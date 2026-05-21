@@ -1,4 +1,9 @@
-# frontend-patterns
+---
+name: pattern-engineer-frontend-standard
+description: "Modern React + TypeScript: Next.js for SSR/SSG/edge, Vite for CSR. Composition-first components, custom hooks, route registration + `App.test.tsx` reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, RHF+Zod forms, error boundaries per route, native a11y elements, strict TS, Tailwind ↔ `docs/DESIGNs/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+---
+
+# pattern-engineer-frontend-standard
 
 Enforce idiomatic, modern React + TypeScript practices on every frontend implementation task. Encodes the conventions this project considers non-negotiable: React + TypeScript as the baseline, Next.js when the app needs SSR/SSG/edge, Vite when it's pure CSR, composition-first component design, custom hooks for reusable logic, Context + Reducer for shared state, deliberate performance optimization, controlled forms with validation, error boundaries at app seams, Framer Motion for animation, accessible keyboard/focus behavior, responsive design, i18n, strict TypeScript, and a standard lint/typecheck/test command set.
 
@@ -688,21 +693,7 @@ Style exclusively with Tailwind CSS classes that map to design tokens. **No** ha
 
 ### TypeScript strictness
 
-`tsconfig.json` must enable strict mode. These flags are non-negotiable:
-
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitReturns": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
-  }
-}
-```
+`tsconfig.json` must enable strict mode. The non-negotiable `compilerOptions` flags live in `templates/tsconfig.json` — copy that block into the project's tsconfig and add project-specific entries on top.
 
 - No `any`. Use `unknown` at boundaries and narrow before use.
 - No non-null assertions (`!`) except in the rarest cases with a comment explaining the invariant.

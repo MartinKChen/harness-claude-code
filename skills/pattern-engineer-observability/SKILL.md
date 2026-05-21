@@ -1,4 +1,9 @@
-# observability-patterns
+---
+name: pattern-engineer-observability
+description: "OpenTelemetry is the only instrumentation API in source; vendor SDKs only behind the Collector. Services emit traces, metrics, logs through OTel with shared resource attributes, W3C `tracecontext` propagation, auto-instrumentation for boilerplate + hand-rolled spans for business ops, RED/USE metrics with bounded label cardinality, structured JSON logs gated at source (no `print`, no secrets). The Collector owns sampling, redaction, fan-out. Activate when touching instrumentation or `OTEL_*`."
+---
+
+# pattern-engineer-observability
 
 Enforce a single, stack-agnostic observability stance: **OpenTelemetry is the only instrumentation API**, and every running service emits the three signals — **metrics, logs, traces** — through it. Vendor SDKs (Datadog, New Relic, Sentry, Honeycomb, Splunk, Elastic) MAY only appear as **OTLP backends** behind the OTel Collector — never as app-level libraries in the code path. The point: one instrumentation surface in the source, swappable backends behind it.
 
@@ -212,8 +217,8 @@ Bootstrap the OTel SDK in **exactly one place** per service (`observability.py`,
 
 Copy the matching template into the service and adapt it; do not rewrite the bootstrap from scratch each time:
 
-- Python — `../templates/observability/python-bootstrap.py`
-- TypeScript / Node — `../templates/observability/typescript-bootstrap.ts`
+- Python — `templates/observability/python-bootstrap.py`
+- TypeScript / Node — `templates/observability/typescript-bootstrap.ts`
 
 Two non-negotiables the bootstrap encodes (and any new-language template MUST encode the same way):
 
@@ -256,7 +261,7 @@ Every Collector config has the same three-stage shape, wired into one **pipeline
 - **Processors** — transform / filter / sample in order. The order matters: `memory_limiter` first to refuse data when overloaded, `resourcedetection` to add platform attributes, `tail_sampling` for traces, `attributes/redact` for backstop secret-stripping, `batch` last before export.
 - **Exporters** — ship data out. One exporter per backend; each pipeline can fan to multiple exporters.
 
-The starter config lives at `../templates/observability/collector-config.yaml` — copy it, point the exporters at the real backends, and tune `tail_sampling` policies + redaction rules. Don't write this from scratch.
+The starter config lives at `templates/observability/collector-config.yaml` — copy it, point the exporters at the real backends, and tune `tail_sampling` policies + redaction rules. Don't write this from scratch.
 
 #### What the Collector owns (not the app)
 
@@ -375,7 +380,7 @@ Logs back the alert — they let the operator drill into *why* — but never tri
 
 Observability is a first-class behavior. Test it the same way you test anything else: in the RED step, assert that the span / metric / log is emitted with the right attributes; in the GREEN step, add the OTel call. Observability is not a separate phase after the feature ships — it's part of the same RED→GREEN cycle.
 
-Copy the matching in-memory-exporter fixtures from `../templates/observability/test-fixtures.md` (Python pytest and TypeScript vitest/jest recipes for spans, metrics, and logs). The non-negotiables:
+Copy the matching in-memory-exporter fixtures from `templates/observability/test-fixtures.md` (Python pytest and TypeScript vitest/jest recipes for spans, metrics, and logs). The non-negotiables:
 
 - **Do not mock the OTel API itself.** Use the real SDK with an in-memory exporter; a test that mocks `tracer.startSpan` is testing the mock, not the behavior.
 - **Pin attributes, not just span/metric/log existence.** "A span was created" is not an assertion; "a span named X with attribute Y=Z was created" is. A span with no attribute assertions is barely worth emitting — the next change can strip the attributes silently and the test still passes.

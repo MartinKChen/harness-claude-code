@@ -1,9 +1,9 @@
 ---
-name: tdd-workflow
-description: "Strictly enforce Test-Driven Development whenever implementing, building, adding, or shipping a feature, module, function, class, endpoint, handler, service, or behavior. Activate on any implementation task across all languages and file types (.ts, .tsx, .js, .py, .go, .rs, .java, .rb, .swift, .kt, .cpp, .cs). Triggers on verbs like implement, build, add, create, ship, develop, code, write paired with feature-shaped nouns (feature, module, component, endpoint, handler, service, function, class, behavior, requirement). Triggers on phrases like 'implement X', 'build a feature for Y', 'add support for Z', 'ship the feature', 'work on the next ticket', 'satisfy the issue'. Also activates when a GitHub issue (e.g. `gh issue view <n>`, an issue URL, or `#<n>`) is referenced as the unit of work. Encodes the outside-in TDD loop (acceptance test → red/green/refactor module loop → adapter contract tests → wiring), the per-step commit cadence (one commit per RED / GREEN / REFACTOR step, formatted per the dispatched caller's local `templates/commit-messages.md`), mandatory edge-case coverage, banned test anti-patterns, and the iron rules that make TDD a discipline."
+name: workflow-engineer-tdd
+description: "Strictly enforce outside-in TDD on every implementation task. Acceptance test first from the issue's EARS/Gherkin scenarios; modules grown via one-behavior RED → GREEN → REFACTOR loops with fake adapters at seams; real adapters earn contract tests; wiring proved by the acceptance test going green. Each step is its own commit per the caller's `templates/commit-messages.md`. Encodes scaffold-vs-production boundaries, mandatory edge-case coverage, banned test anti-patterns, and the iron rules."
 ---
 
-# tdd-workflow
+# workflow-engineer-tdd
 
 Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller skill's local `templates/commit-messages.md` (e.g. `workflow-engineer-implement-task/templates/commit-messages.md`, `workflow-engineer-fix-task/templates/commit-messages.md`).
 
@@ -23,28 +23,23 @@ Do NOT activate when:
 - The change is non-behavioral: formatting, comments, type-only renames, dependency bumps, or doc edits.
 - The user has explicitly opted out of TDD for this task (rare — push back once before complying).
 
-## References
+## Other skills
 
-Read the reference files under `references/` on demand. They are not auto-activated — load them only when the conditions below apply.
-
-| Reference | When to read |
-|-----------|--------------|
-| `references/coding-patterns.md` | Always. Read at the start of every task — naming, KISS/DRY/YAGNI, immutability, error handling apply to every GREEN and REFACTOR step. |
-| `references/docker-patterns.md` | When the task is container-related — modifying `Dockerfile`, `docker-compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
-| `references/frontend-patterns.md` | When the task implements frontend code — React/TypeScript components, hooks, pages, forms, or anything under the frontend package. |
-| `references/observability-patterns.md` | When the task adds/edits instrumentation in any service — log statements, spans, metrics, trace-context propagation, OTel SDK bootstrap, Collector config, or any `OTEL_*` env var. Iron rule: OpenTelemetry is the only instrumentation API; vendor SDKs only appear in the Collector. |
-| `references/python-patterns.md` | When the task implements backend code in Python — `.py` files, FastAPI/Flask/Django handlers, SQLAlchemy models, pytest tests. |
-
-Other skills still apply (route to them as you would any skill, not as files under this one):
+Pattern skills are not loaded as files under this one — route to them as siblings whenever their surface comes up in a RED / GREEN / REFACTOR step.
 
 | Skill | When to route to it |
 |-------|---------------------|
+| `pattern-engineer-coding-standard` | Always. Naming, KISS/DRY/YAGNI, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests apply to every GREEN and REFACTOR step. |
+| `pattern-engineer-container` | When the task is container-related — editing `Dockerfile`, `docker-compose.yaml` / `.yml`, `compose.yaml` / `.yml`, `.dockerignore`, or otherwise changing the runtime image surface. |
+| `pattern-engineer-frontend-standard` | When the task implements frontend code — React + TypeScript components, hooks, pages, forms, or anything under the frontend package. |
+| `pattern-engineer-observability` | When the task adds/edits instrumentation — log statements, spans, metrics, trace-context propagation, OTel SDK bootstrap, Collector config, or any `OTEL_*` env var. Iron rule: OpenTelemetry is the only instrumentation API; vendor SDKs only appear in the Collector. |
+| `pattern-engineer-python` | When the task implements backend code in Python — `.py` files, FastAPI/Flask/Django handlers, SQLAlchemy models, pytest tests. |
 | `pattern-architect-deep-module` | When defining the module's public interface before the first RED — keep the interface narrow relative to the functionality it hides. |
 | `pattern-architect-api-endpoint` | When the module under test is an HTTP endpoint — for URL/verb/shape decisions before the acceptance test is written. |
 | `pattern-architect-data-model` | When a real adapter under contract test is a DB-backed store (e.g. `PostgresTaskStore`) — for schema shape and table/column/constraint naming. |
 | `pattern-engineer-database` | When the contract test or fixture has to ship an Alembic migration — for autogenerate, `pytest-alembic` assertions, and the `migrate` compose service. |
 
-Commit-message format is owned by the **dispatched caller skill**, not this one. When `tdd-workflow` is invoked by `workflow-engineer-implement-task`, `workflow-engineer-fix-pr`, `workflow-engineer-fix-task`, `workflow-e2e-author`, or `workflow-e2e-fix`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
+Commit-message format is owned by the **dispatched caller skill**, not this one. When `workflow-engineer-tdd` is invoked by `workflow-engineer-implement-task`, `workflow-engineer-fix-pr`, `workflow-engineer-fix-task`, `workflow-e2e-author`, or `workflow-e2e-fix`, each RED / GREEN / REFACTOR / contract-test / wiring step is committed using the caller's `templates/commit-messages.md`. The cadence and subject conventions in the *Workflow* below are stable; only the surrounding format (trailers, scope rules) is read from the caller's template.
 
 ## Workflow
 

@@ -24,7 +24,12 @@ Do NOT activate when:
 
 | Skill | When to route to it |
 |-------|---------------------|
-| `tdd-workflow` | To drive each finding's RED → GREEN → REFACTOR cycle (and each propagated site's). **Required.** |
+| `workflow-engineer-tdd` | To drive each finding's RED → GREEN → REFACTOR cycle (and each propagated site's). **Required.** |
+| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
+| `pattern-engineer-frontend-standard` | When the fix touches frontend code. |
+| `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
+| `pattern-engineer-python` | When the fix touches backend Python code. |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
@@ -100,9 +105,9 @@ cd "${worktree_path}"
 
 Invoke `pattern-engineer-security` before any code is written.
 
-### 4. Load the full fullstack pattern set via `tdd-workflow`
+### 4. Load the full fullstack pattern set
 
-Same as `workflow-engineer-implement-task` step 4 — load every reference upfront (`references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, `references/docker-patterns.md`).
+Same as `workflow-engineer-implement-task` step 4 — load every engineer pattern skill upfront (`pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, plus `pattern-engineer-observability` when instrumentation is in scope) alongside `workflow-engineer-tdd`.
 
 **Then read the ADR index, and the ADR detail(s) the reviewer's findings touch.** Reviewer findings on this codebase routinely flag deviations from project-specific architecture decisions (error-envelope shape, rate-limit keying, idempotency-key lifecycle, storage backend, config loader, sessions/cookies, atomic-token consumption, enumeration-prevention rules) — but the ADR numbers and detail-file names vary per project. Open `docs/ADRs/README.md` first to learn which detail file covers each axis the reviewer flagged, then read those detail files to ground the fix in what the project has actually decided. If the reviewer cites an ADR by number, follow the index to the matching detail file rather than trusting the number across projects. If a reviewer finding points at an axis with no ADR row in the index, halt and surface — the user needs to either add the decision or rescope the fix.
 
@@ -112,7 +117,7 @@ For each finding, BEFORE writing the RED, `rg` the codebase for the same anti-pa
 
 After the last must-fix finding is GREEN, run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, a top-level `docker-compose.yaml` (or `compose.yaml`), and a `.dockerignore` next to each `Dockerfile`. If a reviewer's fix introduced a new deployable surface (a new service, a worker process, an additional package) and its container artifacts are still missing, scaffold them now via `docker-patterns` and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, a top-level `docker-compose.yaml` (or `compose.yaml`), and a `.dockerignore` next to each `Dockerfile`. If a reviewer's fix introduced a new deployable surface (a new service, a worker process, an additional package) and its container artifacts are still missing, scaffold them now via `pattern-engineer-container` and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` against every fix you just landed. A security reviewer's "secret in a config file" fix often moves the secret to an env var that the Dockerfile / compose must now expose; a code reviewer's "missing dep" fix may need that dep installed in the image; a "remove this debug endpoint" fix may free an exposed port. If the runtime surface drifted, update the container files in the same slice and commit using `chore(docker): <what>` / `fix(docker): <what>` (format per `templates/commit-messages.md`) before moving to the push step. If it did not drift, leave the container files alone.
 
 Then run the `.env.example` audit: reviewer-driven fixes routinely add env vars (a security fix that pulls a secret out of a config file, a code fix that exposes a new feature flag, a config-cleanup fix that renames an existing var). If any env var the app reads was added, renamed, or removed by this fix pass, update `.env.example` in the same slice and commit using `chore(env): <what>` / `fix(env): <what>` (format per `templates/commit-messages.md`). If env vars did not drift, leave `.env.example` alone.

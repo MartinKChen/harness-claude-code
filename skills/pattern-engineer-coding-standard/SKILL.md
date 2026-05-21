@@ -1,4 +1,9 @@
-# coding-patterns
+---
+name: pattern-engineer-coding-standard
+description: "Language-agnostic coding standards. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
+---
+
+# pattern-engineer-coding-standard
 
 Language-agnostic coding standards that apply to every implementation task. The goal is consistent, readable, simple code: clear names, small functions, immutable data by default, parallel async where independent, strong types, and tests structured for clarity.
 

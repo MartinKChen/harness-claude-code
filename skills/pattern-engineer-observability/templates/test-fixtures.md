@@ -1,7 +1,7 @@
 # Test fixtures for observability
 
 Recipes for asserting on emitted spans, metric points, and log records in unit
-tests. The rule from `references/observability-patterns.md`:
+tests. The rule from `pattern-engineer-observability`:
 
 > Do not mock the OTel API. Use the real SDK with an **in-memory exporter**.
 

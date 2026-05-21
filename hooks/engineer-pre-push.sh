@@ -14,7 +14,7 @@
 # actually existing in this worktree, so a backend-only or frontend-only
 # project still runs cleanly.
 #
-# Checks (matching skills/tdd-workflow/references/{python,frontend,docker}-patterns.md):
+# Checks (matching skills/pattern-engineer-{python,frontend-standard,container}/SKILL.md):
 #   container-presence: every deployable surface (backend/, frontend/, or a
 #              root-level single-package layout) must have a Dockerfile +
 #              .dockerignore, plus a top-level compose.yaml / docker-compose.yaml.
@@ -537,7 +537,7 @@ run_container_presence_checks() {
     for m in "${missing[@]}"; do list+=$'\n  - '"${m}"; done
     deny \
       "engineer-pre-push: blocking git push for ${slice_branch} — missing required container artifacts: ${missing[*]}" \
-      "Every deployable surface in the worktree must ship with a Dockerfile + .dockerignore, plus a top-level compose file. See agents/engineer.md (Best Practices → 'Container setup is a pre-push gate') and skills/tdd-workflow/references/docker-patterns.md for the multi-stage / pinned / non-root template. Missing now:${list}
+      "Every deployable surface in the worktree must ship with a Dockerfile + .dockerignore, plus a top-level compose file. See agents/engineer.md (Best Practices → 'Container setup is a pre-push gate') and skills/pattern-engineer-container/SKILL.md for the multi-stage / pinned / non-root template. Missing now:${list}
 
 Scaffold the missing files (multi-stage, pinned tags, non-root user, secrets via env, no .venv inside images), commit via git-workflow as chore(scaffold): <what>, and retry the push."
   fi

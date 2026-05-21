@@ -24,7 +24,12 @@ Do NOT activate when:
 
 | Skill | When to route to it |
 |-------|---------------------|
-| `tdd-workflow` | For the `ci` branch (and for any merge-time regressions surfaced by `conflict`). **Required when `ci` is dispatched.** |
+| `workflow-engineer-tdd` | For the `ci` branch (and for any merge-time regressions surfaced by `conflict`). **Required when `ci` is dispatched.** |
+| `pattern-engineer-coding-standard` | Always — language-agnostic standards apply to every GREEN and REFACTOR step. **Required (always).** |
+| `pattern-engineer-container` | When the fix touches `Dockerfile`, compose files, or `.dockerignore`. |
+| `pattern-engineer-frontend-standard` | When the fix touches frontend code. |
+| `pattern-engineer-observability` | When the fix touches OTel instrumentation, logs, spans, metrics, or `OTEL_*` env vars. |
+| `pattern-engineer-python` | When the fix touches backend Python code. |
 | `pattern-engineer-security` | At the start of every dispatch, before writing any code. **Required (always).** |
 ## Templates
 
@@ -91,9 +96,9 @@ cd "${worktree_path}"
 
 Invoke `pattern-engineer-security` before any code is written, even when the immediate fix looks innocuous — a fix touching auth / input / output / logging must still satisfy the brief.
 
-### 5. Load the full fullstack pattern set via `tdd-workflow`
+### 5. Load the full fullstack pattern set
 
-CI failures and merge conflicts can land in any layer of the slice. Instruct `tdd-workflow` to load `references/coding-patterns.md`, `references/python-patterns.md`, `references/frontend-patterns.md`, and `references/docker-patterns.md` so the fix can land anywhere without a second round-trip.
+CI failures and merge conflicts can land in any layer of the slice. Load `pattern-engineer-coding-standard`, `pattern-engineer-python`, `pattern-engineer-frontend-standard`, `pattern-engineer-container`, and `pattern-engineer-observability` alongside `workflow-engineer-tdd` so the fix can land anywhere without a second round-trip.
 
 ### 6. Address every dispatched scenario
 
@@ -108,7 +113,7 @@ Process each scenario from the dispatch prompt; if both were passed, do `conflic
   - **Production-code bug** — keep the failing test failing (it is already RED), make the minimum production change to take it to GREEN, then REFACTOR under green. Before declaring GREEN, `rg` the codebase for the same anti-pattern the failing log pointed at (same call, same missing guard, same broken idiom) — CI exercised one site, but the bug may live at every equivalent site. Each additional site gets its own RED → GREEN, per the pattern-propagation rule in *Iron rules*. Commit at each step.
   - **E2E-spec bug (must be edited by the user)** — route to step 6a's bail-out path. Do not partially patch production code, do not push a partial fix, and do not edit the E2E spec yourself — spec rewrites are out of scope for this skill; the user reviews the failing assertion and either rewrites the spec or clarifies the demand and re-dispatches.
 
-Invoke `tdd-workflow` for the `ci` branch's production-code path; the `conflict` branch only re-enters `tdd-workflow` if merge-time regressions surface failing tests.
+Invoke `workflow-engineer-tdd` for the `ci` branch's production-code path; the `conflict` branch only re-enters `workflow-engineer-tdd` if merge-time regressions surface failing tests.
 
 #### 6a. Bail out when the CI failure needs an E2E-spec edit
 
@@ -134,7 +139,7 @@ If both scenarios were dispatched and the `conflict` scenario is already committ
 
 Once the dispatched scenario(s) are clear (and the run did not route to step 6a), run the **two-part container-setup audit**:
 
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. A `conflict` merge can drop one of these (the base side deleted it intentionally — verify before re-adding) or a `ci` failure can surface a deployable surface that was added without its container artifacts. If any is missing for a surface that should ship, scaffold it now via `docker-patterns` and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
+- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. A `conflict` merge can drop one of these (the base side deleted it intentionally — verify before re-adding) or a `ci` failure can surface a deployable surface that was added without its container artifacts. If any is missing for a surface that should ship, scaffold it now via `pattern-engineer-container` and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
 - **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` against everything committed in this fix pass. A `ci` failure may have surfaced a missing runtime dep that needs to land in the image; a `conflict` merge may have brought container changes in from the base that leave equivalent slice-side container changes still on the old shape. If the runtime surface drifted, update the container files in the same slice and commit using `chore(docker): <what>` / `fix(docker): <what>` (format per `templates/commit-messages.md`) before moving to the push step. If it did not drift, leave the container files alone.
 
 Then run the `.env.example` audit: a `ci` failure can surface a missing env-var entry the app needs at boot, and a `conflict` merge can bring new env vars in from the base that leave `.env.example` out of date. If any env var the app reads was added, renamed, or removed by this fix pass (or by the merged-in base side), update `.env.example` in the same slice and commit using `chore(env): <what>` / `fix(env): <what>` (format per `templates/commit-messages.md`). If env vars did not drift, leave `.env.example` alone.
@@ -163,5 +168,5 @@ This is the terminal success action. Do **not** flip the PR back to ready-to-rev
 - **Container setup is a pre-push gate, not optional polish.** Run the two-part audit (presence + drift) before push; the pre-push hook enforces presence. Update container files only when the runtime surface actually drifted — never as routine cleanup. Skip the audit entirely when bailing via step 6a — the run is incomplete by design.
 - **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads. Never commit a real `.env`; never put real secrets in `.env.example`.
 - **Per-slice container isolation: slug-tag and slug-name; override port conflicts at the shell, never in committed files.** Same shell-override pattern as `workflow-engineer-implement-task`.
-- **Commit on the cadence prescribed by `tdd-workflow` and format every commit per `templates/commit-messages.md`.** Never skip hooks; never force-push.
+- **Commit on the cadence prescribed by `workflow-engineer-tdd` and format every commit per `templates/commit-messages.md`.** Never skip hooks; never force-push.
 - **Stop and exit after the terminal action.** Success path: push and remove `status:fix-in-progress`. Bail path: `flip-need-attention.sh` removes `status:fix-in-progress` and adds `status:need-attention`. Either way: do not flip the PR back to ready-to-review (that's `workflow-orchestrator-close-pr`'s lane), do not touch `review:*` labels on the PR, do not comment further, do not loop.

@@ -12,7 +12,7 @@
 # - Backend talks to db over the compose network using the service name `db`.
 # - Frontend talks to backend over the compose network using the service name
 #   `backend`. A nginx reverse-proxy block to `backend` is NOT shipped here —
-#   that lands via frontend-patterns / docker-patterns when the first
+#   that lands via pattern-engineer-frontend-standard / pattern-engineer-container when the first
 #   frontend->backend call ships.
 # - No `migrate` service here. It lands via pattern-engineer-database when the first
 #   migration ships.

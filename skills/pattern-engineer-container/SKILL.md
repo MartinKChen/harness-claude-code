@@ -1,4 +1,9 @@
-# docker-patterns
+---
+name: pattern-engineer-container
+description: "Containerized setups: every Dockerfile is multi-stage (`base`/`build`/`final`), pinned (no `:latest`) and vetted via `docker scout`, non-root with writable paths redirected, no in-image virtualenvs, `.dockerignore` required. Backends `alembic upgrade head` in entrypoint before exec'ing the server; expose fast `/health`. Frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback. Secrets are runtime env vars. Activate on Dockerfile, compose, `.dockerignore`."
+---
+
+# pattern-engineer-container
 
 Standardize how containerized setups are authored in this project. Every Dockerfile is multi-stage, every image is pinned and non-root, every compose service exposes only what it needs, and volumes are chosen deliberately. The skill also encodes the day-to-day `docker compose` commands used to operate and debug services.
 
@@ -214,84 +219,11 @@ volumes:
 
 Drop-in starting point for a Node-based service. Adjust language/runtime, but keep the three-stage shape, pinning, non-root user, and `.dockerignore`.
 
-```dockerfile
-# syntax=docker/dockerfile:1.7
-
-FROM node:20.11.1-alpine AS base
-WORKDIR /app
-RUN apk add --no-cache tini
-
-FROM base AS build
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-RUN npm run build && npm prune --omit=dev
-
-FROM base AS final
-ENV NODE_ENV=production
-RUN addgroup -S app && adduser -S app -G app
-COPY --from=build --chown=app:app /app/node_modules ./node_modules
-COPY --from=build --chown=app:app /app/dist ./dist
-COPY --from=build --chown=app:app /app/package.json ./package.json
-USER app
-EXPOSE 3000
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/server.js"]
-```
-
-```yaml
-# docker-compose.yaml
-services:
-  app:
-    build:
-      context: .
-      target: final
-    image: myorg/app:0.1.0
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
-    image: postgres:16.3-alpine
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: app
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  db_data:
-```
-
-```gitignore
-# .dockerignore
-.git
-.gitignore
-node_modules
-npm-debug.log*
-.env
-.env.*
-dist
-build
-coverage
-.vscode
-.idea
-*.md
-Dockerfile*
-docker-compose*.yaml
-docker-compose*.yml
-```
+| Asset | Purpose |
+|-------|---------|
+| `templates/Dockerfile` | Three-stage Node Dockerfile (base + build + final), pinned `node:20.11.1-alpine`, non-root `app` user, `tini` as PID 1. |
+| `templates/docker-compose.yaml` | `app` + `db` (Postgres `16.3-alpine`) services with healthcheck, named `db_data` volume, host-bound `127.0.0.1:3000` mapping. |
+| `templates/.dockerignore` | Excludes `.git`, `node_modules`, `.env*`, build outputs, IDE folders, and `Dockerfile*`/`docker-compose*` from build context. |
 
 ## Command
 

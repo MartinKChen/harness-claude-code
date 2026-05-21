@@ -29,7 +29,7 @@ Do NOT activate when:
 |-------|---------------------|
 | `git-workflow` | For Conventional Commits subject format on every `chore(scaffold):` / `build:` commit produced here. **Required.** |
 
-This skill does NOT load `tdd-workflow`, `pattern-engineer-security`, `pattern-architect-data-model`, `pattern-engineer-database`, or any other pattern skill. Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those skills come in once `workflow-engineer-implement-task` takes over.
+This skill does NOT load `workflow-engineer-tdd`, `pattern-engineer-security`, `pattern-architect-data-model`, `pattern-engineer-database`, or any other pattern skill. Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those skills come in once `workflow-engineer-implement-task` takes over.
 
 ## Templates
 

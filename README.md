@@ -1,6 +1,6 @@
 # harness-claude-code
 
-An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships pickup / close-out lifecycle skills that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD (with bundled coding/frontend/backend/Docker references), git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
+An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships pickup / close-out lifecycle skills that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD, coding / frontend / backend / container / observability patterns, git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
 
 ## Install from GitHub
 
@@ -68,7 +68,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 
 | Skill | What it does |
 | --- | --- |
-| `tdd-workflow` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
+| `workflow-engineer-tdd` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
 | `git-workflow` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
 
@@ -76,6 +76,11 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 
 | Skill | What it does |
 | --- | --- |
+| `pattern-engineer-coding-standard` | Language-agnostic coding standards — Readability → KISS → DRY → YAGNI, naming, immutability, narrow error handling, parallel-by-default async, strong types, AAA tests. |
+| `pattern-engineer-container` | Multi-stage Dockerfiles with pinned non-root images, mandatory `.dockerignore`, migration-aware entrypoints, `/health` endpoints, deliberate networking/volumes, and the day-to-day `docker compose` commands. |
+| `pattern-engineer-frontend-standard` | Modern React + TypeScript practices — Next.js vs. Vite, composition-first components, route registration + reachability tests, TanStack Query guards, controlled forms via React Hook Form + Zod, error boundaries, Framer Motion, accessibility, Tailwind tokens. |
+| `pattern-engineer-observability` | OpenTelemetry as the only instrumentation API; traces / metrics / logs through OTel with shared resource attributes, semantic-convention names, bounded label cardinality, source-gated structured logs, and the Collector owning sampling / redaction / fan-out. |
+| `pattern-engineer-python` | Idiomatic modern Python — `uv` only, full type annotations, EAFP, modern type hints, `Protocol` for duck typing, dataclasses as DTOs, context managers, banned-API list, Alembic migrations with both-direction constraint tests + `pytest-alembic` round-trip. |
 | `pattern-engineer-database` | Ship migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip, named-artifact, extension cleanup), run via the one-shot `migrate` compose service. |
 | `pattern-engineer-security` | Engineer-facing security brief — non-negotiables (always do / ask first / never do) + quick-lookup table + red flags. Points back to `pattern-reviewer-security` for the canonical pattern bars. |
 
@@ -96,17 +101,6 @@ Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the 
 | `pattern-reviewer-test-coverage` | Test-adequacy patterns for every `type:*` on the code gate: AC coverage from `Done criteria (EARS)`, scenario coverage from `Scenarios (Gherkin)` (and `Migration scenarios`), happy path + edges (boundary, error, empty, concurrency, idempotency, authz) for backend / frontend, parent-slice scenario coverage through the UI with semantic selectors for `type:e2e`. |
 | `pattern-reviewer-code-quality` | Production-code patterns for `type:backend` / `type:frontend` on the code gate: Security (CRITICAL), Code Quality (HIGH), React/Next.js (frontend), Node.js/Backend (backend), Performance (MEDIUM), Best Practices (LOW), AI-generated-code addendum. |
 | `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for the security gate on `type:backend` / `type:frontend` (refuses `type:e2e`). Fourteen patterns (CVEs, secrets, input validation, SQL injection, auth/cookies/IDOR/JWT, XSS + security headers, CSRF, rate limits, log redaction, deps, SSRF, CORS, webhooks/OAuth, race conditions). Cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
-
-### `tdd-workflow` references
-
-These were standalone skills; they now live under [`skills/tdd-workflow/references/`](skills/tdd-workflow/references/) and are loaded on demand by `tdd-workflow` (or read directly by agents that need them).
-
-| Reference | Read it when |
-| --- | --- |
-| `coding-patterns.md` | Always — language-agnostic standards (naming, KISS/DRY/YAGNI, immutability, error handling, AAA tests). |
-| `docker-patterns.md` | The task is container-related — modifying `Dockerfile`, `docker-compose.yaml`, or `.dockerignore`. |
-| `frontend-patterns.md` | The task implements frontend code — React + TypeScript, hooks, pages, forms, etc. |
-| `python-patterns.md` | The task implements backend code in Python — handlers, models, pytest tests. |
 
 ## Hooks
 

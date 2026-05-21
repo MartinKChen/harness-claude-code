@@ -1,4 +1,9 @@
-# python-patterns
+---
+name: pattern-engineer-python
+description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char lines; full type annotations on every signature; EAFP with narrow `except` + `raise ... from e`; modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for duck-typed seams; `@dataclass(frozen=True, slots=True)` as DTOs (Pydantic only at boundaries); `with` for resources; bandit-banned APIs avoided; Alembic chained to head with both-direction constraint tests + `pytest-alembic` round-trip. Activate on `.py` files."
+---
+
+# pattern-engineer-python
 
 Enforce idiomatic, modern Python practices on every Python implementation task. Encodes the conventions this project considers non-negotiable: `uv` for environments, PEP 8 style, type annotations on every signature, EAFP over LBYL, modern type hints, `Protocol` for duck typing, dataclasses as DTOs, context managers for resource handling, a fixed backend layout, and a standard lint/test command set.
 
@@ -223,33 +228,9 @@ def session_scope() -> Iterator[Session]:
 
 ## Template
 
-### Backend layout
-
-Use this layout for any new Python backend service in this project. Source under `src/<package>/`, tests at the top level, single `pyproject.toml`.
-
-```
-backend/
-├── src/mypackage/
-│   ├── __init__.py
-│   ├── api/
-│   ├── models/
-│   └── utils/
-├── tests/
-│   ├── conftest.py
-│   └── database/       # test for model and migration plan
-│   │   └── test_*.py
-│   └── unit/           # unit test for single module
-│   │   └── test_*.py
-│   └── integration/    # integration test with mocked seam
-│       └── test_*.py
-├── pyproject.toml
-└── README.md
-```
-
-- `src/` layout is required (avoids accidental imports from CWD).
-- `api/` holds route/handler modules; `models/` holds dataclasses, ORM models, and DTOs; `utils/` holds cross-cutting helpers.
-- Tests mirror the package tree under `tests/`. Shared fixtures live in `tests/conftest.py`.
-- One `pyproject.toml` per service — declare deps, tool configs (`[tool.ruff]`, `[tool.ruff.format]`, `[tool.mypy]`, `[tool.pytest.ini_options]`) here.
+| Asset | Purpose |
+|-------|---------|
+| `templates/backend-layout.md` | Canonical `src/`-layout backend tree — package under `src/<package>/{api,models,utils}/`, tests mirrored under `tests/{database,unit,integration}/`, single `pyproject.toml` with tool configs (`[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`). |
 
 ## Command
 
