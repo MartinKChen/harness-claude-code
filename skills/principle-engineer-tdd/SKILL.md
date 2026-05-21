@@ -1,9 +1,9 @@
 ---
-name: workflow-engineer-tdd
+name: principle-engineer-tdd
 description: "Strictly enforce outside-in TDD on every implementation task. Acceptance test first from the issue's EARS/Gherkin scenarios; modules grown via one-behavior RED → GREEN → REFACTOR loops with fake adapters at seams; real adapters earn contract tests; wiring proved by the acceptance test going green. Each step is its own commit per the caller's commit-message template. Encodes scaffold-vs-production boundaries, mandatory edge-case coverage, banned test anti-patterns, and the iron rules."
 ---
 
-# workflow-engineer-tdd
+# principle-engineer-tdd
 
 Drive every implementation outside-in with TDD. The acceptance test from the GitHub issue under work is the goalpost; modules are grown inward with one-behavior red/green/refactor loops; real adapters earn their own contract tests; wiring is proven by the acceptance test going green. Each red, green, and refactor step is its own commit, formatted per the dispatched caller's local `templates/commit-messages.md`.
 

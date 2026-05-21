@@ -44,7 +44,7 @@ A `type:e2e` task dispatch is a routing bug — surface and stop. An ambiguous p
 
 **Always on**
 
-- `workflow-engineer-tdd`
+- `principle-engineer-tdd`
 - `pattern-engineer-coding-standard`
 - `pattern-engineer-observability`
 - `pattern-engineer-security`

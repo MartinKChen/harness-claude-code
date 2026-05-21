@@ -41,7 +41,7 @@ Does NOT:
 | `pattern-architect-data-model` | **Always**, at task start, alongside `workflow-architect-interview`. Data-model shape and naming guidance — tables, columns, indexes, constraints, views, and the SQLAlchemy `MetaData` naming convention. Apply to every decision that touches the entity schema. |
 | `pattern-architect-deep-module` | **Always**, at task start, alongside `workflow-architect-interview`. Deep-module design guidance (Ousterhout) — narrow interface, deep implementation, hidden complexity, no shallow wrappers or pass-throughs. Apply to every decision that shapes a module, class, service, library, or API seam. |
 
-Load these four skills at the start of every architecture task — together they define the workflow and the pattern lens you bring to every recommendation during the interview. Do not load implementation or engineering skills (e.g. `pattern-engineer-database`, `workflow-engineer-tdd`, `pattern-engineer-security`, `pattern-reviewer-security`); those are downstream concerns owned by the engineer / reviewer agents and lie outside your read-only / design-only scope.
+Load these four skills at the start of every architecture task — together they define the workflow and the pattern lens you bring to every recommendation during the interview. Do not load implementation or engineering skills (e.g. `pattern-engineer-database`, `principle-engineer-tdd`, `pattern-engineer-security`, `pattern-reviewer-security`); those are downstream concerns owned by the engineer / reviewer agents and lie outside your read-only / design-only scope.
 
 ## Hand-off
 
