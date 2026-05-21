@@ -1,9 +1,11 @@
 ---
 name: pattern-engineer-fastapi
-description: "FastAPI bullets: `APIRouter` with explicit prefix; `Depends()` for injection; Pydantic schemas at the boundary only; app-level exception handlers; `RequestIDMiddleware` registered last so it runs first; pin contract trailing-slash; named path constants shared by route + tests; `Depends`-based auth guards; async-by-default; `Response(status_code=204)` on accepted-no-body. Activate when editing FastAPI routes, deps, schemas, middleware, handlers, or main wiring."
+description: "FastAPI bullets — wire what the contract already decided. `APIRouter` with explicit prefix; `Depends()` injection; Pydantic at the boundary only; app-level exception handlers mapping to the contracted envelope; `RequestIdMiddleware` registered last; named path constants shared by route + tests; `Depends`-based auth guards; async-by-default; lifespan for startup/shutdown; `dependency_overrides` + per-test factory in tests. Activate on FastAPI routes, deps, middleware, handlers, wiring."
 ---
 
 # pattern-engineer-fastapi
+
+FastAPI implementation patterns layered on top of `pattern-engineer-python` and `pattern-engineer-backend-standard`. The api contract (`pattern-architect-api-endpoint`) decides path / verb / status / shape — this skill is HOW you wire them in FastAPI without contradicting the contract.
 
 ## When to activate
 
@@ -13,9 +15,8 @@ Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / �
 
 ### Routes + routers
 
-- Mount each router with an explicit prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`.
-- Path is sourced from a module-level constant when shared with tests: `USERS_PATH = "/api/v1/users"`; both `@router.post(USERS_PATH)` and the test import it.
-- Match the trailing-slash spelling exactly to the contract — `/me` and `/me/` are different URLs; a 307 redirect drops `Set-Cookie` on cross-site responses.
+- Mount each router with the contracted prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`. Prefix matches the api contract verbatim.
+- Path inside the router is sourced from a module-level constant when shared with tests: `USERS_PATH = "/api/v1/users"`; both `@router.post(USERS_PATH)` and the test import it. Constant value = contract path, **including trailing-slash spelling**.
 - One router per resource; never collapse unrelated resources into a "kitchen-sink" router.
 - Async by default; switch to sync only when a downstream dep is sync-only.
 
@@ -28,18 +29,17 @@ Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / �
 
 ### Request + response schemas
 
-- Pydantic models at the boundary only — request body, response model, query params with constraints.
+- Pydantic models at the boundary only — request body, response model, query params with constraints. The **schema shape** comes from the api contract; this skill is HOW you declare it in Pydantic.
 - Don't pass Pydantic models deep into the domain layer; convert to dataclasses / domain types at the seam.
-- `response_model=` on every route so OpenAPI is accurate and sensitive fields are stripped consistently.
-- `Response(status_code=204)` on accepted-no-body; never invent `{"ok": True}`.
-- Use `Field(max_length=…, ge=…, le=…)` on string and numeric fields to bound input ranges.
+- `response_model=` on every route so OpenAPI matches what the contract declared and sensitive fields are stripped consistently.
+- Use `Field(max_length=…, ge=…, le=…)` on string and numeric fields to bound input ranges per the contract.
+- Status-code-only responses (e.g., a contract-declared 204) use `Response(status_code=204)` — the FastAPI idiom for "no body"; never invent `{"ok": True}` when the contract says no body.
 
 ### Exception handlers
 
 - Register app-level handlers for project exceptions: `@app.exception_handler(LoginError)`.
-- Map to the project's error envelope shape from the ADR — same envelope on every 4xx / 5xx.
-- `HTTPException` is acceptable for one-offs but not for project-wide error classes (those get their own handler).
-- Generic 500 handler returns the standard envelope + correlation id; logs the full exception server-side.
+- Each handler maps to the contracted error envelope at one place — never inline `HTTPException(status_code=..., detail=...)` for a project-wide error class.
+- Generic 500 handler returns the envelope + correlation id; logs the full exception server-side.
 
 ### Middleware order
 
@@ -49,8 +49,8 @@ Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / �
 
 ### Background tasks + lifespan
 
-- Use FastAPI's `lifespan` context manager for startup / shutdown hooks (OTel bootstrap, DB pool open/close, queue connect/disconnect).
-- Background tasks via `BackgroundTasks` parameter — but only for fire-and-forget work that can lose to a crash; otherwise use a real queue.
+- Use FastAPI's `lifespan` context manager for startup / shutdown hooks (OTel bootstrap, DB pool open/close, queue connect/disconnect). Not the deprecated `@app.on_event`.
+- `BackgroundTasks` parameter only for fire-and-forget work that can lose to a crash; persistent work uses a real queue.
 - Lifespan is async; don't put blocking I/O there without a thread pool wrapper.
 
 ### OpenAPI + docs

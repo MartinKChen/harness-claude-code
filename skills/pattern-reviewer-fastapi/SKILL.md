@@ -1,9 +1,11 @@
 ---
 name: pattern-reviewer-fastapi
-description: "FastAPI audit: `APIRouter` prefix discipline, `Depends()` injection (no inline auth), Pydantic at boundary only (not deep in domain), app-level exception handlers + project error envelope, middleware registration order (`RequestIDMiddleware` last so it runs first), trailing-slash conformance, named path constants shared by route + tests, `Response(status_code=204)` on accepted-no-body, `Settings()` instantiation in `create_app()` (footgun for tests), `dependency_overrides` in tests not monkeypatch."
+description: "FastAPI best-practice audit — router-mount prefix discipline, `Depends()` injection (no inline auth in handlers), Pydantic at boundary only (not deep in domain), app-level exception handlers (every project exception class registered), middleware registration order (`RequestIdMiddleware` last so it runs first), named path constants shared by route + tests, `Settings()` instantiation footgun in `create_app()`, `dependency_overrides` in tests (not `monkeypatch`), per-test app factory. Contract conformance (path, verb, status code, response/error shape) lives in `pattern-reviewer-contract`."
 ---
 
 # pattern-reviewer-fastapi
+
+FastAPI implementation best-practice audit. The contract-conformance audit (path / verb / status code / response shape / error envelope shape / idempotency policy / rate-limit policy) is owned by `pattern-reviewer-contract` — this skill skips those checks and focuses on FastAPI-specific mechanics.
 
 ## When to activate
 
@@ -12,11 +14,13 @@ description: "FastAPI audit: `APIRouter` prefix discipline, `Depends()` injectio
 
 ## Iron rules
 
+See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
+
 ## Patterns to review
 
 ### Router mounting (MEDIUM)
 
-- Each `APIRouter` mounts with an explicit prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`.
+- Each `APIRouter` mounts with an explicit prefix: `app.include_router(users_router, prefix="/api/v1/users", tags=["users"])`. Whether the prefix matches the contract is `pattern-reviewer-contract`'s job — this rule is "prefix explicit, not implicit".
 - Routes from multiple resources collapsed into a single "kitchen-sink" router → flag.
 - Missing `tags=` → LOW (OpenAPI groups won't render right).
 
@@ -68,12 +72,13 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 - Pydantic models on request bodies, response models, query params — yes.
 - Pydantic models passed deep into the domain layer / DB / business logic → flag; convert to dataclass at the seam.
 
-### Exception handlers + error envelope (HIGH)
+### Exception handlers register at app level (HIGH)
 
 - App-level handlers register for project exceptions: `@app.exception_handler(LoginError)`.
-- Each handler maps to the project's error envelope shape (from the ADR).
 - Inline `HTTPException(status_code=..., detail=...)` for a project-wide error class → flag (move to a handler).
-- Generic 500 handler returns the standard envelope + correlation id; logs the full exception server-side.
+- Generic 500 handler exists; logs the full exception server-side.
+
+(Whether the handler's body matches the contracted error envelope shape is `pattern-reviewer-contract`'s job — this rule is "handler exists at app level, not inline".)
 
 ### Middleware registration order (HIGH)
 
@@ -81,24 +86,16 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 - `RequestIdMiddleware` is the **last** `add_middleware` call so it runs first on rejection paths.
 - Every 4xx / 5xx body must carry a non-null `request_id` — pin with a test that walks `app.user_middleware` and asserts the request-id middleware is at the top.
 
-### Trailing-slash conformance (HIGH)
-
-- `/me` and `/me/` are different URLs; framework default redirect-to-trailing-slash returns 307 that breaks `Set-Cookie` on cross-site responses.
-- Path must match the contract's spelling exactly.
-- Add a test that asserts the contracted URL returns 200 (not 307).
-
 ### Path constants (MEDIUM)
 
 - Paths used in BOTH the route decorator AND tests must be defined once as a module-level constant.
 - `@router.post("/api/v1/users")` + `client.post("/api/v1/users")` in a test → flag; both should import `USERS_PATH`.
 
-### `Response(status_code=204)` on accepted-no-body (LOW)
-
-- Endpoints that accept input but return no body return `Response(status_code=204)`, not `{"ok": True}`.
+(The constant's **value** matches the api contract — that's `pattern-reviewer-contract`'s job; this rule is "constant exists; route + tests share it".)
 
 ### Lifespan + background tasks (MEDIUM)
 
-- Startup / shutdown hooks in `lifespan` (not deprecated `@app.on_event`).
+- Startup / shutdown hooks in `lifespan` context manager, not deprecated `@app.on_event`.
 - `BackgroundTasks` parameter only for fire-and-forget work that can lose to a crash; persistent work uses a real queue.
 
 ### `dependency_overrides` in tests (MEDIUM)

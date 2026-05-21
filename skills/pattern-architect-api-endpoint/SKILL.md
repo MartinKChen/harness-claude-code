@@ -1,11 +1,11 @@
 ---
 name: pattern-architect-api-endpoint
-description: "Resource-oriented REST design guidance for HTTP API endpoints. Activate when designing or reviewing endpoints, routes, controllers, or handlers in any HTTP framework (Express, FastAPI, Flask, NestJS, Rails, Gin), or when asked 'what URL/verb/shape should this be?'. Encodes URL/path naming, verb selection, request/response shape, canonical errors, pagination, filtering, sorting, versioning, idempotency, and rate limiting. Skip for implementation inside an already-agreed contract."
+description: "Resource-oriented REST design — the single authority for API endpoint shape decisions (paths, verbs, request / response body, status codes, error envelope, pagination, sorting, filtering, versioning, idempotency policy, rate-limit policy, trailing-slash spelling). Activate when designing, adding, or refactoring an HTTP endpoint, controller, or handler. Every decision lands in the api contract at `docs/product-requirement-document/<feature>/api-contract/<entity>.md` and downstream engineer / reviewer skills follow the contract verbatim — they do NOT redecide what this skill owns."
 ---
 
 # pattern-architect-api-endpoint
 
-Frame every new or changed HTTP endpoint as a resource-oriented REST operation before writing code. This skill captures the conventions to follow so endpoints across the codebase stay consistent — predictable URLs, correct verbs, uniform response/error shapes, and explicit semantics for pagination, versioning, and idempotency.
+The authority for HTTP endpoint shape. Every new or changed endpoint flows through this skill first; the decisions made here are recorded in the api contract and downstream engineer / reviewer skills follow the contract verbatim. Engineer skills (`pattern-engineer-backend-standard`, `pattern-engineer-fastapi`) implement; reviewer skills (`pattern-reviewer-contract`) verify conformance to the contract. None of those skills re-decide what lives here.
 
 ## When to activate
 
@@ -160,3 +160,32 @@ Every public endpoint is rate-limited. Defaults live at the gateway/middleware l
 
 - `POST` (create) accepts an **`Idempotency-Key` header**. Server stores `(key, response)` for ≥24h and replays the same response on retry. Required for any endpoint that takes payment, sends a message, or otherwise has visible side effects.
 - **Concurrency control on PATCH/PUT**: support `If-Match: <etag>` when stale-write conflicts matter; respond `412 Precondition Failed` on mismatch.
+
+### Trailing-slash spelling
+
+- Pick one spelling per path and pin it in the contract. `/me` and `/me/` are different URLs; framework default redirect-to-trailing-slash returns a 307 that drops `Set-Cookie` on cross-site responses.
+- Default to no trailing slash on resource and item paths (`/users`, `/users/{id}`); document the exception when a path genuinely needs one.
+
+## Recording the decision in the api contract
+
+Every decision this skill produces lands in **`docs/product-requirement-document/<feature>/api-contract/<entity>.md`** — one file per API resource. The contract is the single source of truth that engineers implement against and reviewers verify; do NOT decide endpoint shape in code, in commit messages, or in PR descriptions.
+
+What the contract file declares, per endpoint:
+
+- **Path** (with trailing-slash spelling pinned) + **HTTP verb**.
+- **Request body schema** (field names, types, constraints, required vs optional).
+- **Query / path params** with constraints + allow-listed filter operators and sortable fields.
+- **Response body schema** (default field set; sparse-fieldset rules; pagination shape on list endpoints).
+- **Status codes** for each outcome (success, validation failure, not found, conflict, unprocessable, rate-limited, server error).
+- **Error envelope shape** + the `code` values this endpoint can emit.
+- **Idempotency-Key** policy (required / supported / not applicable).
+- **Rate-limit budget** + the identity key (API key / user / IP).
+- **Concurrency / ETag** policy when stale writes matter.
+- **Versioning + deprecation** notes when relevant.
+
+Cross-references:
+
+- Data model decisions (table names, column types, constraints, indexes) live in the **sibling** `docs/product-requirement-document/<feature>/data-model/<entity>.md` written by `pattern-architect-data-model`.
+- Project-wide axes that span every endpoint (error-envelope spelling, rate-limit defaults, idempotency-key TTL) live in the relevant **ADR** under `docs/ADRs/`; this contract inherits them rather than redefining.
+
+If the contract is missing for an endpoint the engineer is about to touch, this skill — not the engineer — owns adding it. The engineer halts and surfaces "no api contract for `<endpoint>`" rather than guessing.

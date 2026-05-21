@@ -1,23 +1,27 @@
 ---
 name: pattern-reviewer-backend-standard
-description: "Language-agnostic backend audit: unvalidated input at the boundary, missing rate limiting, unbounded queries (`SELECT *` / no `LIMIT`), N+1 queries, missing timeouts on outbound HTTP, error-message leakage, missing CORS, error-envelope conformance, idempotency-key wiring on POST, atomic mutations, `/healthz` shape (no DB), `RequestIDMiddleware` registration order, log redaction, `.env.example` ↔ code lockstep, locked lock files. Each finding cites `file:line` with BAD/GOOD snippets. Activate on backend diffs."
+description: "Language-agnostic backend best-practice audit — input-validation mechanics, unbounded queries (`SELECT *` / no `LIMIT`), N+1, missing outbound timeouts, error-message leakage on 5xx, atomic-mutation discipline, `/healthz` no-DB shape, `RequestIdMiddleware` registration order, log redaction key match, sensitive-value single-layer logging, `.env.example` ↔ code lockstep, locked lock files, CORS lock-down. Contract conformance (paths, verbs, status codes, envelope shape, idempotency / rate-limit policy) lives in `pattern-reviewer-contract`. Each finding cites `file:line` with BAD/GOOD snippets."
 ---
 
 # pattern-reviewer-backend-standard
 
+Backend implementation best-practice audit. The contract-conformance audit (paths, verbs, status codes, response/error shape, idempotency, rate-limit policy) is owned by `pattern-reviewer-contract` — this skill skips those checks and focuses on implementation patterns that aren't in the contract.
+
 ## When to activate
 
 - The dispatched caller is reviewing a `type:backend` task's production-code diff.
-- A user says "review the API routes / queries / auth flow / error handling".
+- A user says "review the queries / auth flow / error handling / log redaction / health endpoint".
 
 ## Iron rules
+
+See `pattern-reviewer-coding-standard` for citation, severity, finding-shape, and `#N` rules.
 
 ## Patterns to review
 
 ### Input validation at the boundary (HIGH)
 
-- Every external input (HTTP body, query param, webhook payload, file upload) goes through a schema.
-- Bounded string lengths, numeric ranges, enum values. Allowlist formats.
+- Every external input (HTTP body, query param, webhook payload, file upload) goes through a schema. Schema shape is the contract's; flag when the **mechanism is missing**, not when the shape disagrees (that's `pattern-reviewer-contract`).
+- Bounded string lengths, numeric ranges, enum values applied via the schema library (Pydantic `Field`, Zod `.min` / `.max` / `.enum`).
 - File uploads enforce size + MIME + extension whitelist; magic-byte check for high-trust uploads.
 - Validation errors return field-level messages; no internal types / table names / stack traces in the body.
 
@@ -38,13 +42,6 @@ app.post("/users", (req, res) => {
   res.json({ ok: true });
 });
 ```
-
-### Rate limiting (HIGH)
-
-- Public endpoints have per-IP rate limits at minimum.
-- Authenticated routes rate-limit per-user (not just per-IP — one user behind a NAT shouldn't take down everyone).
-- Auth-adjacent routes (login, signup, forgot-password, token-refresh) have stricter limits.
-- 429 responses include `Retry-After`.
 
 ### Unbounded queries (HIGH)
 
@@ -82,7 +79,7 @@ const usersWithPosts = await db.query(`
 - Every outbound HTTP call has a timeout (`AbortSignal.timeout(...)`, `httpx.Timeout(...)`, `axios timeout: ...`).
 - No timeout → flag.
 
-### Error-message leakage (HIGH)
+### Error-message leakage on 5xx (HIGH)
 
 - 5xx response body is generic + correlation id only. Stack traces, internal exception messages, schema / table / column names → flag.
 - 4xx says what the client did wrong without revealing schema / "user exists" / etc.
@@ -100,16 +97,7 @@ catch (error) {
 }
 ```
 
-### Error envelope (HIGH)
-
-- 4xx / 5xx responses match the project's error envelope shape from the ADR (typically `{error: {code, message, request_id}}`).
-- Deviating envelopes are a HIGH finding — the SPA's error-handling code depends on the shape.
-
-### Idempotency-Key (HIGH)
-
-- POST routes that the user can retry carry an `Idempotency-Key` header expectation.
-- Key lifecycle stable across user-initiated retries.
-- Atomic consumption (mark-then-check) so a second redemption returns rowcount=0.
+(Whether the envelope shape matches the contract is `pattern-reviewer-contract`'s job; this rule is the leakage check only.)
 
 ### Atomic mutations (HIGH)
 
@@ -136,8 +124,9 @@ def withdraw(user_id: int, amount: int) -> None:
 
 - `/healthz`: 200 on normal boot, no auth, no DB / external-dep call, <100ms.
 - Touching DB inside `/healthz` → flag; move to `/readyz`.
+- Both paths exist and are reachable from the platform's probe IP.
 
-### Request-id middleware order (MEDIUM)
+### `RequestIdMiddleware` registration order (MEDIUM)
 
 - Middleware that runs first on the rejection path (rate-limit 429, auth 401) must carry `request_id`.
 - In FastAPI, that means `RequestIdMiddleware` is the **last** `app.add_middleware(...)` call (reverse-registration order on response).
@@ -161,7 +150,7 @@ def withdraw(user_id: int, amount: int) -> None:
 - `package-lock.json` / `uv.lock` / `poetry.lock` committed.
 - CI uses reproducible install (`npm ci`, `uv sync --locked`, `poetry install --no-update`), not `npm install` / `pip install`.
 
-### CORS (HIGH on backend)
+### CORS (HIGH)
 
 - `origin` is an explicit env-driven list. Never `*` in production.
 - `*` + `credentials: true` → CRITICAL.
