@@ -1,128 +1,68 @@
 ---
 name: workflow-e2e-author
-description: "Author Playwright E2E tests for a single `type:e2e` GitHub task on the parent slice branch — translate the task's test cases into specs, smoke-run, commit, push, and add `review:code-pending` so the orchestrator dispatches the reviewer. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:e2e` issue, or on '/workflow-e2e-author'. Skip for fixing reviewer findings or for production code (engineer's lane)."
+description: "Author Playwright E2E specs for one `type:e2e` task on the parent slice branch. Read the issue body, set up the slice worktree, translate test cases into specs, commit with dual `Refs` trailers (task + slice), push, add `review:pending`. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:e2e` task, or on '/workflow-e2e-author'."
 ---
 
 # workflow-e2e-author
 
-Translate a single `type:e2e` GitHub task issue into Playwright specs in implement mode. The work is self-driven from the task issue ID: discover the parent slice issue and its slice branch, set up (or reuse) the slice-scoped worktree, write tests that mirror the user-visible critical path, smoke-run them so we know they reach a real assertion, commit on the slice branch using the Conventional Commits format from `templates/commit-messages.md`, push, and add `review:code-pending` to request review. PR creation is handled outside this lane — the push updates the remote slice branch and the label flip is enough to trigger the reviewer.
+Translate a single `type:e2e` GitHub task issue into Playwright specs. Self-driven from the task issue ID — the agent discovers the parent slice, the slice branch, the worktree path, and the test cases from the issue body itself.
+
+The agent loads its own pattern set (E2E conventions, semantic selectors, fixture isolation, etc.) at kickoff. This skill owns only the workflow: read → worktree → write → push → flip the label.
 
 ## When to activate
 
 Activate this skill whenever:
 
 - The dispatch prompt opens with `Implement GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`.
-- The user types `/workflow-e2e-author`, or phrases like 'author E2E tests for #<n>', 'write the Playwright specs for this task', 'translate the test cases on this task into specs'.
-- The labels on the task disagree with the prompt: presence of `review:code-need-fix` (and absence of `review:code-pending`/`review:code-running`) means a fix is in flight — stop and surface the disagreement rather than authoring fresh tests.
+- The user types `/workflow-e2e-author`, or phrases like "author E2E tests for #<n>", "write the Playwright specs for this task".
 
-Do NOT activate when:
-
-- The dispatched gate is `code` returning `need-fix` — that is the fix lane, not the author lane.
-- The task carries `type:backend` or `type:frontend` — those are the engineer's lane.
-- The user wants to write production code to make a red E2E test pass — production fixes belong to the engineer.
-
-## Templates
-
-| Asset | Purpose |
-|-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during authoring. Subject line is `<type>(<scope>): <subject>`; the trailer rules for this skill (use `Refs #<task-#>`, never `Closes`) are spelled out in step 6 below. |
-
-## Scripts
-
-Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
-
-| Asset | Purpose |
-|-------|---------|
-| `scripts/resolve-slice-branch.sh <task-#>` | Resolve the parent slice issue from the task and print the slice branch attached to that parent. |
-| `scripts/setup-worktree.sh <slice-branch>` | Create-or-reuse the worktree at `/tmp/git-worktree/<repo>/<slice-branch>` and rebase it onto `origin/main`; prints the worktree path. Non-zero exit on rebase conflict. |
-| `scripts/handle-rebase-conflict.sh <task-#> <slice-branch> <worktree-path>` | Abort the rebase, flip `status:in-progress` → `status:need-attention`, post a diagnostic comment with the conflicting paths. |
-| `scripts/push-and-request-code-review.sh <task-#> <slice-branch>` | Push the slice branch and add `review:code-pending` to the task issue. Terminal action. |
+Do NOT activate to address reviewer findings on an E2E task (use `workflow-e2e-fix`), or to write production code (engineer's lane).
 
 ## Workflow
 
-Inputs from the orchestrator: just the **task issue ID, title, and URL**. Everything else (issue body, slice branch, worktree path) you discover yourself.
+Input from the orchestrator: just the task issue ID. Discover everything else.
 
-### 1. Find the parent slice issue, then the slice branch attached to it
+### 1. Read the issue body
 
-The slice branch is attached to the parent slice issue (set when the slice was created), not to each task sub-issue. Resolve and print the slice branch:
+Fetch the task issue (number, title, body, labels, url) via `gh issue view`. Confirm `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`. Wrong type → halt and surface (routing bug).
 
-```bash
-slice_branch="$(bash scripts/resolve-slice-branch.sh <task-#>)"
+### 2. Resolve the slice branch and set up the worktree
+
+- Resolve the parent slice's attached branch from the task.
+- Create-or-reuse the slice-scoped worktree on that branch, rebased onto `origin/main`.
+- `cd` into the worktree path.
+
+On rebase conflict (worktree setup fails): post a diagnostic comment on the task issue naming the conflicting paths, then flip the task from `status:in-progress` to `status:need-attention`. Do NOT force-push, do NOT proceed.
+
+### 3. Author / extend Playwright specs based on the issue body
+
+Translate each test case in the issue body into a Playwright spec inside the worktree. The agent's loaded pattern set owns the conventions (semantic selectors, fixture identity, extend-vs-fragment, what to assert). Read the parent slice issue body for Gherkin / EARS context (resolve the parent via the issue's GraphQL `parent { number }` field, then `gh issue view <parent-#> --json body`).
+
+Smoke-run touched specs (`npx playwright test <files>`) and confirm each spec reaches a real assertion. Parse / load / locator-API errors → fix and re-run. Assertion failures (production code missing) → expected; don't patch production code.
+
+### 4. Commit with dual `Refs` trailers
+
+Use the project's Conventional Commits format. Every commit body MUST end with:
+
+```
+Refs #<task-#>
+Refs #<slice-#>
 ```
 
-If the script exits non-zero, STOP and surface the diagnostic it printed (either "task has no parent slice issue" or "parent slice issue has no linked branch yet").
+Commits land directly on the slice branch inside the worktree. Never use `Closes` — closure happens after review passes.
 
-### 2. Create-or-reuse a slice-scoped worktree and rebase onto main
+### 5. Push and add `review:pending` to the task issue
 
-The worktree path is keyed on the slice branch (one worktree per slice, shared across the slice's tasks):
+Push the slice branch to `origin`, then add the `review:pending` label to the task issue.
 
-```bash
-worktree_path="$(bash scripts/setup-worktree.sh "${slice_branch}")"
-cd "${worktree_path}"
-```
-
-All subsequent reads, edits, smoke runs, and commits MUST happen inside `$worktree_path`.
-
-On rebase conflict against `main`, `setup-worktree.sh` aborts the rebase and exits non-zero. Surface the conflict and STOP — do not force-push, do not skip conflicting commits, do not proceed to authoring. Run the conflict handler first so the task issue carries the diagnostic:
-
-```bash
-bash scripts/handle-rebase-conflict.sh <task-#> "${slice_branch}" "${worktree_path}"
-```
-
-### 3. Fetch the task issue body
-
-Pull the body to read the test cases to write:
-
-```bash
-gh issue view <task-#> --json title,body,labels,url
-```
-
-For Gherkin / EARS scenarios behind each test case, also fetch the parent slice issue body if needed using the `${parent_number}` already resolved in step 1: `gh issue view "${parent_number}" --json body`.
-
-### 4. Implement the E2E test cases inside the worktree
-
-Translate each test case in the issue body into a Playwright spec. Drive the browser through the UI: every spec starts with `page.goto(...)` and exercises rendered elements; assertions are on user-visible state, never on raw HTTP responses. Default to semantic selectors (`getByRole`, `getByLabel`, `getByText`); justify any `data-testid` use in a one-line comment. Extend an existing spec if the flow continues an already-covered segment; otherwise create a new file. Keep one critical-path flow per spec file.
-
-### 5. Smoke-execute the new/edited specs in the worktree
-
-Bring up the docker-compose stack if needed and run only the touched specs (`npx playwright test <files>`). Confirm each spec loads, navigates, and reaches a real assertion. If a load/parse/locator-API error surfaces, fix and re-run; do not commit broken code. The intent here is to validate the spec is wired correctly — the implementation is expected to be missing, so assertion failures are the correct outcome.
-
-### 6. Commit the changes directly on the slice branch
-
-Format commit messages per `templates/commit-messages.md` (Conventional Commits) — one commit per logical test addition/extension. The commit message is the report; it must clearly state which test cases were authored and which acceptance criteria they map to. **Every commit MUST mention the task issue — include a `Refs #<task-#>` trailer (use `Refs`, not `Closes`, so the PR merge does not auto-close the task issue — closure happens later in the lifecycle once `review:code-passed` lands).** All commits land on `${slice_branch}` inside the worktree. Do not flip `status:in-progress` here — the label stays in place until the close-task stage clears it after the review gate passes.
-
-### 7. Push the slice branch and add `review:code-pending` to the task issue
-
-Push the slice branch to the remote so the new commits are visible. Then add `review:code-pending` to the task issue so the orchestrator dispatches the reviewer against the new tests. E2e tasks do not carry a security gate (test code has no production attack surface to review), so `review:security-pending` is NOT added. Do **not** open, promote, or otherwise touch the slice PR — PR creation is handled outside this lane.
-
-```bash
-bash scripts/push-and-request-code-review.sh <task-#> "${slice_branch}"
-```
-
-This is the terminal action in implement mode. Exit after the label add lands — do not close the task, do not open a PR, do not message reviewers, do not loop.
+Terminal action. Exit. Do NOT close the task, do NOT open a PR (that's reviewer-review-slice's job after the slice review passes), do NOT message reviewers.
 
 ## Iron rules
 
-- **E2E tests run against the full stack.** Always target the docker-compose environment with frontend + backend + Postgres up; never stub the backend or hit only the frontend dev server.
-- **E2E tests start from the UI, always.** Every test case drives the browser through the frontend. Never author E2E tests that call backend HTTP endpoints directly. API-level coverage is the backend's integration-test responsibility. Using Playwright's `request` fixture purely as a setup/teardown shortcut (e.g. seeding a fixture user) is acceptable when unavoidable, but the assertions must be on UI state.
-- **Prefer semantic selectors.** Default to `getByRole`, `getByLabel`, `getByText`, `getByPlaceholder`. Reach for `data-testid` only when the DOM offers no stable accessible name, and note the justification in a one-line comment on that locator.
-- **Pin locators to a single node.** Every locator MUST resolve to exactly one element by construction — Playwright's strict mode treats multi-node matches as failures. The trap to avoid is broad chains like `page.getByRole('main').getByText(/copy/i)` that match a heading AND a paragraph (both descendants of `<main>`). Prefer the role of the single element you want (`getByRole('heading', { name: 'Copy' })`) over a text-only match inside a container. If multiple matches are unavoidable, terminate with `.first()` and a one-line comment justifying why "any of these" is the right semantics for the assertion.
-- **Every spec generates its own fixture identity — never a shared constant.** The smoke stack runs against a real Postgres that persists across tests within a run, so a spec that signs up with a hard-coded email (`alice@example.com`) will land on the *empty state* the first time it runs and on the *"already used"* error the second time — flaky-by-construction. Mint a unique identifier per test from `test.info()` so reruns and parallel workers don't collide:
-  ```ts
-  test("first signup lands on empty groups state", async ({ page }, testInfo) => {
-    const email = `signup-${testInfo.testId}-${Date.now()}@example.com`;
-    await page.goto("/signup");
-    await page.getByLabel(/email/i).fill(email);
-    // ...
-  });
-  ```
-  - `testInfo.testId` is unique per test invocation; `Date.now()` makes it unique across reruns of the same test against a long-lived DB. Use both.
-  - Use the same pattern for group names, expense descriptions, and anything else the spec inserts into the DB. The shared constant is fine ONLY for read-only fixture data that the spec doesn't mutate.
-  - When a spec asserts an empty-state ("no groups yet"), generate the fresh user inside that test — don't reuse a `beforeAll` user that previous specs already created groups under.
-- **Extend, don't fragment.** If the issue's test cases advance an existing critical-path flow (e.g. existing test covers `a→b→c`, new criterion covers `c→d`), extend the existing spec to `a→b→c→d`. Create a new file only when the flow is genuinely independent.
-- **Scope strictly to the issue's acceptance criteria.** The task issue body lists the test cases to write; the parent slice issue carries the matching Gherkin / EARS scenarios. Anything outside those is out of scope — skip it.
-- **Red is expected; broken is not.** A test that fails because the feature is unimplemented is correct output. A test that fails to *load* (syntax error, bad import, wrong locator API) is not. Smoke-run each new/edited spec once and confirm the failure is an assertion failure, not a parse/load/locator error, before committing.
-- **Never patch the implementation.** If a smoke run reveals a missing or broken implementation, that is the expected red state — do not "fix" production code to silence the failure. Production fixes belong to the engineer.
-- **Truth is in Git and on the task-issue labels.** Commit messages on the slice branch and the `review:code-*` label state on the task issue are the only report. Do not return a structured summary, do not `SendMessage` the orchestrator, do not post issue comments. After push and the terminal label flip, you are done.
-- **Surface unrecoverable blockers, don't silently abandon.** If a precondition fails (no slice branch attached to the parent, rebase conflicts onto main, smoke run reveals a parse error you can't fix, etc.), STOP and surface back to whoever invoked you with the diagnostic — do not push half-baked work and do not pretend to succeed.
-- **Format every commit per `templates/commit-messages.md`** when authoring produces test files; never skip hooks.
+- **E2E specs run against the full stack and start from the UI.** Never call backend HTTP endpoints directly from a spec's assertions.
+- **Every commit carries BOTH `Refs` trailers.** Without `Refs #<task-#>` AND `Refs #<slice-#>`, the reviewer can't scope by task and the slice-level review can't aggregate per task.
+- **Scope strictly to the issue's test cases.** Anything outside the task body + the parent slice's Gherkin / EARS scenarios is out of scope.
+- **Red is expected; broken is not.** A test that fails on a missing implementation is correct output. A test that fails to load / parse / locate is not.
+- **Never patch production code from this lane.** Production fixes are engineer's lane.
+- **Bail with `status:need-attention`** on unrecoverable blockers (rebase conflict that touches scope, slice branch missing, unfixable smoke-run parse error). Post a diagnostic comment before flipping the label.
+- **Truth is in Git and on the task labels.** No structured summaries returned to the orchestrator — the push + the `review:pending` flip are the only outputs.

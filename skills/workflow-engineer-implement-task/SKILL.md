@@ -1,130 +1,81 @@
 ---
 name: workflow-engineer-implement-task
-description: "Implement one `type:backend`/`type:frontend` GitHub task end-to-end via outside-in TDD on the slice branch — slice-scoped worktree, scaffold missing structure first, RED/GREEN/REFACTOR with `Refs #<task-#>` trailers, push, add `review:code-pending` + `review:security-pending`. Activate on `Implement GitHub task issue #<n>` / '/workflow-engineer-implement-task'. Skip for `type:e2e`, PR blockers, reviewer fixes."
+description: "Implement one `type:backend`/`type:frontend` task on the parent slice branch via outside-in TDD. Read the issue body, set up the slice worktree, drive RED→GREEN→REFACTOR until the issue's done criteria are satisfied, commit with dual `Refs` trailers (task + slice), push, add `review:pending`. Activate when dispatched with `Implement GitHub task issue #<n>` for a `type:backend` or `type:frontend` task, or on '/workflow-engineer-implement-task'."
 ---
 
 # workflow-engineer-implement-task
 
-Take one assigned GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
+Take one assigned `type:backend` / `type:frontend` GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
+
+The agent loads its own pattern set (TDD discipline, language-specific patterns, container conventions, security baseline, ADR/architecture context) at kickoff. This skill owns only the workflow primitives.
 
 ## When to activate
 
 Activate this skill whenever:
 
-- The dispatch prompt opens with `Implement GitHub task issue #<n>` and the issue carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`).
-- The user types `/workflow-engineer-implement-task`, or phrases like 'implement #<n>', 'pick up the next ready task', 'work on this task issue', 'ship task #<n>'.
+- The dispatch prompt opens with `Implement GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`).
+- The user types `/workflow-engineer-implement-task`, or phrases like "implement #<n>", "pick up the next ready task".
 
 Do NOT activate when:
 
-- The issue carries `type:e2e` — that is the e2e-author's lane; a `type:e2e` dispatch arriving here is a routing bug, surface and stop.
-- The dispatched unit of work is an open PR with `conflict` and/or `ci` scenarios — that is the PR-fix lane.
-- The dispatched unit of work is a task with reviewer `need-fix` verdicts — that is the task-fix lane.
-- The issue is closed, missing `Delivery` / `Done criteria`, or carries no `type:*` label — surface and stop.
-
-## Templates
-
-| Asset | Purpose |
-|-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this implementation pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<issue-#>`, never `Closes`, since closure happens later in the lifecycle) is spelled out in step 4 below. |
-
-## Scripts
-
-Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
-
-| Asset | Purpose |
-|-------|---------|
-| `scripts/resolve-slice-branch.sh <issue-#>` | Resolve the parent slice issue from the task and print the slice branch attached to that parent. |
-| `scripts/setup-worktree.sh <slice-branch>` | Create-or-reuse the worktree at `/tmp/git-worktree/<repo>/<slice-branch>` and hard-reset it to `origin/<slice-branch>`. Prints the worktree path. Does NOT rebase onto main. |
-| `scripts/push-and-open-reviews.sh <issue-#> <slice-branch>` | Push the slice branch and add `review:code-pending` + `review:security-pending` to the task issue. Terminal action. |
+- The task carries `type:e2e` (use `workflow-e2e-author`).
+- The unit is an open PR (use `workflow-engineer-fix-pr`).
+- The task carries `review:need-fix` (use `workflow-engineer-fix-task`).
 
 ## Workflow
 
-Inputs from the orchestrator: a task issue number (and/or URL). Everything else (slice branch, feature name, acceptance criteria) the agent discovers itself.
+Input from the orchestrator: just the task issue ID. Discover everything else.
 
-### 1. Read the issue
+### 1. Read the issue body
 
-Pull the full sub-issue so the rest of the work has its `Delivery`, `Done criteria`, `Dependencies`, and labels in hand:
+Fetch the task issue (number, title, body, labels, milestone, state, url) via `gh issue view`. Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
 
-```bash
-gh issue view <issue-#> --json number,title,body,labels,milestone,state,url
+### 2. Set up the slice worktree
+
+- Resolve the parent slice from the task and print its attached slice branch.
+- Create-or-reuse the slice-scoped worktree on that branch (engineer flows do NOT rebase onto main — rebasing on every dispatch would create a merge maelstrom across sibling slices).
+- `cd` into the worktree path before any reads / edits / runs.
+
+All subsequent reads / edits / runs happen inside the worktree — never in the orchestrator's checkout.
+
+### 3. Drive implementation via outside-in TDD
+
+The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR → wiring) and the project's architecture / data-model / api-contract docs are the contract. Read on demand:
+
+- For each persistence entity the change touches → `docs/data-model/<entity>.yaml`.
+- For each API resource → `docs/api-contract/<entity>.yaml`.
+- For each architectural axis (error envelope, rate-limiting, idempotency, sessions/cookies, etc.) → the matching ADR detail file in `docs/architecture-decision-record/`.
+
+Drive TDD on the slice branch inside the worktree. Stop when every `Done criteria` is satisfied by a passing test or observable behavior.
+
+### 4. Commit at the TDD cadence with dual `Refs` trailers
+
+Use the project's Conventional Commits format. Every commit body ends with:
+
+```
+Refs #<task-#>
+Refs #<slice-#>
 ```
 
-Halt and surface back to the orchestrator if the issue is closed, missing `Delivery` / `Done criteria`, carries no `type:<type>` label, or carries `type:e2e` (a `type:e2e` dispatch is a routing bug — e2e tasks go to the e2e-author's lane). Do not invent acceptance criteria.
+Never use `Closes` — closure happens after review passes.
 
-### 2. Materialize the slice branch in a worktree
+### 5. Push and add `review:pending`
 
-The slice branch was attached to the **parent slice issue** at slice-creation time (via `gh issue develop --create`), not to each task sub-issue. Resolve it, then check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
+Push the slice branch to `origin`, then add the `review:pending` label to the task issue.
 
-```bash
-slice_branch="$(bash scripts/resolve-slice-branch.sh <issue-#>)"
-worktree_path="$(bash scripts/setup-worktree.sh "${slice_branch}")"
-cd "${worktree_path}"
-```
+The pre-push hooks run the fullstack lint/format/type/test set against the worktree and deny the push on failure. If a hook denies → drop back to step 3 (RED→GREEN→REFACTOR cycle). Never force-push, never skip hooks.
 
-If either script exits non-zero, halt and surface the diagnostic it printed — there is no branch to implement against.
-
-### 3. Pull entity-scoped architecture context (only when the issue needs it)
-
-The contracts are project-level, not feature-scoped. From the issue body, identify what the change actually touches and read only the matching files — one at a time, by name. Do NOT `ls` the directory and bulk-read every entity. If a referenced file is missing, halt and surface it rather than guessing.
-
-- For each **persistence entity** the change reads/writes/migrates, read `docs/data-model/<entity>.yaml`.
-- For each **API resource** the change exposes or consumes, read `docs/api-contract/<entity>.yaml`.
-- **Understand all ADRs from `docs/architecture-decision-record/README.md`** — read the index's one-line summaries so the engineer knows which decision lives where.
-- **For each axis the task touches** (error responses, rate limiting, idempotency, sessions/cookies, config loading, async vs sync, storage backend choice, validation strategy, observability, etc.), drill into the matching ADR detail file at `docs/architecture-decision-record/<adr-file>.md` and quote its rules into the test plan so the RED encodes them directly.
-
-If the issue is pure plumbing (no persistence, no API surface, no decided axis), skip the relevant sub-bullets. If an axis the task touches has no row in the ADR index, halt and surface "no ADR covers `<axis>` — need a decision before implementation" rather than inventing one. If the index points at a detail file that doesn't exist, halt with the same shape. The architect owns ADR authorship; the engineer reads and applies, never extends silently.
-
-### 4. Drive implementation via TDD
-
-Drive the entire implementation via strict outside-in TDD (acceptance test → red → green → refactor → wiring) end to end. All production code must be justified by a failing test first. Commit at the prescribed RED / GREEN / REFACTOR cadence using the format in `templates/commit-messages.md` — commits land directly on `${slice_branch}` inside the worktree. **Every commit MUST mention the assigned sub-issue — include a `Refs #<issue-#>` trailer (use `Refs`, not `Closes`, since closure happens later in the lifecycle once review gates are green) so each commit is traceable back to the source issue.** If a fresh dependency surfaces mid-loop (an assertion helper, a fake-adapter package, a missing runtime dep the production code under test requires), pause the loop and land it as a `build: add <dep>` commit before resuming the RED — never fake the import or stub past the missing piece.
-
-### 5. Verify against acceptance criteria, then audit the container surface and `.env.example`
-
-Re-read the issue's `Done criteria` and confirm each criterion is satisfied by a passing test or observable behavior. If any criterion is unmet, drop back to step 4 with a fresh RED — do not declare done. Then run the **two-part container-setup audit**:
-
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, that the worktree has a top-level `docker-compose.yaml` (or `compose.yaml`), and that each `Dockerfile` has a sibling `.dockerignore`. If anything is still missing after step 4 (e.g. the task created a new deployable surface mid-loop), scaffold it now under the project's container patterns and commit using the `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). Skipping this is not a valid choice — the pre-push hook will deny the push if any deployable surface lacks a `Dockerfile`.
-- **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` and decide whether the changes in this task added or removed a runtime dep, env var, exposed port, mounted volume, build stage, or entrypoint. If yes, update the container files in the same slice and commit using a `chore(docker): <what>` (or `fix(docker): <what>`) subject (format per `templates/commit-messages.md`) before moving to the push step. If the runtime surface did not change, leave the container files alone.
-
-Then run the `.env.example` audit: if this task added, renamed, or removed any env var the app reads, update `.env.example` to match and commit using a `chore(env): <what>` (or `fix(env): <what>`) subject (format per `templates/commit-messages.md`). If no env vars changed, leave `.env.example` alone.
-
-### 6. Push the slice branch and open both review gates
-
-Push the slice branch to remote (the plugin's pre-push hooks re-run the fullstack lint/format/type/test set and the security scans against the worktree and will deny the push if any check fails — if a hook fails, drop back into a red/green/refactor cycle at step 4; never patch around a failing hook, never force-push, never skip hooks), then add `review:code-pending` + `review:security-pending` to the task issue so the orchestrator dispatches the reviewer for both gates:
-
-```bash
-bash scripts/push-and-open-reviews.sh <issue-#> "${slice_branch}"
-```
-
-This is the terminal action. Exit after the label add lands — do not close the task (that happens later in the lifecycle once reviews pass), do not touch `status:in-progress`, do not open or promote a PR (PR creation is handled outside this lane), do not message reviewers, do not loop.
+Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`, do NOT open a PR.
 
 ## Iron rules
 
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
-- **Pull architecture context per-entity, on demand — never bulk-load.** Read only the specific entity file(s) the change actually touches under `docs/data-model/<entity>.yaml` and `docs/api-contract/<entity>.yaml`. If the change touches no persistence and exposes/consumes no API, skip those files entirely.
-- **Understand all ADRs from `docs/architecture-decision-record/README.md`, then drill into the detail(s) the task actually touches at `docs/architecture-decision-record/<adr-file>.md`.** The index points at the decision files; the detail files own the rules (error-envelope shape, rate-limit keying, idempotency-key lifecycle, repository-pattern stance, storage-backend choice, sessions/cookies, config loader, etc.). Quote the rules into the test plan so the RED encodes them directly — never implement an axis from memory and never hard-code an ADR number into this skill. If an axis the task touches has no ADR row in the index, halt and surface — the architect owns adding it.
-- **Mirror an already-shipped sibling before inventing shape.** Before writing a new endpoint, hook, form, or service module, `rg` for a sibling already in `git log` that performs the same kind of work (another endpoint on the same router, another mutation hook, another auth form) and mirror its conventions exactly: response headers (`Cache-Control: private, no-store` on authenticated and session-setting routes), Pydantic input schema with `max_length` on every string field, structured-log keys + the redaction allow-list, rate-limit decorator and key-func, idempotency wiring on POST, error mapping to the project's error envelope; on the frontend, the hook's return-tuple shape, `onSuccess` cache invalidation, referential stability of returned mutators, submit-disabled-while-pending, idempotency-key rotation on 4xx. If no sibling exists, surface that in the implementation plan and ask which one to mirror — do not invent shape from memory.
-- **Paths, status codes, and response shapes come from the api-contract doc, never from the keyboard.** Any URL this task introduces (route decorator, frontend `fetch` target, test assertion path, `curl` in a script or CI step), the status code the route returns on each error class (400 / 404 / 409 / 422 — the choice is the contract's, not the engineer's intuition), and the response body shape on both success and error paths are all sourced from `docs/api-contract/<entity>.yaml`. If the task body cites a status code or path that disagrees with the contract, the **contract wins** — surface the disagreement on the task issue and proceed against the contract. Define the path once as a module constant near the route and have the test import the same constant; hand-typing the same string twice (once in the route, once in the test) is the failure mode that lets implementation and contract drift apart. Same rule for status codes — never `raise HTTPException(status_code=401)` inline; bind the status to a named error class so the route, the test, and the error-mapper agree by construction. If the contract is missing for a path / status / response the task needs, STOP and surface it — the architect owns contract authorship, not the engineer.
-- **Trailing slash matters — pick the contract's spelling and pin it.** FastAPI routes `/me` and `/me/` are different URLs; the framework's default redirect-to-trailing-slash returns a 307 that breaks Set-Cookie persistence on cross-site responses and silently slows every authenticated call. Match the contract's spelling exactly, and add a test that asserts the contracted URL returns 200 (not 307) so the next router change can't drift the trailing slash unnoticed.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
-- **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed or where a behavior lives.
-- **Read before every edit; verify after every edit; make logically coupled changes in one Edit call.** Before touching any file, Read the full region that will be affected. After each Edit call, run the relevant static-analysis check (`uv run mypy <file>`, `uv run ruff check <file>`, or `tsc --noEmit`) immediately. When a single logical change requires editing two or more lines that must be true simultaneously (e.g. adding a new import and updating the signature to use it), include all affected lines in a single `old_string`/`new_string` pair — never make them as separate sequential edits.
-
-  **Oscillating-revert trap.** If you issue two sequential Edit calls that target overlapping regions of the same file, the second call's `old_string` must match the file's state *after* the first edit, not its original state. Otherwise the Edit tool silently reverts the first edit and replaces it with the second. Prevention:
-  1. One Read per edit. Do not carry the pre-edit text in memory across multiple edits to the same file.
-  2. Bundle co-dependent changes (imports + the code that uses them) into one `old_string`/`new_string` pair.
-  3. Verify immediately — read back the changed region or run the linter after every Edit before issuing the next Edit on the same file.
-- **Container setup is a pre-push gate, not optional polish.** Audit `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` for both presence (unconditional) and drift (conditional on this task's changes) before declaring the unit of work done. Both compose filenames are valid (`docker-compose.yaml`/`.yml` is the v1 convention, `compose.yaml` is the v2 convention); audit whichever the worktree has — if both exist, surface it as a worktree-shape bug. The pre-push hook enforces presence.
-- **`.env.example` is the authoritative inventory of every env var the app reads — keep it in lockstep with the code.** Update it in the same slice whenever a change adds, renames, or removes an env var the application/test/build tooling reads. New vars get a placeholder value (a safe non-secret default, or `changeme` for true secrets) and a short inline comment when the name isn't self-explanatory; renamed vars get both the new name and the old removed; deleted vars get removed outright. Commit using `chore(env): <what>` / `fix(env): <what>` (or `chore(scaffold): add .env.example` if the file is being introduced for the first time), formatted per `templates/commit-messages.md`. Never commit a real `.env`; never put real secrets in `.env.example`.
-- **Per-slice container isolation: slug-tag built images and slug-name the compose project; override port conflicts at the shell, never in committed files.** Whenever a step requires building an image or bringing the compose stack up inside the worktree (TDD integration tests, smoke checks, anything that exercises the runtime), derive a deterministic slug from the slice branch and use it as both the image tag and the compose project name:
-  ```bash
-  slug="$(printf '%s' "${slice_branch}" | tr '/' '-' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
-  repo_name="$(basename "$(git rev-parse --show-toplevel)")"
-  image_tag="${repo_name}:${slug}"
-
-  IMAGE_TAG="${image_tag}" docker compose -p "${slug}" build
-  IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d
-  ```
-  If a host port is already in use, **override the port via env vars on the same `docker compose` command** (e.g. `HTTP_PORT=18000 IMAGE_TAG="${image_tag}" docker compose -p "${slug}" up -d` against a `${HTTP_PORT:-8000}:8000` mapping). **Do NOT edit `Dockerfile` or `docker-compose.yaml` to dodge a port conflict** — those files codify the standard runtime contract and must stay identical across slices. The only legitimate compose-file change here is adding `${VAR:-<standard-port>}` indirection when the port previously had none — a one-time conventionalization, not a workaround. Tear the stack down with `docker compose -p "${slug}" down -v` before exiting the worktree.
-- **Commit on the TDD cadence** (per RED / GREEN / REFACTOR step where applicable); never skip hooks or force-push.
-- **Scaffold first, test second.** Scaffolding goes in discrete `chore(scaffold): <what>` (or `build: <what>` for tooling/dep changes) commits BEFORE the first RED. Bundling scaffolding into a `feat:` commit pollutes the TDD trail. If a needed dependency surfaces *mid-loop*, pause the loop, land a `build: add <dep>` commit, then resume the RED — never fake an import or skip a test to dodge a missing dependency.
-- **Stop and report when the acceptance criteria are met.** Do not bundle unrequested improvements.
+- **Every commit carries BOTH `Refs` trailers.** Without `Refs #<task-#>` AND `Refs #<slice-#>`, the reviewer can't scope by task and the slice-level review can't aggregate per task.
+- **Pull architecture context per-entity on demand — never bulk-load.** Read only the specific entity / ADR files the change actually touches.
+- **Mirror an already-shipped sibling before inventing shape.** `rg` for an existing endpoint / hook / form that does the same kind of work and match its conventions exactly.
+- **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed.
+- **Commit at the TDD cadence.** One commit per RED / GREEN / REFACTOR step (where applicable). Scaffolding goes in discrete `chore(scaffold):` / `build:` commits BEFORE the first RED.
+- **Stop and report when acceptance criteria are met.** Do not bundle unrequested improvements.
+- **No PR creation.** The reviewer creates the slice PR after passing the slice-level review.
+- **Truth is in Git and on the task labels.** No structured summaries returned to the orchestrator.

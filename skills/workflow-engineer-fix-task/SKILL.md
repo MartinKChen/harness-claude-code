@@ -1,126 +1,83 @@
 ---
 name: workflow-engineer-fix-task
-description: "Fix reviewer findings on one `type:backend`/`type:frontend` task — address must-fix items with `rg`-driven pattern propagation (RED→GREEN per site), push, reset `review:{code,security}-*` to `-pending`. Activate on `Fix the review feedback on GitHub task issue #<n>` / '/workflow-engineer-fix-task'. Skip for fresh impl, PR blockers, e2e fixes."
+description: "Fix reviewer findings on one `type:backend`/`type:frontend` task. Read the task body and every comment newer than the last `Refs #<task-#>` commit, set up the slice worktree, drive RED→GREEN per finding, commit with dual `Refs` trailers, push, add `review:pending`. Activate when dispatched with `Fix the review feedback on GitHub task issue #<n>` for a backend/frontend task, or on '/workflow-engineer-fix-task'."
 ---
 
 # workflow-engineer-fix-task
 
-Address reviewer findings on a single `type:backend` / `type:frontend` GitHub task issue dispatched by the orchestrator. The orchestrator has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` as its lock, so scope is read from the dispatch prompt verbatim, not from labels. User directives posted as comments between review rounds **override** reviewer suggestions, ADRs, and default conventions — read those before reading the reviewer findings.
+Address reviewer findings on a single `type:backend` / `type:frontend` GitHub task issue dispatched by the orchestrator. The orchestrator has stripped `review:need-fix` as its lock; scope is read from the most recent reviewer comment on the task issue (newer than the slice branch's last `Refs #<task-#>` commit).
+
+User directives in the comment window override reviewer suggestions, ADRs, and default conventions — read those before reading the reviewer findings.
 
 ## When to activate
 
 Activate this skill whenever:
 
-- The dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`), with at least one of `review:code-need-fix` or `review:security-need-fix` (the orchestrator may have flipped these to `review:*-pending` as its lock).
-- The user types `/workflow-engineer-fix-task`, or phrases like 'address the reviewer findings on #<n>', 'fix the code review on this task', 'address the security findings on this task'.
+- The dispatch prompt opens with `Fix the review feedback on GitHub task issue #<n>` and the task carries `level:task` + `kind:feature` + `status:in-progress` + (`type:backend` or `type:frontend`).
+- The user types `/workflow-engineer-fix-task`, or phrases like "address the reviewer findings on #<n>".
 
-Do NOT activate when:
-
-- The task is `type:e2e` — that's the e2e-fix lane.
-- The unit of work is an open PR (`conflict` / `ci`) — that's the PR-fix lane.
-- No `# Code Review` / `# Security Review` comment newer than the slice branch's last commit exists on the task — stop and surface "fix dispatched but no reviewer comment newer than the last commit".
-
-## Templates
-
-| Asset | Purpose |
-|-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format for every commit produced during this fix pass. Subject line is `<type>(<scope>): <subject>`; the trailer rule (use `Refs #<task-#>`, never `Closes`) is spelled out in step 3 below. |
-
-## Scripts
-
-Every gh / git multi-step sequence is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
-
-| Asset | Purpose |
-|-------|---------|
-| `scripts/resolve-slice-branch.sh <task-#>` | Resolve the parent slice issue from the task and print the slice branch attached to that parent. |
-| `scripts/last-commit-iso.sh <slice-branch>` | Print the ISO-8601 committer timestamp of the most recent commit on the remote slice branch. Used as the cutoff for filtering reviewer comments. |
-| `scripts/read-user-directives.sh <task-#> <cutoff-iso>` | Print every non-reviewer comment created strictly after the cutoff (user directives that override reviewer suggestions / ADRs). |
-| `scripts/read-latest-review-comment.sh <task-#> <cutoff-iso> <gate>` | Print the body of the most recent `# Code Review` (gate=code) or `# Security Review` (gate=security) comment newer than the cutoff. |
-| `scripts/setup-worktree.sh <slice-branch>` | Create-or-reuse the worktree at `/tmp/git-worktree/<repo>/<slice-branch>` and hard-reset it to `origin/<slice-branch>`. Prints the worktree path. |
-| `scripts/push-and-reset-all-reviews.sh <task-#> <slice-branch>` | Push the slice branch and idempotently reset every `review:{code,security}-*` label back to `review:*-pending`. Terminal action. |
+Do NOT activate for `type:e2e` tasks (use `workflow-e2e-fix`), for PR-level blockers (use `workflow-engineer-fix-pr`), or for fresh implementation (use `workflow-engineer-implement-task`).
 
 ## Workflow
 
-Inputs from the orchestrator: a task issue number **and** the list of reviewer gates that returned `need-fix` — any non-empty subset of `{code, security}`. The orchestrator has already flipped the task's `review:{code,security}-need-fix` and `review:{code,security}-passed` labels to `review:{code,security}-pending` (its lock), so do not infer scope from labels — read the gates from the dispatch prompt verbatim and read the matching reviewer's findings comment(s) on the **task issue**. Everything else (slice branch, worktree path, parent slice issue, comment bodies) you discover yourself.
+### 1. Read the task body
 
-### 1. Fetch the task body, resolve the slice branch's last commit, and pull only the reviewer comments newer than that commit
+Fetch the task issue (number, title, body, labels, milestone, url) via `gh issue view`.
 
-Read the task body in full once — it is the contract the fix must still satisfy, independent of round number:
+### 2. Determine the comment window and pull the in-scope comments
 
-```bash
-gh issue view <task-#> --json number,title,body,labels,milestone,url
+The cutoff is the authored timestamp of the most recent commit on the slice branch carrying `Refs #<task-#>` in its message. Comments created strictly after that timestamp are in scope.
+
+- Resolve the parent slice's attached branch from the task.
+- Fetch that branch from `origin`.
+- Find the cutoff: authored timestamp of the latest commit on `origin/<slice-branch>` whose message contains `Refs #<task-#>`.
+
+If no `Refs #<task-#>` commit exists on the branch yet, read all comments on the task.
+
+Pull every comment on the task issue. Read **non-reviewer comments first** — user-posted directives in this window are binding and override reviewer suggestions, ADRs, and default conventions. Then read the latest reviewer comment (header `# Code Review` / `# Review`) newer than the cutoff.
+
+If no in-scope reviewer comment exists, halt and surface `fix dispatched but no reviewer comment newer than the last Refs #<task-#> commit on the task`.
+
+Triage findings: CRITICAL / HIGH / MEDIUM → must-fix. LOW / NIT → fix only when obviously small and in-scope.
+
+### 3. Set up the slice worktree
+
+Create-or-reuse the slice-scoped worktree on the slice branch (no rebase onto main), then `cd` into the worktree path.
+
+### 4. Address each must-fix finding via TDD
+
+The agent's loaded pattern set owns:
+- The TDD cadence (RED before any production change).
+- `rg`-driven pattern propagation (each equivalent site gets its own RED→GREEN so the regression suite locks the pattern out everywhere).
+- The container surface + `.env.example` drift audit.
+
+This skill owns only the workflow primitives.
+
+### 5. Commit with dual `Refs` trailers
+
+Use the project's Conventional Commits format. Every commit body ends with:
+
+```
+Refs #<task-#>
+Refs #<slice-#>
 ```
 
-Resolve the slice branch (its parent slice issue is implicit in the script) and the most recent commit's timestamp — both are reused by step 2's worktree setup and by the comment-window filters below, so do not re-resolve them there:
+Each commit message references the finding(s) it addresses and lists any additional sites fixed via pattern propagation.
 
-```bash
-slice_branch="$(bash scripts/resolve-slice-branch.sh <task-#>)"
-last_commit_iso="$(bash scripts/last-commit-iso.sh "${slice_branch}")"
-```
+### 6. Push and add `review:pending`
 
-**Before reading the reviewer comments, read every non-reviewer comment created strictly after `${last_commit_iso}`.** These are the channel through which the user posts inline corrections, decision overrides, and implementation directives between review cycles. A user directive in this window **overrides** both the reviewer's suggested fix path and any existing ADR or prior constraint — the user is the decision authority and their comment is the current ground truth:
+Push the slice branch to `origin`, then add the `review:pending` label to the task issue.
 
-```bash
-bash scripts/read-user-directives.sh <task-#> "${last_commit_iso}"
-```
+Pre-push hooks run lint/test/security; deny → drop back to step 4 (never force-push, never skip hooks).
 
-Read every comment returned in full. If any comment contains explicit implementation instructions (e.g. "use X instead of Y", "modify the ADR to …", "switch to psycopg3"), record those as **binding directives** and apply them when addressing the reviewer findings — even if an existing ADR, prior review suggestion, or default convention says otherwise. Do not silently skip a user directive because it contradicts a reviewer's proposed fix path; the user's comment is always the higher-priority signal.
-
-For each gate in the dispatch's list, pull only the most recent reviewer comment **created strictly after `${last_commit_iso}`**:
-
-```bash
-# Per gate — pass `code` or `security`.
-bash scripts/read-latest-review-comment.sh <task-#> "${last_commit_iso}" code
-bash scripts/read-latest-review-comment.sh <task-#> "${last_commit_iso}" security
-```
-
-Comments created **at or before** `${last_commit_iso}` are previous review rounds — the findings they raised are already addressed by the commits on the slice branch, and re-reading them would re-do completed work. If a dispatched gate has no matching reviewer comment newer than the cutoff, the script exits non-zero — halt and surface "fix dispatched for gate `<gate>` but no `# <Gate> Review` comment newer than the slice's last commit (`${last_commit_iso}`) on the task". The orchestrator and the live state disagree, and guessing a fix from a blank tree only churns the diff.
-
-Triage every finding in the in-scope reviewer comment(s) by severity:
-
-- **CRITICAL / HIGH / MEDIUM** → must-fix. In scope unconditionally.
-- **LOW / NIT / suggestion (no severity)** → fix only when the effort is small and obviously in-scope. Skip anything that would expand the diff materially or pull in unrelated refactors; note skipped items in your commit message body so the reviewer can see they were considered.
-
-### 2. Materialize the slice branch in a worktree
-
-Reuse the `${slice_branch}` already resolved in step 1; check it out under `/tmp/git-worktree/<repo-name>/<slice-branch-name>` and **do all subsequent work inside that path** — never in the orchestrator's checkout.
-
-```bash
-worktree_path="$(bash scripts/setup-worktree.sh "${slice_branch}")"
-cd "${worktree_path}"
-```
-
-### 3. Address every must-fix finding from the reviewer comment(s)
-
-For each finding, BEFORE writing the RED, `rg` the codebase for the same anti-pattern the reviewer flagged — a "missing CSRF check on endpoint X", a "raw SQL string in handler Y", a "secret read from a config file in module Z" is rarely a one-off, and the re-review will fail (or worse, the security gate will pass while the bug still lives elsewhere) if you only fix the cited site. Treat each equivalent site as its own RED → GREEN → REFACTOR cycle so the regression suite locks the pattern out everywhere, per the pattern-propagation rule in *Iron rules*. The RED test must encode the demand as a failing test (security: a regression test that proves the fix prevents the documented attack vector; code: a unit/integration test that asserts the corrected behavior). Drive GREEN with the minimum production change; REFACTOR under green. Format every commit per `templates/commit-messages.md` at the prescribed cadence. Each commit message must reference the finding(s) it addresses, list any additional sites fixed via pattern propagation, and include a `Refs #<task-#>` trailer so the reviewer can scope the re-review correctly.
-
-After the last must-fix finding is GREEN, run the **two-part container-setup audit**:
-
-- **Presence (unconditional).** Confirm every deployable surface in the worktree (`backend/`, `frontend/`, or a single-package layout) has a `Dockerfile`, a top-level `docker-compose.yaml` (or `compose.yaml`), and a `.dockerignore` next to each `Dockerfile`. If a reviewer's fix introduced a new deployable surface (a new service, a worker process, an additional package) and its container artifacts are still missing, scaffold them now under the project's container patterns and commit using a `chore(scaffold): <what>` subject (format per `templates/commit-messages.md`). The pre-push hook enforces this.
-- **Drift (conditional).** Re-read the worktree's `Dockerfile`, `docker-compose.yaml` (or `compose.yaml`), and `.dockerignore` against every fix you just landed. A security reviewer's "secret in a config file" fix often moves the secret to an env var that the Dockerfile / compose must now expose; a code reviewer's "missing dep" fix may need that dep installed in the image; a "remove this debug endpoint" fix may free an exposed port. If the runtime surface drifted, update the container files in the same slice and commit using `chore(docker): <what>` / `fix(docker): <what>` (format per `templates/commit-messages.md`) before moving to the push step. If it did not drift, leave the container files alone.
-
-Then run the `.env.example` audit: reviewer-driven fixes routinely add env vars (a security fix that pulls a secret out of a config file, a code fix that exposes a new feature flag, a config-cleanup fix that renames an existing var). If any env var the app reads was added, renamed, or removed by this fix pass, update `.env.example` in the same slice and commit using `chore(env): <what>` / `fix(env): <what>` (format per `templates/commit-messages.md`). If env vars did not drift, leave `.env.example` alone.
-
-### 4. Push the slice branch and reset every `review:*` gate to pending
-
-Push to remote (the pre-push hooks gate the fullstack lint/format/type/test set and the security scans against the worktree — drop back into step 3 if any hook denies; never force-push, never skip hooks), then idempotently reset every `review:{code,security}-*` label back to `review:*-pending`. A fix can invalidate a previously-passed gate, so even passed gates are reopened:
-
-```bash
-bash scripts/push-and-reset-all-reviews.sh <task-#> "${slice_branch}"
-```
-
-This is the terminal action. Exit after the label flip lands — do not close the task (that happens later in the lifecycle once the next review cycle returns `*-passed`), do not touch `status:in-progress`, do not message reviewers, do not loop.
+Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`.
 
 ## Iron rules
 
-- **User directives in the comment window override everything else.** Before reading reviewer findings, read every non-reviewer comment newer than the slice branch's last commit. An explicit instruction there beats a reviewer's suggested fix path, an ADR, or a default convention.
-- **Scope is read from the dispatch prompt verbatim — never from labels.** The orchestrator's lock flipped `review:*-need-fix` to `review:*-pending`, so the labels alone can't tell you which gates returned `need-fix`. Read the gates list from the dispatch prompt.
-- **Skip previously-addressed rounds.** Only consider reviewer comments created **strictly after** the slice branch's last commit timestamp. Earlier comments are previous rounds — the fixes they demanded are already in `git log`, and re-reading them would re-do completed work.
-- **Treat each finding as a *class* of issue, not a single instance — propagate via `rg` before declaring the fix done.** Each additional equivalent site gets its own RED → GREEN so the regression suite locks the pattern out everywhere. List the additional sites in the commit body. Only skip propagation when a search confirms the pattern is genuinely isolated. This is *not* license to expand into unrelated refactors.
-- **Each must-fix finding starts with a failing test.** Security findings: a regression test proving the fix prevents the documented attack vector. Code findings: a unit/integration test asserting the corrected behavior. Drive GREEN with the minimum production change; REFACTOR under green.
-- **Read before every edit; verify after every edit; bundle co-dependent changes.** If you issue two sequential Edit calls that target overlapping regions of the same file, the second call's `old_string` must match the file's state *after* the first edit, not its original state — otherwise the Edit tool silently reverts the first edit. One Read per edit; bundle co-dependent changes (imports + the code that uses them) into a single `old_string`/`new_string` pair; verify immediately by reading back the changed region or running the linter after every Edit before issuing the next Edit on the same file.
-- **Container setup is a pre-push gate.** Run the two-part audit (presence + drift) after the last must-fix finding is GREEN; the pre-push hook enforces presence.
-- **`.env.example` is the authoritative inventory.** Update it in the same slice whenever a fix adds, renames, or removes an env var the app reads.
-- **Reset *every* `review:*` gate to `*-pending` after push.** A fix can invalidate a previously-passed gate, so the terminal flip removes all four terminal labels and adds both pending labels. `gh issue edit` ignores `--remove-label` targets that aren't currently set, so the idempotent call is safe.
-- **Format every commit per `templates/commit-messages.md` with a `Refs #<task-#>` trailer.** Never use `Closes` — closure happens later in the lifecycle once the next review cycle returns `*-passed`.
-- **Stop and exit after the terminal label flip.** Do not close the task, do not touch `status:in-progress`, do not message reviewers, do not loop.
+- **User directives in the comment window override everything else.** Read non-reviewer comments first.
+- **Scope from the comment window, not from labels.** The orchestrator's lock stripped the gate label.
+- **Skip previously-addressed rounds.** Only consider reviewer comments created strictly after the last `Refs #<task-#>` commit.
+- **Treat each finding as a class, not an instance — propagate via `rg`.** Each equivalent site gets its own RED→GREEN. List the additional sites in the commit body.
+- **Every commit carries BOTH `Refs` trailers.**
+- **Each must-fix finding starts with a failing test.**
+- **Truth is in Git and on the task labels.**

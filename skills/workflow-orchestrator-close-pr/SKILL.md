@@ -1,13 +1,13 @@
 ---
 name: workflow-orchestrator-close-pr
-description: "Promote draft PRs with all CI green and `MERGEABLE`, squash-merge them, strip `status:in-progress` from the linked closing slice issue and close it. Activate on phrases like 'merge ready draft PRs', 'squash-merge eligible slice PRs', '/workflow-orchestrator-close-pr'. Skip for PRs with failing CI / conflicts, reviews, or closing tasks."
+description: "Find draft PRs labeled `merge:auto` whose checks are all green and that are MERGEABLE; promote draft → ready, squash-merge with `--delete-branch`. Slice issue closure happens automatically via the `Closes #<slice-#>` line in the PR body. PRs without `merge:auto` are left for the user to merge manually. Activate on 'merge the ready PRs', 'close out the auto-merge PRs', '/workflow-orchestrator-close-pr'."
 ---
 
 # workflow-orchestrator-close-pr
 
-Terminal step of the slice lifecycle. When a draft PR's full set of Actions checks is green and the branch is mergeable against base, promote it to ready, squash-merge it, then close the linked slice issue. This skill is the only place a slice PR gets merged and the only place its slice issue gets closed.
+Terminal step of the slice lifecycle for PRs opted into auto-merge. When a draft PR labeled `merge:auto` has all Actions checks green and is mergeable against base, promote it to ready and squash-merge it. The PR body's `Closes #<slice-#>` (filled in by `workflow-reviewer-review-slice` when the draft was created) auto-closes the linked slice issue on merge.
 
-Reviews on the PR are out of scope — they live on task issues now (`review:*-*` are not on PRs). Mergeability and the workflow check conclusions are the only gates this skill honors.
+`merge:manual` drafts are NOT in scope — those are left in draft for the user to promote and merge manually. Reviews on the PR are out of scope too — they live on issues (`review:*` is on `level:slice` / `level:task` issues, not on PRs).
 
 The skill never checks out, edits, or pushes to any branch beyond the `gh pr merge --squash --delete-branch` call.
 
@@ -15,129 +15,58 @@ The skill never checks out, edits, or pushes to any branch beyond the `gh pr mer
 
 Activate this skill whenever the user:
 
-- Types `/workflow-orchestrator-close-pr` (with or without a numeric cap argument).
-- Asks to "merge the ready PRs", "close out the green slice PRs", "squash-merge eligible draft PRs", or "land the drafts that are mergeable + all-green".
+- Types `/workflow-orchestrator-close-pr` (with or without arguments).
+- Asks to "merge the ready PRs", "close out the auto-merge PRs", "squash-merge eligible draft PRs", or "land the auto drafts that are mergeable + all-green".
 
-Do NOT activate when the user wants to fix CI / merge-conflict blockers on a draft, wants to review code on a task, or wants to close a task issue.
+Do NOT activate to fix CI / conflict (use `workflow-orchestrator-fix-pr`), to review code (use `workflow-orchestrator-review-*`), or to merge a `merge:manual` PR (the user handles those manually).
 
 ## Arguments
 
-Up to two optional positional arguments: `[<milestone-name>] [<cap>]`.
-
-- `<milestone-name>` — when set, scope the draft-PR scan to PRs whose milestone matches (the feature name passed by `/implement-feature <feature-name>`, which matches the milestone inherited from the slice issue). Empty / unset → scan every milestone.
-- `<cap>` — optional positive integer; stop after N PRs have been merged. Empty / unset → merge every eligible PR.
-
-When both args are passed, `<milestone-name>` comes first and `<cap>` second. When only one arg is passed and it parses as a positive integer, treat it as `<cap>` with no milestone filter; otherwise treat it as `<milestone-name>` with no cap.
-
-## Scripts
-
-Every gh / shell operation below is factored into `scripts/`. Invoke each via `bash scripts/<name>.sh ...` (or directly — they are executable).
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/list-candidates.sh [--milestone <name>]` | List draft open PRs as JSON. |
-| `scripts/inspect-pr.sh <pr-#>` | Print mergeability + statusCheckRollup as JSON. |
-| `scripts/wait-mergeability.sh <pr-#>` | Poll mergeability up to ~10 s; print MERGEABLE / CONFLICTING / UNKNOWN. |
-| `scripts/merge-pr.sh <pr-#>` | Promote draft → ready and squash-merge with `--delete-branch`. |
-| `scripts/undo-ready.sh <pr-#>` | Revert a ready-promotion back to draft (used on merge-race rollback). |
-| `scripts/resolve-slice-issue.sh <pr-#>` | Resolve the linked slice issue number from the PR. |
-| `scripts/close-slice-issue.sh <slice-#>` | Strip `status:in-progress` and close the slice issue. |
+`[<milestone-name>] [<cap>]`.
 
 ## Workflow
 
 ### 1. Resolve the repo
 
-```bash
-repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"   # owner/repo
-```
-
-If the working dir isn't a GitHub repo, surface and stop.
-
 ### 2. List candidate PRs
 
-A PR is a candidate when it is **draft** (the slice PR stays draft until this skill promotes and merges it). `gh pr list` has no `--milestone` flag; when `<milestone-name>` is set, the script scopes via the `--search milestone:"…"` qualifier; otherwise it scans all milestones.
+List draft PRs filtered by `merge:auto` + `--status green` (mergeable `MERGEABLE` AND every check rollup state SUCCESS / NEUTRAL / SKIPPED).
 
-```bash
-bash scripts/list-candidates.sh ${milestone:+--milestone "${milestone}"}
-```
+If empty, report `nothing to merge` and stop.
 
-If empty, report "nothing to merge" and stop. When a milestone filter was applied, include it: `nothing to merge (milestone: <milestone-name>)`.
+### 3. Per PR — defense-in-depth re-verification, then merge
 
-### 3. Per PR — verify checks green and mergeable
-
-Process PRs **sequentially**. Concurrent merges race on the base branch and aren't worth the overhead at this scale.
+Process PRs **sequentially**. Concurrent `gh pr merge` calls race on the base branch.
 
 For each candidate:
 
-3.1 **Pull mergeability and check rollup in one call.** `statusCheckRollup` is GitHub's aggregate of every check run + status context on the head SHA; `mergeable` is the merge conflict state.
+**3.1 Re-check live state.** GitHub may have changed since step 2:
 
-```bash
-bash scripts/inspect-pr.sh <pr-#>
-```
+- `mergeable != "MERGEABLE"` OR `checks != "SUCCESS"` → skip (no longer eligible).
+- Otherwise proceed.
 
-3.2 **Wait out `UNKNOWN` mergeability.** GitHub returns `UNKNOWN` for ~seconds after the head SHA changes. The script caps at ~10 s and prints the final status; treat a returned `UNKNOWN` as a benign skip (`mergeability still UNKNOWN`).
+**3.2 Promote draft → ready, then squash-merge with branch deletion.**
 
-```bash
-status="$(bash scripts/wait-mergeability.sh <pr-#>)"
-```
+- `gh pr ready <pr-#>` to undraft.
+- `gh pr merge <pr-#> --squash --delete-branch`.
 
-3.3 **Classify.**
-
-- `mergeable == CONFLICTING` → track as skipped (code conflict) and continue. A separate fix-pr stage picks the PR up and dispatches an engineer.
-- `mergeable == UNKNOWN` past the cap → track as skipped (mergeability still UNKNOWN) and continue.
-- Any check in `statusCheckRollup` with `conclusion != "SUCCESS"` and `conclusion != "SKIPPED"` (or `state == "FAILURE"` for the legacy status-context shape) → track as skipped (failing checks) and continue. A separate fix-pr stage dispatches an engineer.
-- Any check still `IN_PROGRESS` / `QUEUED` / `PENDING` → track as skipped (checks still running) and continue (a later fire will re-pick).
-- All checks `SUCCESS`/`SKIPPED` and `mergeable == MERGEABLE` → proceed to step 4.
-
-### 4. Promote draft → ready, squash-merge, delete the slice branch
-
-```bash
-bash scripts/merge-pr.sh <pr-#>
-```
-
-Never `--force` a merge; never push directly to `main`; never override branch protection. If the merge fails because GitHub recomputed mergeability between step 3 and step 4 (race), revert the ready promotion and skip the PR for this fire:
-
-```bash
-bash scripts/undo-ready.sh <pr-#>
-```
+Never `--force` a merge; never push directly to `main`; never override branch protection. If the merge fails because GitHub recomputed mergeability between step 3.1 and 3.2 (race), undo the ready promotion (`gh pr ready <pr-#> --undo`) and skip.
 
 Track as skipped (merge race) and continue. A later fire will re-pick.
 
-### 5. Close the linked slice issue
+The slice issue closes automatically when the PR merges — the PR body opens with `Closes #<slice-#>` (added by `workflow-reviewer-review-slice` when it created the draft).
 
-GitHub's squash-merge with a "Closes #<n>" trailer auto-closes the linked issue, but the slice issue is wired via the *Development* link (`gh issue develop`) rather than a body trailer — so GitHub may *not* close it automatically. Make the closure explicit:
-
-5.1 **Resolve the linked slice issue from the PR's `closingIssuesReferences`** (with a `Closes #<n>` / `Fixes #<n>` body-parse fallback):
-
-```bash
-slice_issue="$(bash scripts/resolve-slice-issue.sh <pr-#>)"
-```
-
-If empty, count the PR as merged (no linked slice issue) and continue (the merge already succeeded; the slice issue lookup is best-effort).
-
-5.2 **Strip `status:in-progress` and close.**
-
-```bash
-bash scripts/close-slice-issue.sh "${slice_issue}"
-```
-
-Already-removed label / already-closed issue → benign, no-op. Any other failure: surface verbatim and continue with the next PR (the merge has already landed; do not retry).
-
-### 6. Honor the cap and report
-
-If the user passed a positive integer N, stop after N PRs have been merged this run.
-
-Track merged / skipped counts internally per PR; do **not** print per-PR decisions to the user. After every candidate has been processed (or the cap is hit), emit exactly one line:
+### 4. Honor the cap and report
 
 `Merged <X>; skipped <Y>; <Z> remaining eligible.`
 
 ## Iron rules
 
-- **Squash-merge with branch deletion.** Slice work commits at TDD cadence; squash-on-merge keeps `main` linear and one-commit-per-slice, and `--delete-branch` reclaims the slice branch on the remote.
-- **Sequential merges.** Process PRs one at a time. Parallel `gh pr merge` calls race on the base branch.
-- **`SKIPPED` checks count as green.** Path-filtered or branch-gated workflows return `conclusion=SKIPPED` legitimately. Treat them as non-blocking.
-- **`IN_PROGRESS` / `QUEUED` / `PENDING` is benign.** A check still mid-flight isn't a failure; skip the PR and let a later fire re-classify.
-- **Conflict → skip.** This skill does not call `gh pr ready --undo` on a conflict — the PR is already draft. Just skip; a separate fix-pr stage dispatches an engineer.
-- **No PR-state changes on a skip.** A skipped PR ends the run in the exact state it started (draft, original labels, no comments).
-- **No promotion to ready on a non-mergeable PR.** Only promote when step 3 returns `MERGEABLE` + all-green checks. Roll the promotion back on a merge race per step 4.
-- **Skip, don't fail, on benign outcomes.** Conflicts, failing checks, running checks, unknown mergeability, merge races, and cap-reached are all expected — track internally and continue, never surface per-PR.
+- **`merge:auto` only.** `merge:manual` PRs are the user's responsibility — never promote, never merge them here.
+- **Squash-merge with branch deletion.** Slice work commits at TDD cadence; squash-on-merge keeps `main` linear and one-commit-per-slice, and `--delete-branch` reclaims the slice branch.
+- **Sequential merges.** Parallel `gh pr merge` calls race on the base branch.
+- **Slice closure rides on the PR body.** `Closes #<slice-#>` in the body (added by reviewer-review-slice) auto-closes the slice when the PR merges. No explicit `gh issue close` here.
+- **`SKIPPED` / `NEUTRAL` checks count as green.** Path-filtered or branch-gated workflows return these legitimately.
+- **No promotion to ready on a non-mergeable PR.** Only promote when step 3.1 confirms MERGEABLE + SUCCESS. Undo the promotion on a merge race.
+- **No PR-state changes on a skip.** A skipped PR ends the run in the exact state it started.
+- **Skip, don't fail, on benign outcomes.** Race, transient state, cap reached — track internally and continue.
