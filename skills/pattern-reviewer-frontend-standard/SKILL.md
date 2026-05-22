@@ -176,7 +176,7 @@ function UserCard({ id }: { id: string }) {
 
 - No hard-coded color values (`#3b82f6`, `text-[#1f2937]`, inline `style={{ color: ... }}` for visual properties).
 - No hard-coded pixel sizes in `[]` brackets (`mt-[18px]`, `w-[420px]`).
-- Every Tailwind class maps to a token in `docs/DESIGNs/tokens.md` (when present) via `tailwind.config`.
+- Every Tailwind class maps to a token in `docs/design-system/tokens.md` (when present) via `tailwind.config`.
 - `tailwind.config` ↔ `tokens.md` drift is a HIGH finding — either add the missing row or remove the unsanctioned alias.
 
 ### Forms (MEDIUM)

@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-frontend-standard
-description: "React frontend bullets: composition-first components, custom hooks, route registration + reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, error boundaries per route, Framer Motion, native a11y elements, mobile-first, Tailwind ↔ `docs/DESIGNs/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+description: "React frontend bullets: composition-first components, custom hooks, route registration + reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, error boundaries per route, Framer Motion, native a11y elements, mobile-first, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
 ---
 
 # pattern-engineer-frontend-standard
@@ -121,7 +121,7 @@ Activate when writing or editing React components, hooks, pages, routes, layouts
 
 ### Styling — Tailwind + design tokens
 
-- Source of truth is `docs/DESIGNs/` when present (`tokens.md`, `components.md`, `accessibility.md`, `overview.md`, `sample/*.html`).
+- Source of truth is `docs/design-system/` when present (`tokens.md`, `components.md`, `accessibility.md`, `overview.md`, `sample/*.html`).
 - Tailwind class names map 1:1 to design tokens (`color/brand/500` → `bg-brand-500`).
 - No hard-coded color values; no hard-coded pixel sizes (`[420px]`, `[#3b82f6]`); no ad-hoc inline `style={{ color, padding }}` for visual properties.
 - Need a value the scale doesn't have? Extend the token in `tailwind.config` (mirrored in `tokens.md`) — don't reach for arbitrary `[...]` classes.
