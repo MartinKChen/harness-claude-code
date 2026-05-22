@@ -342,7 +342,7 @@ trap smoke_teardown EXIT
 run_container_smoke() {
   # Bring the worktree's compose stack up, then probe it. The probes are the
   # minimum that would have caught PR #165's runtime defects:
-  #   - GET /health (any host port the backend or its proxy publishes) →
+  #   - GET /healthz (any host port the backend or its proxy publishes) →
   #     verifies the backend is listening AND that an alembic upgrade ran on
   #     boot (a backend whose ENTRYPOINT forgot `alembic upgrade head` will
   #     /health-fail the moment it touches the DB) AND that
@@ -351,7 +351,7 @@ run_container_smoke() {
   #   - SPA root + a synthetic deep route (e.g. /signup) → if `try_files
   #     $uri $uri/ /index.html` is missing, the deep route returns nginx's
   #     404 instead of the SPA shell.
-  #   - One backend API path through the proxy (e.g. `GET /api/v1/health` or
+  #   - One backend API path through the proxy (e.g. `GET /api/v1/healthz` or
   #     a benign GET listed in $SMOKE_API_PATHS) → if the nginx proxy block
   #     is missing or below the SPA catch-all, the API request returns
   #     `index.html` as `text/html` instead of JSON.
@@ -395,11 +395,11 @@ run_container_smoke() {
 
   # Probe URLs come from env (so a project can declare the right routes) with
   # sensible defaults that match scaffold-project's nginx + FastAPI templates.
-  local health_url="${SMOKE_HEALTH_URL:-http://localhost:8000/health}"
+  local health_url="${SMOKE_HEALTH_URL:-http://localhost:8000/healthz}"
   local spa_url="${SMOKE_SPA_URL:-http://localhost:5173/}"
   local api_url="${SMOKE_API_URL:-}"  # optional — only probed if set
 
-  # Poll /health with a real backoff: 30 attempts * 2s = up to 60s for the
+  # Poll /healthz with a real backoff: 30 attempts * 2s = up to 60s for the
   # backend's first-boot migration + uvicorn warmup.
   local i
   local probe_ok=0

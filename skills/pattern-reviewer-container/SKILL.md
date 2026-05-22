@@ -87,8 +87,8 @@ server {
 
 # GOOD — API location blocks ABOVE the SPA fallback
 server {
-  location = /health {
-    proxy_pass http://backend:8000/health;
+  location = /healthz {
+    proxy_pass http://backend:8000/healthz;
   }
   location /api/ {
     proxy_pass http://backend:8000;
