@@ -94,3 +94,27 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 
 - Webhook receivers verify HMAC signature **before** parsing the body; constant-time compare; dedupe by event-id or timestamp window.
 - OAuth callbacks validate `state`; public clients use PKCE.
+
+### Layering — repository / service / route
+
+- Routes parse input, call a service, format the response. **No DB calls, no business logic inside a route handler.**
+- Services own business logic and orchestrate repositories; repositories own the SQL / ORM.
+- A handler that opens a DB session and writes queries inline = bypassed layer; extract into a service module before merging.
+
+### Retries on transient failures
+
+- Outbound calls to flaky dependencies (third-party HTTP, queue publish, email send) retry with **exponential backoff + jitter** on connection errors and 5xx — never on 4xx (the client is the problem).
+- Cap total retries (≤3) and total elapsed time (≤a few seconds for synchronous request paths; longer for background workers).
+- Idempotency: retry only when the operation is idempotent (or carries an `Idempotency-Key` honored by the callee).
+
+### Caching — cache-aside
+
+- Read path: check cache → miss → fetch from source → populate cache with TTL → return. Single helper per cache key family.
+- Every write that changes a cached value invalidates the cache for that key in the same transaction (or immediately after commit). Write-through-only is a stale-read trap.
+- TTL is the safety net, not the strategy.
+- Cache layer is shared (Redis / Memcached / platform cache), not a per-process map — that splits across replicas and leaks memory under load.
+
+### Authorization — table-driven RBAC
+
+- Permission checks resolve through one helper (`has_permission(user, action, resource)`), backed by a permission table — not scattered inline `if user.role == "admin"` branches.
+- Adding a new action means adding a row to the permission table, not editing every route.

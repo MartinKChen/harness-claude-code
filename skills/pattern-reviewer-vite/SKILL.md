@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-vite
-description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO — pick wrong is HIGH); `VITE_` prefix on every `import.meta.env` reading client-exposed value (no prefix means Vite won't inline; a non-VITE var read in client code is dead); `.env.example` mirrors every `VITE_*`; `vite.config.ts` owns build target + dev proxy + plugins + alias (not route logic); vitest config aligned with tsconfig types; lazy-load at route boundaries with meaningful Suspense; static-asset imports for hashed URLs."
+description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO — pick wrong is HIGH); `VITE_` prefix on every `import.meta.env` reading client-exposed value (no prefix means Vite won't inline; a non-VITE var read in client code is dead); `VITE_` prefix is NOT a security boundary (secret-shaped value in `VITE_*` is HIGH); `loadEnv(..., '')` empty-prefix exposes server secrets (HIGH); `.env.example` mirrors every `VITE_*`; `vite.config.ts` owns build target + dev proxy + plugins + alias (not route logic); type-check gap (no `tsc --noEmit` / `vite-plugin-checker`) → HIGH; production `build.sourcemap: true` without Sentry upload (HIGH); containerized dev without `server.host: true` (HIGH); barrel-file dev slowdown; vitest config aligned with tsconfig types; lazy-load at route boundaries with meaningful Suspense; static-asset imports for hashed URLs."
 ---
 
 # pattern-reviewer-vite
@@ -81,6 +81,44 @@ import { API_URL } from "@/env";
 ### `vite preview` in production (HIGH)
 
 - Production Dockerfile / compose using `vite preview` → flag; serve `dist/` via nginx / static host.
+
+### `loadEnv` prefix discipline (HIGH)
+
+```ts
+// BAD — empty prefix loads ALL env vars (server secrets included)
+const env = loadEnv(mode, process.cwd(), '');
+return { define: { __API_URL__: JSON.stringify(env.API_URL) } };
+
+// GOOD — explicit prefix list
+const env = loadEnv(mode, process.cwd(), ['VITE_']);
+```
+
+`loadEnv(mode, root, '')` → HIGH security. A later `define: {...}` mistake can inline a server secret into the client bundle.
+
+### Production source maps (HIGH)
+
+- `build.sourcemap: true` (or `'inline'`) in a production config without evidence of upload to an error tracker (Sentry / Bugsnag) → HIGH; ships the original source code publicly.
+- Acceptable: `'hidden'` + upload-and-delete pipeline.
+
+### Type-check gap (HIGH)
+
+- TypeScript project, `vite build` step, no `tsc --noEmit` in CI AND no `vite-plugin-checker` in `vite.config.ts` → HIGH. Type errors silently ship.
+
+### Containerized dev without `server.host: true` (HIGH)
+
+- Project ships a dev Dockerfile / dev compose service but `vite.config.ts` leaves `server.host` unset (defaults to `localhost`) → HIGH. The container binds 127.0.0.1; the host can't reach the dev server.
+
+### Barrel files in the hot path (MEDIUM)
+
+- `index.ts` files that re-export an entire directory's exports, imported by hot-path modules → MEDIUM. Each import loads every re-export; this is the #1 dev-server slowdown flagged by Vite docs.
+
+### Hand-rolled `resolve.alias` duplicating `tsconfig.paths` (LOW)
+
+- `vite.config.ts` lists `resolve.alias` entries that already exist in `tsconfig.json` `compilerOptions.paths` → LOW. Recommend `vite-tsconfig-paths`; eliminates the two-place edit.
+
+### `VITE_` prefix as a security boundary (HIGH)
+
+- A secret-shaped value (token, API key, signing secret, DB URL) stored in a `VITE_*` env var and read from `import.meta.env` → HIGH. `VITE_*` values are statically inlined into the shipped JS and extractable by anyone with a DevTools console; secrets must live server-side.
 
 ## Constructing the finding
 

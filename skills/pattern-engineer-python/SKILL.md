@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-python
-description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char lines; full type annotations on every signature; EAFP with narrow `except` + `raise ... from e`; modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for duck-typed seams; `@dataclass(frozen=True, slots=True)` as DTOs (Pydantic only at boundaries); `with` for resources; bandit-banned APIs avoided; Alembic chained to head with both-direction constraint tests + `pytest-alembic` round-trip. Activate on `.py` files."
+description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char lines; full type annotations on every signature; EAFP with narrow `except` + `raise ... from e`; modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for duck-typed seams; `@dataclass(frozen=True, slots=True)` as DTOs (Pydantic only at boundaries); `with` for resources; no mutable default args (`x=None`); comprehensions over C-style loops; `isinstance` over `type==`; `is None` not `==`; `''.join()` not `+=`; no shadowed builtins; no `import *`; no MD5/SHA1 for security; bandit-banned APIs avoided; Alembic chained to head with both-direction constraint tests + `pytest-alembic` round-trip. Activate on `.py` files."
 ---
 
 # pattern-engineer-python
@@ -73,6 +73,17 @@ Activate when writing or editing any `.py` file, scaffolding a Python service, m
 - Author your own with `contextlib.contextmanager` or `__enter__` / `__exit__`.
 - `contextlib.ExitStack` to compose a dynamic set of context managers.
 - Never `try` with manual `.close()` when `with` would do.
+
+### Pythonic idioms
+
+- Mutable default arguments: NEVER `def f(x=[])` / `def f(x={})` — the default is shared across calls. Use `def f(x: list[T] | None = None)` and convert to `[]` inside.
+- List comprehensions / generator expressions over C-style accumulating loops (`result = []; for ...: result.append(...)` → `result = [... for ... if ...]`).
+- `isinstance(x, T)` over `type(x) == T` — `isinstance` respects subclassing; `type==` doesn't.
+- `x is None` / `x is not None` — never `== None` (None is a singleton; identity comparison is both faster and the canonical idiom).
+- `"".join(parts)` over `+=` in a loop — `str` is immutable; `+=` is quadratic.
+- Don't shadow builtins (`list`, `dict`, `str`, `id`, `type`, `input`) — pick a different name.
+- No `from module import *` — namespace pollution and breaks tooling that tracks symbol origins.
+- Weak crypto banned for security purposes: no `md5` / `sha1` for signatures / fingerprints / passwords. Use `hashlib.sha256` (or stronger), `bcrypt` / `argon2` for passwords, `hmac.compare_digest` for HMAC.
 
 ### Banned APIs (bandit blocks these)
 

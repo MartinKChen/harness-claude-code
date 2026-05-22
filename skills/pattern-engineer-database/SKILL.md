@@ -1,13 +1,13 @@
 ---
 name: pattern-engineer-database
-description: "Ship migrations safely. Models are the source of truth; generate with `alembic revision --autogenerate`. Test every migration via `pytest-alembic` (round-trip + post-state assertions by name + extension cleanup). Migration runs in a dedicated `migrate` compose service before the backend starts — never in the backend entrypoint. Commit model + migration together. Activate on `alembic/versions/*`, `pytest-alembic`, or the `migrate` service."
+description: "Ship migrations safely. Models are the source of truth; generate with `alembic revision --autogenerate`. Test every migration via `pytest-alembic` (round-trip + post-state assertions by name + extension cleanup). Migration runs in a dedicated `migrate` compose service before the backend starts — never in the backend entrypoint. Commit model + migration together. Plus runtime DB patterns: types (`bigint`/`text`/`timestamptz`/`numeric`); always index FKs + RLS-policy columns; partial / covering indexes; RLS with `(SELECT auth.uid())`; project columns (no `SELECT *`); cursor pagination over `OFFSET`; `SKIP LOCKED` for worker queues; consistent lock order; short transactions; `EXPLAIN ANALYZE` on hot queries. Activate on `alembic/versions/*`, `pytest-alembic`, the `migrate` service, schema design, or query/index work."
 ---
 
 # pattern-engineer-database
 
 ## When to activate
 
-Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), or adding the `migrate` service to `compose.yaml`. Skip for schema/naming design.
+Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), adding the `migrate` service to `compose.yaml`, or designing schema/indexes/queries (column types, FK indexes, RLS, pagination, locking). Skip for migration-unrelated app logic.
 
 ## Patterns
 
@@ -36,6 +36,46 @@ Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`)
 
 - Run the suite locally before pushing.
 - Irreversible migrations (e.g. dropping a column with data): document in the revision body, `raise NotImplementedError("irreversible: data loss")` in `downgrade()`, mark the roundtrip test `@pytest.mark.skip(reason="irreversible — see <revision>")`.
+
+### Schema design (PostgreSQL)
+
+- `bigint` for surrogate IDs (not `int`); `text` for strings (not `varchar(255)` without a real reason); `timestamptz` for timestamps (never `timestamp` without TZ); `numeric` for money; `boolean` for flags.
+- Identifiers in `lowercase_snake_case` — no quoted mixed-case names.
+- Every FK declared with `ON DELETE` (`CASCADE` / `SET NULL` / `RESTRICT`) and `ON UPDATE` policy chosen explicitly.
+- UUIDs as PKs: prefer UUIDv7 (time-ordered) over random v4 to keep B-tree inserts clustered; or use `IDENTITY` / `bigserial`.
+
+### Indexing
+
+- Always index foreign-key columns — the parent-side cascade and joins scan otherwise.
+- Index every column referenced in an RLS policy's `USING` / `WITH CHECK` clause; an un-indexed `auth.uid()` lookup serializes the table.
+- Composite indexes: equality columns first, then range columns (`(user_id, created_at)` for `WHERE user_id = … AND created_at > …`).
+- Partial indexes for soft-deletes: `CREATE INDEX … WHERE deleted_at IS NULL` keeps the live-row index small and fast.
+- Covering indexes (`INCLUDE (col, col)`) when a hot lookup wants to skip the table heap entirely.
+
+### Row-Level Security (multi-tenant tables)
+
+- Enable RLS on every table that holds tenant-scoped or user-scoped rows.
+- Policies use `(SELECT auth.uid())` — the subquery form runs once per statement; bare `auth.uid()` runs once per row.
+- Default deny: explicit `USING` for SELECT, explicit `WITH CHECK` for INSERT/UPDATE.
+- Application service-role bypass is opt-in via a separate role; never `GRANT ALL` to the app user.
+
+### Query patterns
+
+- Project specific columns; never `SELECT *` on user-facing reads. `SELECT *` is fine in ad-hoc REPL / migration scripts.
+- Cursor pagination (`WHERE id > $last_seen ORDER BY id LIMIT 50`) over `OFFSET` on tables that will exceed ~10k rows — `OFFSET` re-scans every prior row.
+- Worker queues use `SELECT … FOR UPDATE SKIP LOCKED LIMIT 1` so concurrent workers don't block each other.
+- Lock acquisition order is fixed (e.g. `ORDER BY id FOR UPDATE`) to avoid deadlocks on concurrent multi-row updates.
+- Batch inserts use multi-row `INSERT` or `COPY`; one INSERT per loop iteration is an N-trips antipattern.
+
+### Transaction discipline
+
+- Transactions stay short: do the DB work and commit. No external HTTP / queue / email calls while a transaction is open — those hold row locks for whatever the network does.
+- Avoid `SERIALIZABLE` unless you've measured the contention cost; `READ COMMITTED` + an atomic conditional update (`UPDATE … WHERE balance >= :a`) is usually enough.
+
+### Performance verification
+
+- Run `EXPLAIN (ANALYZE, BUFFERS)` on any query that joins, filters on a non-PK column, or appears in a list endpoint. Look for `Seq Scan` on large tables and missing indexes.
+- `pg_stat_statements` for the long-tail offenders: `ORDER BY mean_exec_time DESC LIMIT 10`.
 
 ### `migrate` compose service
 

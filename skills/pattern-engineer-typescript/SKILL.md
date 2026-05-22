@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-typescript
-description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + `noImplicitReturns` + `noFallthroughCasesInSwitch` + `noImplicitOverride`; `compilerOptions.types` includes test-matcher types; no `any` (use `unknown` at boundaries, narrow); no `!` non-null without documented invariant; `type` for unions, `interface` for extendable shapes; discriminated unions over together-optional fields; biome owns import order. Activate when editing TypeScript or `tsconfig.json`."
+description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + `noImplicitReturns` + `noFallthroughCasesInSwitch` + `noImplicitOverride`; `compilerOptions.types` includes test-matcher types; no `any` (use `unknown` at boundaries, narrow); no `!` non-null without documented invariant; `type` for unions, `interface` for extendable shapes; discriminated unions over together-optional fields; biome owns import order; `JSON.parse` always wrapped; `===` not `==`; never `forEach(async)`; no sync fs in handlers; schema-validate before merging untrusted objects (prototype pollution); explicit return types on public exports. Activate when editing TypeScript or `tsconfig.json`."
 ---
 
 # pattern-engineer-typescript
@@ -55,6 +55,15 @@ Copy the block in `templates/tsconfig.json` into the project's `tsconfig.json`. 
 - Native `Error` is fine for ad-hoc throws; subclass `Error` when callers need to discriminate (`AuthError`, `ValidationError`).
 - Don't `throw` non-Error values; `unknown` thrown is a productivity tax for every catcher.
 - Type the catch parameter: `try { … } catch (err) { if (err instanceof AuthError) … }`.
+- Wrap `JSON.parse` in try/catch — invalid input throws and bubbles past most call sites silently.
+
+### Runtime correctness traps
+
+- Use `===` / `!==`; `==` does implicit coercion (`0 == ''`, `null == undefined`) and is almost never what you want.
+- No `array.forEach(async fn)` — `forEach` ignores the returned promise. Use `for...of` for sequential or `await Promise.all(array.map(...))` for parallel.
+- No `fs.readFileSync` / sync I/O inside a request handler or any hot async path — blocks the event loop.
+- Never merge an untrusted object into a target without schema validation (prototype pollution). `Object.assign(target, JSON.parse(req.body))` is a vector; parse with Zod first.
+- Public exports get explicit return types — inference is fine for internal callers but a public seam without a stated return type drifts silently.
 
 ### Common traps
 

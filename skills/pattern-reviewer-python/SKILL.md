@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-python
-description: "Python audit: bandit-banned APIs (B310 urlopen, B602 shell=True, B314 xml.etree, B506 yaml.load, B101 assert), full type annotations on every signature, EAFP discipline (narrow except, `raise ... from e`), modern type hints (built-in generics, PEP 604, PEP 695), `Protocol` for seams (not ABCs), `@dataclass(frozen=True, slots=True)` as DTOs at boundaries, `with` for every acquired resource. Cites `file:line` with BAD/GOOD snippets."
+description: "Python audit: f-string SQL injection (CRITICAL); pickle/yaml.load unsafe deserialization (CRITICAL); bandit-banned APIs (B310 urlopen, B602 shell=True, B314 xml.etree, B506 yaml.load, B101 assert); mutable default arguments (HIGH); MD5/SHA1 for security (HIGH); sync-blocking calls in async funcs; full type annotations on every signature; EAFP discipline (narrow except, `raise ... from e`); modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for seams (not ABCs); `@dataclass(frozen=True, slots=True)` as DTOs at boundaries; `with` for every acquired resource; isinstance vs type==; `is None`; comprehensions over C-style loops; no shadowed builtins; no `import *`. Cites `file:line` with BAD/GOOD snippets."
 ---
 
 # pattern-reviewer-python
@@ -162,6 +162,110 @@ def session_scope() -> Iterator[Session]:
 - `pip install`, `poetry install`, `pipenv install`, `conda install` references in Dockerfile / CI / docs → flag.
 - `requirements.txt` shipping deps instead of `pyproject.toml` + `uv.lock` → flag.
 - `uv.lock` not committed → HIGH.
+
+### F-string SQL injection (CRITICAL)
+
+```python
+# BAD — user input interpolated directly into SQL
+query = f"SELECT * FROM users WHERE id = {user_id}"
+cursor.execute(query)
+
+# BAD — same hazard via str.format / % formatting
+cursor.execute("SELECT * FROM users WHERE email = '%s'" % email)
+
+# GOOD — parameterized query
+cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+
+# GOOD — SQLAlchemy bindparam
+session.execute(text("SELECT * FROM users WHERE id = :id"), {"id": user_id})
+```
+
+Any string-formatted SQL (`f"..."`, `.format(...)`, `%` operator) that includes a value not statically known → CRITICAL.
+
+### Unsafe deserialization (CRITICAL)
+
+```python
+# BAD — pickle.loads on untrusted data executes arbitrary code
+data = pickle.loads(request.body)
+
+# BAD — yaml.load without SafeLoader (B506)
+config = yaml.load(payload)  # also bandit-flagged
+
+# GOOD — explicit safe deserialization
+data = json.loads(request.body)              # JSON is safe by default
+config = yaml.safe_load(payload)             # yaml.SafeLoader
+```
+
+`pickle.loads` / `marshal.loads` / `yaml.load` / `dill.loads` / `shelve.open` on untrusted input → CRITICAL.
+
+### Mutable default arguments (HIGH)
+
+```python
+# BAD — default list is shared across every call
+def append_item(value, items: list[int] = []) -> list[int]:
+    items.append(value)
+    return items
+
+# GOOD — sentinel + local construction
+def append_item(value, items: list[int] | None = None) -> list[int]:
+    if items is None:
+        items = []
+    items.append(value)
+    return items
+```
+
+Any function whose parameter has a mutable default (`list`, `dict`, `set`, dataclass with default mutable, `[]` / `{}` / `set()` literal) → HIGH.
+
+### Weak crypto for security (HIGH)
+
+- `hashlib.md5(...)` / `hashlib.sha1(...)` used for signatures / password hashing / fingerprinting tokens → HIGH.
+- Bare `hashlib.sha256` for password storage → HIGH (use `bcrypt` / `argon2` / `passlib`).
+- Non–constant-time secret comparison (`token == expected`) → HIGH; use `hmac.compare_digest`.
+
+(Exception: `md5` for non-security uses, e.g. ETag generation, content-addressable cache keys — allowed with an inline comment.)
+
+### `isinstance` vs `type(x) ==` (MEDIUM)
+
+```python
+# BAD — fails for subclasses
+if type(value) == dict: ...
+
+# GOOD
+if isinstance(value, dict): ...
+```
+
+### `is None` vs `== None` (LOW)
+
+- `value == None` / `value != None` → LOW. Use `is` / `is not`.
+
+### C-style loops where comprehensions fit (LOW)
+
+```python
+# BAD
+names = []
+for user in users:
+    if user.active:
+        names.append(user.name)
+
+# GOOD
+names = [user.name for user in users if user.active]
+```
+
+Only flag when the loop body is a single transform/filter; complex bodies stay imperative.
+
+### `from module import *` (LOW)
+
+- Star imports anywhere except a deliberate `__init__.py` public surface → LOW.
+
+### Shadowing builtins (LOW)
+
+- Variables / parameters named `list`, `dict`, `str`, `id`, `type`, `input`, `filter`, `map` → LOW.
+
+### Concurrency (HIGH)
+
+- Module-level / class-attribute mutable state read+modified from multiple threads without a `threading.Lock` / `asyncio.Lock` → HIGH.
+- `async` function `await`-ing a sync-blocking call (`time.sleep`, `requests.get`, `psycopg2` without async driver) → HIGH; use `asyncio.sleep`, `httpx.AsyncClient`, `asyncpg` / `databases`.
+- `asyncio.gather(...)` is the parallel-by-default tool; sequential `await` in a tight loop on independent calls → MEDIUM.
 
 ### PEP 8 / ruff (LOW — formatter should fix)
 

@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-coding-standard
-description: "Language-agnostic code-quality review patterns: code-quality bars (large functions / files / deep nesting / missing error handling / mutation / dead code), performance (algorithmic, repeated work), best practices (TODO without ticket, single-letter vars, magic numbers, inconsistent formatting), AI-generated-code addendum. Each finding is >80% confidence-filtered, severity-graded, cited as `file:line` with BAD/GOOD snippets, named with a non-numeric handle. Comment shape under `# Code Review` in `templates/review-comment.md`. Skip for `type:e2e`."
+description: "Language-agnostic code-quality review patterns: Pre-Report Gate (cite line, name failure mode, read context, defend severity); HIGH/CRITICAL require proof; zero findings is valid; common-false-positives list; code-quality bars (large functions / files / deep nesting / missing error handling / mutation / dead code); performance (algorithmic, repeated work); best practices (TODO without ticket, single-letter vars, magic numbers, inconsistent formatting); AI-generated-code addendum. Each finding is >80% confidence-filtered, severity-graded, cited as `file:line` with BAD/GOOD snippets, named with a non-numeric handle. Comment shape under `# Code Review` in `templates/review-comment.md`. Skip for `type:e2e`."
 ---
 
 # pattern-reviewer-coding-standard
@@ -26,6 +26,48 @@ description: "Language-agnostic code-quality review patterns: code-quality bars 
 - **Never refer to a finding as `#N`.** GitHub auto-links `#1`, `#2`, … to issues. Use a non-numeric handle: quoted title, `F1` / `F2`, or `Finding 1` / `Finding 2`.
 - **Match project conventions.** Read `CLAUDE.md` and every ADR in `docs/ADRs/`. A diff that contradicts an active ADR is a finding, not a stylistic call.
 - **Never suggest destructive actions.** If a fix would require `git reset --hard`, `--no-verify`, or rewriting published history, surface the underlying problem.
+
+## Pre-Report Gate
+
+Before you write a finding, answer all four questions. If any answer is **no** or **unsure**, downgrade the severity or drop the finding.
+
+1. **Can I cite the exact line?** Name the file and line. Vague findings like "somewhere in the auth layer" are not actionable and must be dropped.
+2. **Can I describe the concrete failure mode?** Name the input, state, and bad outcome. If you cannot name the trigger, you are pattern-matching, not reviewing.
+3. **Have I read the surrounding context?** Check callers, imports, and tests. Many apparent issues are already handled one frame up or guarded by a type.
+4. **Is the severity defensible?** A missing JSDoc is never HIGH. A single `any` in a test fixture is never CRITICAL. Severity inflation erodes trust faster than missed findings.
+
+### HIGH / CRITICAL require proof
+
+For any finding tagged HIGH or CRITICAL, the body must include:
+
+- The exact snippet and line number.
+- The specific failure scenario: input, state, and bad outcome.
+- Why existing guards (types, validation, framework defaults, upstream caller) do not catch it.
+
+If you cannot produce all three, demote to MEDIUM or drop.
+
+### Zero findings is a valid review
+
+A clean review is a valid review. Do not manufacture findings to justify the invocation. If the diff is small, well-typed, tested, and follows the project's patterns, the correct output is a summary with zero rows and a clean verdict. Manufactured findings, filler nits, speculative "consider using X", and hypothetical edge cases without a trigger directly undermine this skill's usefulness.
+
+## Common false positives — skip these
+
+Patterns LLM reviewers commonly mis-flag. Skip unless you have evidence specific to this codebase.
+
+- **"Consider adding error handling"** on a call whose error path is handled by the caller or framework (Express error middleware, React error boundaries, top-level `try/catch`, Promise chains with upstream `.catch`).
+- **"Missing input validation"** when the function is internal and its callers already validate. Trace at least one caller before flagging.
+- **"Magic number"** for well-known constants: `200`, `404`, `1000` ms, `60`, `24`, `1024`, array index `0` or `-1`, HTTP status codes, single-use local constants whose meaning is obvious from the variable name.
+- **"Function too long"** for exhaustive `switch` statements, configuration objects, test tables, or generated code. Length is not complexity.
+- **"Missing JSDoc / docstring"** on single-purpose internal helpers whose name and signature are self-describing.
+- **"Prefer `const` over `let`"** when the variable is reassigned. Read the whole function before flagging.
+- **"Possible null dereference"** when the preceding line narrows the type or an `if` guard is in scope. Trace type flow instead of pattern-matching on `?.`.
+- **"N+1 query"** on fixed-cardinality loops (iterating a four-element enum) or on paths already using `DataLoader` / batching.
+- **"Missing await"** on fire-and-forget calls that are intentionally detached (logging, metrics, background queue pushes). Check for a comment or `void` prefix before flagging.
+- **"Should use TypeScript / Should have types"** in a JavaScript-only file. Match the project's existing language; do not suggest a stack change.
+- **"Hardcoded value"** for values in test fixtures, example code, or documentation snippets. Tests should have hardcoded expectations.
+- **Security theater:** flagging `Math.random()` in a non-cryptographic context (animation, jitter, sampling), or flagging `eval` / `Function` in a plugin system that is explicitly a code-loading surface.
+
+When tempted to flag one of the above, ask: "Would a senior engineer on this team actually change this in review?" If no, skip.
 
 ## Patterns to review
 

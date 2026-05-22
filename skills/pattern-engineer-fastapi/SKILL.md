@@ -34,6 +34,7 @@ Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / �
 - `response_model=` on every route so OpenAPI matches what the contract declared and sensitive fields are stripped consistently.
 - Use `Field(max_length=…, ge=…, le=…)` on string and numeric fields to bound input ranges per the contract.
 - Status-code-only responses (e.g., a contract-declared 204) use `Response(status_code=204)` — the FastAPI idiom for "no body"; never invent `{"ok": True}` when the contract says no body.
+- Keep request and response Pydantic models **separate**: never reuse one model for both. Request-only fields (write-side knobs, raw secrets) and response-only fields (computed derived values, db-issued ids) belong to different models — sharing one leaks write-only fields into the OpenAPI response or makes the response model accept fields the client can't send.
 
 ### Exception handlers
 

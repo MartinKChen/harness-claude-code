@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-coding-standard
-description: "Language-agnostic coding standards. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
+description: "Language-agnostic coding standards. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; files 200–400 lines (800 cap); refactor and feature stay in separate commits; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
 ---
 
 # pattern-engineer-coding-standard
@@ -36,10 +36,15 @@ Apply in this order when principles conflict: **Readability → KISS → DRY →
 
 ### Error handling
 
-- Validate at system boundaries (user input, external APIs). Trust internal callers.
+- Validate at system boundaries (user input, external APIs). Never trust external data — schema-check before use. Trust internal callers.
 - Catch the narrowest exception that applies.
 - Re-raise with cause (`raise ... from e`); don't swallow.
 - Don't add fallbacks for scenarios that can't happen.
+
+### File + change sizing
+
+- Many small files > few large files: high cohesion, low coupling. Target 200–400 lines per file; treat 800 as the hard cap.
+- Don't bundle a refactor with a feature change — submit them as separate commits / PRs. Tiny cleanups (rename, dead-import delete) inside a feature change are fine.
 
 ### Async
 

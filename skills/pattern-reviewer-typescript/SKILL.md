@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-typescript
-description: "TypeScript audit: `tsconfig.json` strictness (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`); `compilerOptions.types` includes test-matcher types; `any` usage (and `as any` laundering); `!` non-null assertions without documented invariant; `interface` vs `type` choice; together-optional fields that should be discriminated unions; biome `organizeImports` violations; `import type` consistency. Cites `file:line` with BAD/GOOD snippets."
+description: "TypeScript audit: `tsconfig.json` strictness (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`); `compilerOptions.types` includes test-matcher types; `any` usage (and `as any` laundering); `!` non-null assertions without documented invariant; `interface` vs `type` choice; together-optional fields that should be discriminated unions; biome `organizeImports` violations; `import type` consistency; `eval` / `new Function` / `child_process` on user input (CRITICAL); prototype pollution; `JSON.parse` without try/catch; throwing non-Error values; `==` vs `===`; `forEach(async)`; sync fs in handlers; explicit return types on public exports. Cites `file:line` with BAD/GOOD snippets."
 ---
 
 # pattern-reviewer-typescript
@@ -108,6 +108,134 @@ type Fetch<T> =
 ### `enum` usage (LOW)
 
 - `enum` for fixed strings emits runtime artifacts. Prefer `const` object + `keyof typeof` or a literal union.
+
+### `eval` / `new Function` on user input (CRITICAL)
+
+```ts
+// BAD — user-controlled code executes in the server / browser
+const result = eval(req.body.expression);
+const fn = new Function("payload", req.body.handler);
+
+// GOOD — never feed untrusted strings to dynamic execution
+// If you genuinely need a sandbox, use a vetted sandbox library
+// and document the threat model inline.
+```
+
+Any `eval(...)` or `new Function(...)` whose argument can be traced to user input → CRITICAL.
+
+### `child_process` with user input (CRITICAL)
+
+```ts
+// BAD — shell injection vector
+import { exec } from "node:child_process";
+exec(`tar -czf ${req.body.archiveName}.tar.gz ./uploads`);
+
+// GOOD — array form, no shell, allowlist the inputs
+import { execFile } from "node:child_process";
+if (!/^[a-z0-9_-]+$/i.test(name)) throw new Error("bad name");
+execFile("tar", ["-czf", `${name}.tar.gz`, "./uploads"]);
+```
+
+`exec` / `execSync` with template-string user input → CRITICAL. `execFile` / `spawn` with a list of args and validated input is the fix.
+
+### Prototype pollution (HIGH)
+
+```ts
+// BAD — merging untrusted JSON straight into a host object
+Object.assign(config, JSON.parse(req.body));
+_.merge(target, untrustedSource); // older lodash versions are pollution-prone
+
+// GOOD — schema-validate first; merge only known keys
+const Body = z.object({ theme: z.enum(["light", "dark"]) });
+const safe = Body.parse(JSON.parse(req.body));
+Object.assign(config, safe);
+```
+
+Untrusted object merged into a target without a schema → HIGH.
+
+### `JSON.parse` without try/catch (HIGH)
+
+```ts
+// BAD — throws SyntaxError on invalid input; un-handled in route handlers
+const body = JSON.parse(req.body);
+
+// GOOD — parse + validate at the boundary
+let body: unknown;
+try { body = JSON.parse(req.body); }
+catch { return res.status(400).json({ error: "invalid JSON" }); }
+const parsed = BodySchema.parse(body);
+```
+
+`JSON.parse` on any value that can come from outside (`req.body`, `localStorage`, websocket frame, file read) without a `try/catch` → HIGH.
+
+### Throwing non-Error values (MEDIUM)
+
+```ts
+// BAD — string thrown; catchers lose `.stack` and `.message` typing
+throw "user not found";
+throw { code: "NOT_FOUND" };
+
+// GOOD
+throw new Error("user not found");
+class NotFoundError extends Error {}
+throw new NotFoundError();
+```
+
+Any `throw` whose argument is not an `Error` (string, plain object, number) → MEDIUM.
+
+### `==` instead of `===` (MEDIUM)
+
+```ts
+// BAD — implicit coercion: `0 == ""`, `null == undefined`, `"1" == 1`
+if (count == 0) { ... }
+if (value != null) { ... } // the one historically-acceptable use, but `value !== null && value !== undefined` is clearer
+
+// GOOD
+if (count === 0) { ... }
+if (value !== null && value !== undefined) { ... }
+```
+
+`==` / `!=` outside the deliberate `value != null` idiom → MEDIUM.
+
+### `array.forEach(async fn)` (HIGH)
+
+```ts
+// BAD — forEach throws the returned promise away; no awaiting happens
+items.forEach(async (item) => { await save(item); });
+console.log("done"); // logs before any save resolves
+
+// GOOD — sequential
+for (const item of items) { await save(item); }
+
+// GOOD — parallel
+await Promise.all(items.map((item) => save(item)));
+```
+
+`Array.prototype.forEach` with an `async` callback → HIGH (the callee's promise is dropped on the floor).
+
+### Sync I/O in request handlers (HIGH)
+
+```ts
+// BAD — blocks the event loop; one slow disk read stalls every concurrent request
+app.get("/config", (req, res) => {
+  const data = fs.readFileSync("./config.json", "utf-8");
+  res.json(JSON.parse(data));
+});
+
+// GOOD — async I/O
+import { readFile } from "node:fs/promises";
+app.get("/config", async (req, res) => {
+  const data = await readFile("./config.json", "utf-8");
+  res.json(JSON.parse(data));
+});
+```
+
+`fs.readFileSync` / `fs.writeFileSync` / `execSync` inside an HTTP handler or any hot async path → HIGH.
+
+### Explicit return types on public exports (MEDIUM)
+
+- Exported functions, hooks, and class methods that cross a module boundary without an explicit return type → MEDIUM (inference drift silently changes the public contract).
+- Internal helpers can rely on inference.
 
 ## Templates
 

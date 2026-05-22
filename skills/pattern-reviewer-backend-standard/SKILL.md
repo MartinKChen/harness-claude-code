@@ -160,6 +160,66 @@ def withdraw(user_id: int, amount: int) -> None:
 - `*` + `credentials: true` → CRITICAL.
 - `methods` + `allowedHeaders` are explicit, not `*`.
 
+### Layering — DB / business logic inside route handler (HIGH)
+
+```python
+# BAD — route opens a session, runs SQL, applies business rules, formats response
+@router.post("/orders")
+def create_order(body: CreateOrder, db: Session = Depends(get_db)) -> dict:
+    if body.total < 0:
+        raise HTTPException(400, "negative total")
+    db.execute("INSERT INTO orders (...) VALUES (...)", {...})
+    db.commit()
+    return {"ok": True}
+
+# GOOD — route → service → repository
+@router.post("/orders", response_model=OrderRead)
+def create_order(body: OrderCreate, svc: OrderService = Depends()) -> OrderRead:
+    return svc.create(body)
+```
+
+Route handlers that contain raw SQL / ORM calls or non-trivial business rules → HIGH. Extract a service before merging.
+
+### Inline RBAC checks scattered across handlers (MEDIUM)
+
+```ts
+// BAD — same check, six different spellings, no single source of truth
+if (req.user.role !== "admin") return res.status(403).end();
+if (req.user.role === "user") return res.status(403).end();
+
+// GOOD — one helper, table-driven
+if (!hasPermission(req.user, "orders.delete")) return res.status(403).end();
+```
+
+Authorization decisions repeated inline in multiple routes → MEDIUM. Centralize in one helper.
+
+### Missing retry on flaky external calls (MEDIUM)
+
+- Outbound HTTP to a known-flaky dependency (email provider, payment processor, third-party API) with **no retry** wrapper → MEDIUM.
+- Retry that fires on 4xx → HIGH (compounds the client's bad input into N requests).
+- Retry without backoff or jitter → MEDIUM (synchronized clients DDoS the upstream during recovery).
+
+### Cache invalidation missing on mutation (HIGH)
+
+```python
+# BAD — write updates the DB but leaves the cached value stale until TTL expires
+def update_user_email(user_id: int, email: str) -> None:
+    db.execute("UPDATE users SET email = :e WHERE id = :id", {"e": email, "id": user_id})
+    # cache key f"user:{user_id}" still serves the old email
+
+# GOOD — invalidate the cache key alongside the write
+def update_user_email(user_id: int, email: str) -> None:
+    db.execute("UPDATE users SET email = :e WHERE id = :id", {"e": email, "id": user_id})
+    cache.delete(f"user:{user_id}")
+```
+
+Any mutation path that writes to a value covered by an explicit cache without invalidating that key → HIGH.
+
+### Per-process in-memory rate-limit / cache (HIGH)
+
+- Rate-limit / cache implementation that uses a module-level `dict` / `Map` instead of a shared store (Redis, Memcached, gateway-level limiter) → HIGH.
+- Reasons: resets on deploy, splits across replicas, fails open in serverless / multi-instance environments.
+
 ## Constructing the finding
 
 Use the shape in `templates/review-comment.md`.

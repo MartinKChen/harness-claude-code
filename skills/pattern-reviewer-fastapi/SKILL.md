@@ -75,6 +75,33 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 - Pydantic models on request bodies, response models, query params — yes.
 - Pydantic models passed deep into the domain layer / DB / business logic → flag; convert to dataclass at the seam.
 
+### Request vs response model separation (MEDIUM)
+
+```python
+# BAD — same model used for both directions
+class User(BaseModel):
+    id: int | None = None             # only set on response
+    email: str
+    password: str                     # only set on request — and now in OpenAPI response schema
+
+@router.post("", response_model=User)
+def create_user(body: User) -> User: ...
+
+# GOOD — distinct shapes
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+class UserRead(BaseModel):
+    id: int
+    email: str
+
+@router.post("", response_model=UserRead)
+def create_user(body: UserCreate) -> UserRead: ...
+```
+
+A single Pydantic model used as BOTH the route's request body and its `response_model` → MEDIUM. Write-side fields (passwords, raw tokens, internal write toggles) leak into the OpenAPI response schema; response-side fields (server-issued ids, derived values) silently become optional on the request side.
+
 ### Exception handlers register at app level (HIGH)
 
 - App-level handlers register for project exceptions: `@app.exception_handler(LoginError)`.

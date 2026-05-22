@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-vite
-description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SEO needs); env vars via `import.meta.env` with `VITE_` prefix; Vitest for unit tests; route-boundary code splitting via `lazy(() => import())` + `<Suspense>`; static-asset imports for hashed URLs; `vite.config.ts` for build target, dev-server proxy, plugins, alias. Activate when editing `vite.config.*`, `vitest.config.*`, or scaffolding a Vite-based React app."
+description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SEO needs); env vars via `import.meta.env` with `VITE_` prefix (NOT a security boundary); `loadEnv(mode, root, ['VITE_'])` always with explicit prefix; `vite-plugin-checker` (or `tsc --noEmit` in CI) — `vite build` does not type-check; `vite-tsconfig-paths` over hand-rolled aliases; `build.sourcemap: false` in prod unless uploading to Sentry; `server.host: true` for containerized dev; avoid barrel files (dev slowdown); explicit import extensions; clear `node_modules/.vite` after dep changes; Vitest for unit tests; route-boundary code splitting via `lazy(() => import())` + `<Suspense>`; static-asset imports for hashed URLs. Activate when editing `vite.config.*`, `vitest.config.*`, or scaffolding a Vite-based React app."
 ---
 
 # pattern-engineer-vite
@@ -23,12 +23,19 @@ Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, s
 - Server-only secrets never get the `VITE_` prefix (Vite refuses to expose them); they live in the backend.
 - Read each `import.meta.env.VITE_*` through a single typed accessor module so the call site doesn't repeat the prefix.
 - `.env`, `.env.local`, `.env.<mode>.local` are in `.gitignore`; only `.env.example` (placeholders) committed; mirror every `import.meta.env.VITE_*` key.
+- `loadEnv(mode, root, ['VITE_'])` — always pass an explicit prefix list. `loadEnv(mode, root, '')` loads ALL env vars (including server secrets), and a `define: {...}` mistake can then inline them into the client bundle.
+- The `VITE_` prefix is NOT a security boundary. Any `VITE_*` value is statically inlined into the shipped JS and trivially extractable; only public values (API URLs, feature flags, public keys) belong there.
 
 ### Vite config
 
 - `vite.config.ts` owns: build `target` (browser baseline), `resolve.alias` for `@/...`, dev-server `proxy` to the backend, `plugins` (React, Tailwind, etc.), `server.port` if non-default needed.
 - Don't put route-specific logic in `vite.config` — that belongs in the app code.
 - Proxy backend calls in dev: `server.proxy = { "/api": "http://localhost:8000" }` so the SPA sees same-origin and cookies / CSRF work.
+- Use `vite-tsconfig-paths` instead of hand-rolling `resolve.alias` entries that already exist in `tsconfig.json` paths — one source of truth.
+- Add `vite-plugin-checker` (or run `tsc --noEmit` in CI). `vite build` transpiles but does **not** type-check; type errors silently ship.
+- `build.sourcemap: false` for production unless you upload to an error tracker (Sentry, Bugsnag). Public source maps leak the original code.
+- Containerized dev: `server.host: true` so the container binds `0.0.0.0` and the host can reach it. Default `localhost` binding is unreachable from outside the container.
+- Clear `node_modules/.vite` after dep changes / branch switches with non-trivial dep diffs — the pre-bundle cache causes phantom errors when stale.
 
 ### Vitest
 
@@ -49,6 +56,11 @@ Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, s
 - Import images / fonts as ES modules to get hashed URLs: `import logoUrl from './logo.svg'`.
 - Public assets that need a stable URL go in `public/` (served as-is, no hashing).
 - `?url` / `?raw` / `?worker` query-suffix imports for explicit handling.
+
+### Module-resolution performance
+
+- Avoid barrel files (`index.ts` re-exporting everything from a directory) — importing one symbol forces Vite to load every re-export. This is the #1 dev-server slowdown.
+- Be explicit with import extensions (`./Component.tsx`, not `./Component`); each implicit extension triggers up to 6 filesystem checks via `resolve.extensions`.
 
 ### Dev server
 

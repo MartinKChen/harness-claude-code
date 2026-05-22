@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-database
-description: "Migration audit: code-first (models drive migration, not the reverse); autogenerate review (server defaults / check constraints / type changes / data migrations the autogenerate missed); `pytest-alembic` round-trip; post-state assertions by **name** (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`); extensions installed by the upgrade are dropped by the downgrade; ORM `__table_args__` carries `name=` matching the migration; no pre-create of extensions in `conftest.py`; migration runs in a `migrate` compose service, not the backend entrypoint."
+description: "Migration audit: code-first (models drive migration, not the reverse); autogenerate review (server defaults / check constraints / type changes / data migrations the autogenerate missed); `pytest-alembic` round-trip; post-state assertions by **name** (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`); extensions installed by the upgrade are dropped by the downgrade; ORM `__table_args__` carries `name=` matching the migration; no pre-create of extensions in `conftest.py`; migration runs in a `migrate` compose service, not the backend entrypoint. Runtime DB audit: column types (`bigint`/`text`/`timestamptz`/`numeric`); FK indexing; RLS policy indexes + `(SELECT auth.uid())`; `OFFSET` on large tables; `SKIP LOCKED` for worker queues; lock-acquisition order; transactions holding external I/O; `EXPLAIN ANALYZE` evidence on hot queries."
 ---
 
 # pattern-reviewer-database
@@ -8,6 +8,7 @@ description: "Migration audit: code-first (models drive migration, not the rever
 ## When to activate
 
 - Reviewing a diff that touches `alembic/versions/*.py`, ORM models with new tables / columns / constraints, `compose.yaml` `migrate` service, or `pytest-alembic` test files.
+- Reviewing a diff that adds or substantially changes SQL queries, RLS policies, indexes, pagination, or worker-queue locking logic.
 
 ## Iron rules
 
@@ -127,6 +128,98 @@ Author the negative test(s) BEFORE the constraint regex / index expression — t
 - Migration runs inside the backend image's entrypoint (`alembic upgrade head` chained into `uvicorn ...`) → flag; the app accepts traffic against a stale schema and N replicas race.
 - Migration runs in a FastAPI `startup` hook → flag (same problem).
 - Correct shape: `migrate` is a dedicated compose service running once before `backend` starts, same image with a different `command:`.
+
+### Column types (HIGH)
+
+- `int` / `integer` for surrogate IDs in a new table → flag (use `bigint`); `int` overflows at ~2.1B rows.
+- `varchar(255)` (or any arbitrary `varchar(N)`) without a real reason (e.g. ISO 4217 currency = 3) → flag; use `text`.
+- `timestamp` (without timezone) → flag; use `timestamptz`. `timestamp` silently stores client-local time and corrupts cross-region reads.
+- `float` / `real` for money → flag; use `numeric(precision, scale)`.
+- Random UUIDv4 PK on a high-write table → MEDIUM (prefer UUIDv7 or `IDENTITY` for B-tree locality).
+- Quoted mixed-case identifiers (`"UserId"`) → flag; use `lowercase_snake_case`.
+
+### Foreign-key indexing (HIGH)
+
+```sql
+-- BAD — FK declared, but no index → every parent delete / join scans the child table
+CREATE TABLE orders (
+  id bigint PRIMARY KEY,
+  user_id bigint REFERENCES users(id)
+);
+
+-- GOOD — explicit index named per convention
+CREATE TABLE orders (
+  id bigint PRIMARY KEY,
+  user_id bigint REFERENCES users(id)
+);
+CREATE INDEX idx_orders_user_id ON orders (user_id);
+```
+
+Any FK column without an index → HIGH. PostgreSQL does **not** auto-index FKs.
+
+### RLS policy indexes (HIGH)
+
+- RLS enabled on a multi-tenant table with policies referencing `user_id` / `tenant_id` / `organization_id` / etc., but no index on those columns → HIGH (every authorization check serializes a sequential scan).
+- Policy uses bare `auth.uid()` instead of `(SELECT auth.uid())` → HIGH; per-row function call kills planner caching.
+- `GRANT ALL` to the application role → HIGH; default-deny + explicit `GRANT SELECT, INSERT, UPDATE, DELETE` per table.
+
+### Pagination on large tables (HIGH)
+
+```sql
+-- BAD — OFFSET 100000 re-scans 100k rows before discarding them
+SELECT * FROM events WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50 OFFSET $2;
+
+-- GOOD — cursor pagination uses an index seek
+SELECT * FROM events
+WHERE user_id = $1 AND created_at < $last_cursor
+ORDER BY created_at DESC LIMIT 50;
+```
+
+`OFFSET` on a table that will exceed ~10k rows → HIGH. Acceptable on small lookup tables (countries, currencies).
+
+### Worker queues without SKIP LOCKED (HIGH)
+
+```sql
+-- BAD — two workers serialize on the same row
+SELECT id FROM jobs WHERE status = 'pending' FOR UPDATE LIMIT 1;
+
+-- GOOD — each worker picks a different row
+SELECT id FROM jobs WHERE status = 'pending'
+FOR UPDATE SKIP LOCKED LIMIT 1;
+```
+
+Any `FOR UPDATE` in a worker-style claim loop without `SKIP LOCKED` → HIGH.
+
+### Lock-acquisition order (HIGH)
+
+- Multi-row update loops that lock rows in user-supplied order (e.g. iterating an unordered list and `SELECT … FOR UPDATE` per id) → HIGH (deadlock between two concurrent callers that send the ids in different orders).
+- Fix: `ORDER BY id FOR UPDATE` so every caller takes locks in the same order.
+
+### Transactions holding external I/O (HIGH)
+
+```python
+# BAD — transaction stays open while we hit an external API; row locks held for the round trip
+with db.begin():
+    db.execute("UPDATE orders SET status = 'paying' WHERE id = :id", {"id": order_id})
+    response = stripe.PaymentIntent.create(...)        # network call inside the txn
+    db.execute("UPDATE orders SET status = 'paid'   WHERE id = :id", {"id": order_id})
+
+# GOOD — split: short txn → external call → short txn
+with db.begin():
+    db.execute("UPDATE orders SET status = 'paying' WHERE id = :id", {"id": order_id})
+
+response = stripe.PaymentIntent.create(...)            # outside the txn
+
+with db.begin():
+    db.execute("UPDATE orders SET status = 'paid' WHERE id = :id", {"id": order_id})
+```
+
+External HTTP / queue / email call inside an open transaction → HIGH.
+
+### `EXPLAIN ANALYZE` evidence (MEDIUM)
+
+- New or substantially-changed query that hits a large table, joins ≥2 tables, or appears in a user-facing list endpoint, with no `EXPLAIN ANALYZE` evidence in the PR description or a comment → MEDIUM. Request the plan.
+- `Seq Scan` on a >10k-row table in the planner output → HIGH (missing index or bad predicate).
 
 ### Irreversible migrations (MEDIUM)
 
