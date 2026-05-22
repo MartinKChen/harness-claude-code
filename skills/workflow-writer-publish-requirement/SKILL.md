@@ -26,11 +26,23 @@ Do NOT activate when:
 
 ## Workflow
 
-Inputs from the caller (typically forwarded from the interviewer's hand-off): a `<feature-name>` (kebab-case), the **clarified requirement** content, the **critical-path classification** (extend / supersede / brand new, plus the target file name and — if superseding — the file to delete), the **list of glossary terms** collected during the interview, and whether the **product-context section of `CLAUDE.md`** warrants an update. The working directory is the worktree on the feature branch.
+Inputs from the dispatching orchestrator: a `<feature-name>` (kebab-case), the **trigger phrase** (`Publish product requirement for <feature-name>`), and the **working directory** of the worktree on the feature branch. The substantive content (clarified requirement, critical-path classification, glossary terms, optional `CLAUDE.md` product-context update) is **not** in the dispatch prompt — you pull it from `product-owner` in step 1.
 
 Everything else (sibling PRD files, current `CLAUDE.md` shape, existing critical-path or glossary entries that may need editing in place) you read from disk.
 
-### 1. Generate artifacts
+### 1. Request artifact-publishing info from `product-owner`
+
+The `product-owner` agent ran the discovery interview and composed the full artifact-publishing payload in the final step of `workflow-product-owner-interview`. It is waiting on the team for your request — it will not send the payload unsolicited.
+
+Send a `SendMessage(to=product-owner)` with:
+
+- An identifying line stating you are the writer dispatched to publish the product-requirement artifacts (name yourself, e.g. `requirement-writer`).
+- The `<feature-name>` and your `<worktree_path>` so `product-owner` can resolve any `{worktree_path}` placeholder in its composed prompt.
+- An explicit ask for the artifact-publishing info: clarified requirement content, critical-path classification (extend / supersede / brand new, with the target file name and — if superseding — the file to delete), the list of glossary terms with their settled definitions, and whether the `CLAUDE.md` product-context section warrants an update (and if so, the proposed wording).
+
+Wait for `product-owner`'s reply. If `product-owner` does not respond, or responds with anything other than the structured artifact-publishing payload, STOP and surface the gap — do not improvise content. If a piece of context is unclear once the payload arrives, send a follow-up `SendMessage(to=product-owner)` for clarification before generating artifacts.
+
+### 2. Generate artifacts
 
 Write, update, or delete each of the following. Create parent directories as needed. Read each template from this skill's `templates/` directory (see the **Templates** section below for the full table).
 
@@ -64,7 +76,7 @@ For `CLAUDE.md` — **only if** the requirement reveals a product pivot, scope e
 - Edit `CLAUDE.md`'s product-context section in place; **do not** append a per-feature changelog.
 - Goal: a new agent reading this should know what the product is, who it's for, and the current strategic focus at a glance.
 
-### 2. Hand artifacts back for iteration
+### 3. Hand artifacts back for iteration
 
 Tell the user which files were written, which were deleted (superseded critical paths), and whether `docs/GLOSSARY.md` and `CLAUDE.md` were updated. Then ask whether to iterate or confirm.
 
@@ -72,7 +84,7 @@ Do **NOT** summarize the contents — the user can read the files.
 
 If the user asks to iterate, treat each request as a localized rewrite of the affected file(s). If the user's edit invalidates a settled requirement (i.e. is a *requirement* change, not a wording or formatting fix), STOP and surface that the requirement itself needs to change first — do not silently re-litigate the product in this skill.
 
-### 3. On confirmation, commit on the current branch with inline `git`
+### 4. On confirmation, commit on the current branch with inline `git`
 
 Do **NOT** create a new branch, do **NOT** push, do **NOT** open a PR.
 
@@ -85,9 +97,9 @@ git add <changed-and-deleted-files>      # include any deleted superseded critic
 git commit -m "docs(prd): <feature-name> requirements"
 ```
 
-Capture the commit hash — step 4 reports it.
+Capture the commit hash — step 5 reports it.
 
-### 4. Report final status
+### 5. Report final status
 
 One or two sentences. Include:
 

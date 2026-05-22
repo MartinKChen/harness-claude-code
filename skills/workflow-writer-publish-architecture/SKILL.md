@@ -26,7 +26,7 @@ Do NOT activate when:
 
 ## Workflow
 
-Inputs from the caller (typically forwarded from the interviewer's dispatch prompt): a `<feature-name>`, the **partitioned decisions** already tagged with their assigned `ADR-{NNNN}` IDs, the **supersession list** (existing ADR IDs each new ADR replaces), any deferred-with-trigger items, whether the high-level topology shifted (so the architecture-context section of `CLAUDE.md` can be updated when warranted), and the working directory of the worktree on the feature branch. ADR partitioning and ID assignment happen upstream — do **not** re-partition or re-number here.
+Inputs from the dispatching orchestrator: a `<feature-name>`, the **trigger phrase** that selects your scope (see the **Scope** section below), and the **working directory** of the worktree on the feature branch. The substantive content (partitioned ADR decisions, supersession list, C4 changes, API specs, data-model specs, deferred-with-trigger items, whether `CLAUDE.md` topology section warrants an update) is **not** in the dispatch prompt — you pull it from `architect` in step 1. ADR partitioning and ID assignment happen upstream in `architect`'s interview — do **not** re-partition or re-number here.
 
 Everything else (sibling PRD files, current `CLAUDE.md` shape, existing diagrams / contracts / data-model on disk that may need editing in place) you read from disk.
 
@@ -42,11 +42,27 @@ This skill is **scope-aware**. The dispatch prompt's trigger phrase selects whic
 | `Publish data models for <feature-name>` | `data-model` | per-entity `docs/data-model/<entity>.yaml` |
 | `Publish architecture lockin for <feature-name>` | `all` (legacy full-scope) | every artifact above, in a single batched commit |
 
-In step 1, run only the artifact sub-block(s) that match the dispatched scope; skip the rest. In step 3, use the scope-appropriate Conventional Commits subject (template list lives in that step).
+In step 2, run only the artifact sub-block(s) that match the dispatched scope; skip the rest. In step 4, use the scope-appropriate Conventional Commits subject (template list lives in that step).
 
-If the dispatched scope has nothing to write (e.g. `api-contract` scope dispatched but the feature exposes no API surface), do not write or commit anything — proceed to step 4 and report "scope no-op" with the reason.
+If the dispatched scope has nothing to write (e.g. `api-contract` scope dispatched but the feature exposes no API surface), do not write or commit anything — proceed to step 5 and report "scope no-op" with the reason. `architect`'s reply in step 1 is what tells you whether your scope is a no-op.
 
-### 1. Generate artifacts
+### 1. Request artifact-publishing info from `architect`
+
+The `architect` agent ran the design interview and composed the per-scope artifact-publishing payloads in the final step of `workflow-architect-interview`. It is waiting on the team for your request — it will not send the payload unsolicited.
+
+Send a `SendMessage(to=architect)` with:
+
+- An identifying line stating who you are (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, or `data-model-writer`) and which scope you cover.
+- The `<feature-name>` and your `<worktree_path>` so `architect` can resolve any `{worktree_path}` placeholder in its composed prompt.
+- An explicit ask for the scope-appropriate artifact-publishing info:
+  - `implement-detail-writer` — architecture summary (modules, key boundaries, integration points), list of ADR IDs to cross-reference, list of persistence entities and API resources to link, failure modes, observability hooks, rollout plan, deferred-with-trigger items.
+  - `adr-writer` — the partitioned decisions each tagged with its assigned `ADR-{NNNN}` ID, draft Context / Decision / Consequences / Alternatives / Date bodies, the supersession list (existing ADR IDs each new ADR replaces), deferred-with-trigger items, whether `CLAUDE.md` architecture-context needs updating, and which C4 levels (context / container / component) need changes and what changes per level.
+  - `api-contract-writer` — list of API resources to write or update (or "no API surface" if none), and for each resource the operations and their shapes (verbs, paths, parameters, request/response schemas). Whether `_shared.yaml` needs editing.
+  - `data-model-writer` — list of persistence entities to write or update (or "no persistence changes" if none), and for each entity the columns, constraints, foreign-key behavior, invariants, and migration notes.
+
+Wait for `architect`'s reply. If `architect` does not respond, or responds with anything other than the structured scope-appropriate payload, STOP and surface the gap — do not improvise content. If `architect`'s reply explicitly says your scope is a no-op, record the reason for step 5 and skip step 2 + step 4 entirely. If a piece of context is unclear once the payload arrives, send a follow-up `SendMessage(to=architect)` for clarification before generating artifacts.
+
+### 2. Generate artifacts
 
 Write, update, or delete each of the following. Create parent directories as needed. Each sub-block is annotated with the scope(s) that include it — run a sub-block only when its scope tag matches the dispatched scope (or when scope is `all`).
 
@@ -103,7 +119,7 @@ For `CLAUDE.md` — **scope: `adr`, `all`**:
 - Start from `templates/claude-md-architecture-context.md` for the section shape, then edit `CLAUDE.md`'s architecture-context section in place; **do not** append a per-feature changelog.
 - Goal: a new agent reading this should know the system's shape at a glance.
 
-### 2. Hand artifacts back for iteration
+### 3. Hand artifacts back for iteration
 
 Tell the user which files were written, which were deleted (superseded ADRs), and whether `docs/architecture-decision-record/README.md` and `CLAUDE.md` were updated. Then ask whether to iterate or confirm.
 
@@ -111,7 +127,7 @@ Do **NOT** summarize the contents — the user can read the files.
 
 If the user asks to iterate, treat each request as a localized rewrite of the affected file(s). If the user's edit invalidates a settled decision (i.e. is a *design* change, not a wording or formatting fix), STOP and surface that the design itself needs to change first — do not silently re-litigate the architecture inside this skill.
 
-### 3. On confirmation, commit on the current branch with inline `git`
+### 4. On confirmation, commit on the current branch with inline `git`
 
 Do **NOT** create a new branch, do **NOT** push, do **NOT** open a PR.
 
@@ -135,11 +151,11 @@ Use the Conventional Commits subject that matches the dispatched scope:
 | `data-model` | `docs(data): <feature-name> data models` |
 | `all` (legacy full-scope) | `docs(adr): ADR-{NNNN}..{MMMM} <feature-name> architecture` |
 
-Capture the commit hash — step 4 reports it.
+Capture the commit hash — step 5 reports it.
 
-If the dispatched scope had nothing to write (the "scope no-op" case flagged in the **Scope** section above), skip the `git` calls and proceed to step 4.
+If the dispatched scope had nothing to write (the "scope no-op" case flagged in the **Scope** section above), skip the `git` calls and proceed to step 5.
 
-### 4. Report final status
+### 5. Report final status
 
 One or two sentences. Include:
 
