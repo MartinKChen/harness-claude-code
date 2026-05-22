@@ -729,7 +729,7 @@ task issues  ────────────► level:task                 
     The v0.22.0 lineup worked, but each pickup phase lived as a
     <em>command</em>: discoverable only if the user remembered to type
     <code>/pickup-…</code>, and not reachable via the skill auto-load path
-    that <code>tdd-workflow</code>, <code>git-workflow</code>, etc. all
+    that <code>tdd-workflow</code>, <code>operation-git</code>, etc. all
     relied on. Two other rough edges were carried over from the truth-on-git
     cut: <code>e2e-author</code> doubled as a PR opener (its first push of
     the slice would create the draft PR as a side-effect), and end-to-end
@@ -771,7 +771,7 @@ task issues  ────────────► level:task                 
       <tr>
         <td class="dim">Who opens the draft slice PR</td>
         <td class="then"><code>e2e-author</code>, as a side-effect of its first push (or <code>engineer</code> if the e2e task wasn't the first to land).</td>
-        <td class="now">A dedicated skill, <code>create-draft-pr</code>. Fires once every task sub-issue under a slice has closed; body composed from <code>git-workflow</code>'s PR template; <code>Closes #&lt;slice&gt;</code> + <code>Closes #&lt;task&gt;</code> for every sub-issue; milestone inherited from the slice. <code>e2e-author</code> and <code>engineer</code> no longer touch PR creation.</td>
+        <td class="now">A dedicated skill, <code>create-draft-pr</code>. Fires once every task sub-issue under a slice has closed; body composed from <code>operation-git</code>'s PR template; <code>Closes #&lt;slice&gt;</code> + <code>Closes #&lt;task&gt;</code> for every sub-issue; milestone inherited from the slice. <code>e2e-author</code> and <code>engineer</code> no longer touch PR creation.</td>
       </tr>
       <tr>
         <td class="dim">End-to-end shipping</td>
@@ -879,7 +879,7 @@ task issues  ────────────► level:task                 
       <div class="meta">all tasks closed → draft PR open</div>
       <ul>
         <li>Picks <code>level:slice</code> + <code>kind:feature</code> + <code>status:in-progress</code> whose task sub-issues are <strong>all closed</strong>.</li>
-        <li>Resolves the slice branch attached at <code>create-issues</code> time; builds the body from <code>git-workflow</code>'s PR template (soft reference — no hard-coded paths).</li>
+        <li>Resolves the slice branch attached at <code>create-issues</code> time; builds the body from <code>operation-git</code>'s PR template (soft reference — no hard-coded paths).</li>
         <li>Appends <code>Closes #&lt;slice&gt;</code> first, then <code>Closes #&lt;task&gt;</code> per sub-issue, so all surface in the PR's Linked Issues / Development sidebar. Milestone inherited from the slice.</li>
         <li>Replaces the side-effect PR creation that previously lived inside <code>e2e-author</code>.</li>
       </ul>
@@ -1039,7 +1039,7 @@ task issues  ────────────► level:task                 
                                        ▼
                 ┌────────────────────────────────────────────────────────┐
                 │  /create-draft-pr                                      │
-                │    body from git-workflow's PR template (soft ref)     │
+                │    body from operation-git's PR template (soft ref)     │
                 │    Closes #&lt;slice&gt;  +  Closes #&lt;task&gt; × N              │
                 │    milestone inherited from the slice                  │
                 └─────────────────────┬──────────────────────────────────┘

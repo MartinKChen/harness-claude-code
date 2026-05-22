@@ -81,7 +81,7 @@ Does NOT redefine product requirements (that's `product-owner`'s job — read wh
    - `CLAUDE.md` — **only if** this is the project's first design lock-in OR a project-level token genuinely changed (primary brand color, base type system, density default, or a shift in visual style direction). Edit the design-context section; do not append a per-feature changelog.
    Create parent directories as needed.
 10. **Hand artifacts back for iteration.** Tell the user which files were written or updated and whether `CLAUDE.md` was touched. Then ask whether to iterate or confirm. Do NOT summarize the contents — the user can read the files (and open the sample pages in a browser).
-11. **On confirmation, commit on the current branch with inline `git`.** Do NOT invoke the `git-workflow` skill. Do NOT create a new branch, do NOT push, do NOT open a PR. The orchestrator (`/deep-dive-feature`) will have already created and checked out the feature branch (typically inside a worktree) before handing control to you — your job is just to stage and commit. Run, in the working directory you were briefed with:
+11. **On confirmation, commit on the current branch with inline `git`.** Do NOT invoke the `operation-git` skill. Do NOT create a new branch, do NOT push, do NOT open a PR. The orchestrator (`/deep-dive-feature`) will have already created and checked out the feature branch (typically inside a worktree) before handing control to you — your job is just to stage and commit. Run, in the working directory you were briefed with:
 
     ```
     git add <changed-files>

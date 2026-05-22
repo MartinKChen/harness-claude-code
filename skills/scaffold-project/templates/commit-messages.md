@@ -1,7 +1,7 @@
 # Commit messages — Conventional Commits
 
 Scaffold-produced commits use the same format the rest of the plugin uses
-(see `skills/git-workflow/` for the canonical reference):
+(see `skills/operation-git/` for the canonical reference):
 
 ```
 <type>(<scope>): <subject>
