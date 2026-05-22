@@ -35,6 +35,7 @@ Each `templates/<variant>/` directory holds a working example that copies as-is 
 | `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json`, multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path). The booted container responds 200 on `GET /`. |
 | `templates/compose.yaml` | Topology skeleton: backend + frontend + db services, `${VAR:-default}` port indirection, named volumes. The skill fills in service names / image targets per the ADR. No `migrate` service — that comes when the first migration lands. |
 | `templates/e2e/` | E2E variant: `package.json` (`@playwright/test` + `npm test`), `playwright.config.ts` (env-overridable `baseURL`, `retries: 1` on CI, `workers: 1`), `tests/smoke.spec.ts` (`goto('/')` + one visibility assertion), `.gitignore`. |
+| `templates/ci/pr-validation.yml` | Minimal PR-validation pipeline. Triggers on `pull_request` (incl. draft open / `ready_for_review`). Jobs: per-stack lint/type/format/test (`backend-checks`, `frontend-checks`), per-stack docker image build (`backend-build`, `frontend-build`), then `e2e` against `docker compose up --build`. Backend / frontend job blocks are delimited by `# ---- BEGIN <surface> ----` / `# ---- END <surface> ----` so the skill can remove a block when the ADR omits that surface. |
 | `templates/commit-messages.md` | Conventional Commits format. Scaffold-produced commits use `chore(scaffold): <surface>` or `build: <surface>`. |
 
 ## Scripts
@@ -137,23 +138,41 @@ git add e2e/
 git commit -m "chore(scaffold): e2e (playwright + smoke spec)"
 ```
 
-### 9. Offer the design-system step
+### 9. Scaffold CI pipeline → commit
+
+Materialize a minimal PR-validation pipeline so the draft PR opened at step 13 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run.
+
+Shape the rendered file to the surfaces that landed:
+
+- **Backend present** (per the ADR): leave the `# ---- BEGIN backend ... ---- END backend ----` block in place. The template's commands assume `python-fastapi`; if the ADR's backend stack differs, surface and STOP — a CI variant for that stack must be added to the template first.
+- **Backend absent**: delete the entire backend block and remove `backend-build` from the `e2e` job's `needs:` list.
+- **Frontend present** (per the ADR): leave the `# ---- BEGIN frontend ... ---- END frontend ----` block in place. The template's commands assume `react-vite`; if the ADR's frontend stack differs, surface and STOP.
+- **Frontend absent**: delete the entire frontend block, remove `frontend-build` from the `e2e` job's `needs:` list, and drop the `BASE_URL` / `FRONTEND_PORT` env wiring and the "Wait for frontend" step.
+
+Do not add deploy jobs, registry pushes, OIDC role assumptions, or environment gates — those belong to the `sre` agent's lane, not to a scaffold-time validation pipeline. Do not add `paths:` filters that skip e2e — the e2e job is the only signal that the system composes correctly.
+
+```bash
+git add .github/workflows/pr-validation.yml
+git commit -m "chore(scaffold): ci (pr-validation pipeline)"
+```
+
+### 10. Offer the design-system step
 
 The frontend currently ships with no opinion on visual language. Discover available UI/UX design skills at runtime — scan the `Skill` tool's available skill list for any skill whose name or description matches `ui`, `ux`, or `design` (e.g. `ui-ux-pro-max:ui-ux-pro-max`). Then ask the user — once, with `AskUserQuestion` — whether to bring in a design skill to author a design system before the PR opens, listing the discovered skills as options plus a "skip" option.
 
-If the user **declines / skips**: jump to step 12.
+If the user **declines / skips**: jump to step 13.
 
-If no design skill is available: surface "no UI/UX design skill is installed — skipping the design-system step", then jump to step 12.
+If no design skill is available: surface "no UI/UX design skill is installed — skipping the design-system step", then jump to step 13.
 
-If the user **picks a skill**: continue to step 10.
+If the user **picks a skill**: continue to step 11.
 
-### 10. Invoke the selected design skill
+### 11. Invoke the selected design skill
 
 Invoke the picked design skill via the `Skill` tool and let it drive the conversation with the user. The dispatched skill owns the interview and the design artifacts under `docs/design-system/` (typically `overview.md`, `tokens.md`, `components.md`, `accessibility.md`, and sample pages). This skill MUST NOT interrupt or batch on top of those questions — wait for the design skill to return.
 
-If the design skill does not produce a `docs/design-system/tokens.md` (or equivalent token source), surface that the design output is missing and jump to step 12 — do not invent tokens.
+If the design skill does not produce a `docs/design-system/tokens.md` (or equivalent token source), surface that the design output is missing and jump to step 13 — do not invent tokens.
 
-### 11. Seed design tokens into the frontend → commit
+### 12. Seed design tokens into the frontend → commit
 
 Once `docs/design-system/tokens.md` exists, translate its tokens into CSS custom properties consumable by the frontend, then wire them into the entry:
 
@@ -167,16 +186,17 @@ git add frontend/src/styles/tokens.css frontend/src/main.tsx
 git commit -m "chore(scaffold): seed design tokens into frontend"
 ```
 
-### 12. Push branch and open the PR
+### 13. Push branch and open the draft PR
 
 ```bash
 git push -u origin chore/scaffold-project
 ```
 
-Then open the PR with `gh pr create`. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and — if step 11 ran — the design-system entry-point files (`docs/design-system/overview.md`, `frontend/src/styles/tokens.css`).
+Then open the PR as a **draft** with `gh pr create --draft`, so the CI workflow scaffolded at step 9 fires on draft open and the user gets first-commit signal before the PR flips to ready. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke, CI pipeline), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and — if step 12 ran — the design-system entry-point files (`docs/design-system/overview.md`, `frontend/src/styles/tokens.css`).
 
 ```bash
 gh pr create \
+  --draft \
   --title "chore(scaffold): bootstrap project skeleton" \
   --body "$(cat <<'EOF'
 ## Summary
@@ -184,6 +204,7 @@ gh pr create \
 - Frontend: <stack>
 - Compose services: <list>
 - E2E: Playwright smoke spec
+- CI: `.github/workflows/pr-validation.yml` (per-stack checks → docker build → e2e)
 - Design system: <yes — `docs/design-system/` + seeded `frontend/src/styles/tokens.css` | not included>
 
 ## Boot check
@@ -194,6 +215,7 @@ Locally verified `docker compose up` reaches 200 on backend framework-metadata a
 - [ ] Backend framework-metadata endpoint returns 200
 - [ ] Frontend `/` returns 200
 - [ ] `cd e2e && npm test` passes against the running stack
+- [ ] `pr-validation` workflow run is green on this draft PR
 EOF
 )"
 ```
@@ -205,7 +227,8 @@ Report the PR URL and stop.
 - **Greenfield only.** If any scaffold surface (`backend/`, `frontend/`, compose file, `e2e/`) already exists, STOP. This skill does not partial-fill.
 - **No defaulted URIs, service names, ports, or framework choices.** Stack variants and topology come from `docs/architecture-decision-record/`. If the ADR doesn't say, STOP and surface — never guess.
 - **Templates materialize; they do not author code.** No routes beyond what the template ships (which is none). No components / pages beyond the placeholder. No middleware, no settings logic, no auth, no migrations, no router. If the next step needs any of those, that's the engineer lane's job.
-- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `design-tokens` (if any).** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
+- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens` (if any).** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.
+- **CI is scaffold-time validation only.** The pipeline produced at step 9 runs lint/type/format/test, builds images locally, and runs e2e against compose. It MUST NOT push images, assume an OIDC role, reference a registry, or deploy. Deploy pipelines, environment gates, and tag-driven promotion are the `sre` agent's lane — surface and STOP if the user asks scaffold to add any of those.
 - **The design-system step is opt-in.** Always ask; never default to "yes" or "no". If the user opts in, the dispatched teammate owns the interview and the design artifacts — this skill only seeds the resulting tokens into the frontend afterwards.
-- **The skill ends with a PR.** Push the branch and open a PR via `gh pr create`. Do not merge; do not switch back to `main`; do not delete the branch.
+- **The skill ends with a draft PR.** Push the branch and open a draft PR via `gh pr create --draft` so the scaffold-time CI fires on first commit. Do not merge; do not flip the PR to ready; do not switch back to `main`; do not delete the branch.
