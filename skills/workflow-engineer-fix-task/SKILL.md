@@ -24,7 +24,22 @@ Do NOT activate for `type:e2e` tasks (use `workflow-e2e-fix`), for PR-level bloc
 
 Fetch the task issue (number, title, body, labels, milestone, url) via `gh issue view`.
 
-### 2. Determine the comment window and pull the in-scope comments
+### 2. Read project context
+
+Read the baseline product + architecture context before addressing findings:
+
+- `docs/GLOSSARY.md` — domain vocabulary used by the issue body and the reviewer comment.
+- `docs/architecture-decision-record/README.md` — index of architectural decisions.
+
+Then pull entity- / decision-specific context on demand as the finding scope clarifies:
+
+- `docs/architecture-decision-record/<adr-name>.md` — only when the index entry tells you the ADR constrains the fix.
+- `docs/data-model/<entity>.yaml` — for each persistence entity the fix touches.
+- `docs/api-contract/<entity>.yaml` — for each API resource the fix touches.
+
+The two baseline reads happen up front; everything else stays on-demand. Never bulk-load every ADR / contract / data-model.
+
+### 3. Determine the comment window and pull the in-scope comments
 
 The cutoff is the authored timestamp of the most recent commit on the slice branch carrying `Refs #<task-#>` in its message. Comments created strictly after that timestamp are in scope.
 
@@ -40,11 +55,11 @@ If no in-scope reviewer comment exists, halt and surface `fix dispatched but no 
 
 Triage findings: CRITICAL / HIGH / MEDIUM → must-fix. LOW / NIT → fix only when obviously small and in-scope.
 
-### 3. Set up the slice worktree
+### 4. Set up the slice worktree
 
 Create-or-reuse the slice-scoped worktree on the slice branch (no rebase onto main), then `cd` into the worktree path.
 
-### 4. Address each must-fix finding via TDD
+### 5. Address each must-fix finding via TDD
 
 The agent's loaded pattern set owns:
 - The TDD cadence (RED before any production change).
@@ -53,7 +68,7 @@ The agent's loaded pattern set owns:
 
 This skill owns only the workflow primitives.
 
-### 5. Commit with dual `Refs` trailers
+### 6. Commit with dual `Refs` trailers
 
 Use the project's Conventional Commits format. Every commit body ends with:
 
@@ -64,11 +79,11 @@ Refs #<slice-#>
 
 Each commit message references the finding(s) it addresses and lists any additional sites fixed via pattern propagation.
 
-### 6. Push and add `review:pending`
+### 7. Push and add `review:pending`
 
 Push the slice branch to `origin`, then add the `review:pending` label to the task issue.
 
-Pre-push hooks run lint/test/security; deny → drop back to step 4 (never force-push, never skip hooks).
+Pre-push hooks run lint/test/security; deny → drop back to step 5 (never force-push, never skip hooks).
 
 Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`.
 

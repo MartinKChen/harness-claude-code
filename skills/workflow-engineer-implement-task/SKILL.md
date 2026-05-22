@@ -30,7 +30,22 @@ Input from the orchestrator: just the task issue ID. Discover everything else.
 
 Fetch the task issue (number, title, body, labels, milestone, state, url) via `gh issue view`. Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
 
-### 2. Set up the slice worktree
+### 2. Read project context
+
+Read the baseline product + architecture context before implementation:
+
+- `docs/GLOSSARY.md` — domain vocabulary used by the issue body and downstream.
+- `docs/architecture-decision-record/README.md` — index of architectural decisions.
+
+Then pull entity- / decision-specific context on demand as the change shape clarifies:
+
+- `docs/architecture-decision-record/<adr-name>.md` — only when the index entry tells you the ADR constrains the change.
+- `docs/data-model/<entity>.yaml` — for each persistence entity the change touches.
+- `docs/api-contract/<entity>.yaml` — for each API resource the change touches.
+
+The two baseline reads happen up front; everything else stays on-demand. Never bulk-load every ADR / contract / data-model.
+
+### 3. Set up the slice worktree
 
 - Resolve the parent slice from the task and print its attached slice branch.
 - Create-or-reuse the slice-scoped worktree on that branch (engineer flows do NOT rebase onto main — rebasing on every dispatch would create a merge maelstrom across sibling slices).
@@ -38,17 +53,13 @@ Fetch the task issue (number, title, body, labels, milestone, state, url) via `g
 
 All subsequent reads / edits / runs happen inside the worktree — never in the orchestrator's checkout.
 
-### 3. Drive implementation via outside-in TDD
+### 4. Drive implementation via outside-in TDD
 
-The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR → wiring) and the project's architecture / data-model / api-contract docs are the contract. Read on demand:
-
-- For each persistence entity the change touches → `docs/data-model/<entity>.yaml`.
-- For each API resource → `docs/api-contract/<entity>.yaml`.
-- For each architectural axis (error envelope, rate-limiting, idempotency, sessions/cookies, etc.) → the matching ADR detail file in `docs/architecture-decision-record/`.
+The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR → wiring) and the project context from step 2 are the contract. Pull additional per-entity / per-ADR files on demand as the change clarifies (see step 2's on-demand list).
 
 Drive TDD on the slice branch inside the worktree. Stop when every `Done criteria` is satisfied by a passing test or observable behavior.
 
-### 4. Commit at the TDD cadence with dual `Refs` trailers
+### 5. Commit at the TDD cadence with dual `Refs` trailers
 
 Use the project's Conventional Commits format. Every commit body ends with:
 
@@ -59,11 +70,11 @@ Refs #<slice-#>
 
 Never use `Closes` — closure happens after review passes.
 
-### 5. Push and add `review:pending`
+### 6. Push and add `review:pending`
 
 Push the slice branch to `origin`, then add the `review:pending` label to the task issue.
 
-The pre-push hooks run the fullstack lint/format/type/test set against the worktree and deny the push on failure. If a hook denies → drop back to step 3 (RED→GREEN→REFACTOR cycle). Never force-push, never skip hooks.
+The pre-push hooks run the fullstack lint/format/type/test set against the worktree and deny the push on failure. If a hook denies → drop back to step 4 (RED→GREEN→REFACTOR cycle). Never force-push, never skip hooks.
 
 Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`, do NOT open a PR.
 

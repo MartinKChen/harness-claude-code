@@ -7,7 +7,7 @@ description: "Drive a depth-first product-requirement discovery interview for a 
 
 Drive a depth-first product-requirement discovery interview against a single feature request. Walk a one-question-at-a-time conversation with the user until the feature's user, problem, scope boundaries, success metric, primary critical path, and domain vocabulary are all clarified. Once the user approves and the new flow has been classified against the existing critical paths, the interview is finished — a separate publisher skill materializes the artifacts.
 
-This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 5) and the approval request (step 6) are bookkeeping in conversation context only; the artifacts themselves are written downstream by a separate publisher agent named by the orchestrator at invocation time.
+This skill **writes nothing** — no PRD, no critical-path doc, no glossary entry, no `CLAUDE.md` edit, no commit. Classification (step 6) and the approval request (step 7) are bookkeeping in conversation context only; the artifacts themselves are written downstream by a separate publisher agent named by the orchestrator at invocation time.
 
 ## When to activate
 
@@ -44,11 +44,15 @@ Do NOT activate when:
 
 Inputs from the caller: a feature request from the user (free-form). Everything else (sibling files, prior critical paths, existing glossary, current product-context section of `CLAUDE.md`) you discover yourself.
 
-### 1. Analyze the initial request
+### 1. Read the existing glossary (if any)
+
+Read `docs/GLOSSARY.md` if the file exists, so domain terms already locked in by prior product work land in the interview with the same definitions. If it does not exist, skip silently — the first feature in a greenfield repo will create the file downstream.
+
+### 2. Analyze the initial request
 
 Read the user's message carefully. Identify: the intended user/persona, the problem being solved, the proposed solution shape, success criteria, and obvious unknowns. Do not respond with a summary — the user already knows what they wrote.
 
-### 2. Identify the most blocking unknown
+### 3. Identify the most blocking unknown
 
 Rank the gaps by how much downstream ambiguity they create. Examples of root-level unknowns:
 
@@ -59,7 +63,7 @@ Rank the gaps by how much downstream ambiguity they create. Examples of root-lev
 
 Pick the single highest-leverage question to ask first.
 
-### 3. Ask one question, with recommendation + alternatives
+### 4. Ask one question, with recommendation + alternatives
 
 Plain text, not AskUserQuestion. For each question:
 
@@ -68,7 +72,7 @@ Plain text, not AskUserQuestion. For each question:
 - Provide 1–2 viable alternatives where they exist, each with its own one-line "why not this one" note.
 - If the question surfaces an unstated assumption, name the assumption explicitly so the user can confirm or reject it.
 
-### 4. Iterate
+### 5. Iterate
 
 After each answer, re-rank remaining unknowns and ask the next single most-blocking question. Continue until both of the following are true:
 
@@ -77,7 +81,7 @@ After each answer, re-rank remaining unknowns and ask the next single most-block
 
 When the user's answer triggers a need to revisit an earlier decision, name the dependency and re-open the earlier branch — do not silently change a prior settlement.
 
-### 5. Classify the critical path against existing ones
+### 6. Classify the critical path against existing ones
 
 Before requesting approval, list `docs/critical-path/` and read any file whose name, entry point, or steps overlap with the new flow. Decide which case applies — and if it's not obvious from the files alone, ask the user with a recommendation:
 
@@ -87,7 +91,7 @@ Before requesting approval, list `docs/critical-path/` and read any file whose n
 
 Capture the classification (and, if superseding, the file to be deleted) so the next step can include it in the approval request.
 
-### 6. Request approval to proceed
+### 7. Request approval to proceed
 
 Once the requirement is clarified and the critical path classified, ask the user — in plain text, not a summary — for explicit approval. Include the critical-path classification and (if superseding) the file to be deleted.
 
@@ -97,9 +101,9 @@ Use phrasing along these lines:
 
 Do **NOT** recap the requirement; the user has been in the loop.
 
-If the user does not approve and asks to revisit, treat it as a return to step 4 — re-rank, ask the next single most-blocking question. **Only when the user explicitly approves does the interview proceed to step 7.**
+If the user does not approve and asks to revisit, treat it as a return to step 5 — re-rank, ask the next single most-blocking question. **Only when the user explicitly approves does the interview proceed to step 8.**
 
-### 7. Compose one scoped dispatch prompt and dispatch the writer
+### 8. Compose one scoped dispatch prompt and dispatch the writer
 
 The interview ends here. The PRD, critical-path file, glossary updates, and the optional `CLAUDE.md` product-context update get written by **one writer teammate** named by the orchestrator at invocation time (typically `requirement-writer`, `subagent_type = doc-writer`).
 

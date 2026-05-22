@@ -53,6 +53,7 @@ Identify what the system must do, who calls it, what it integrates with, and wha
 
 Read in this order, stopping as soon as you have enough context:
 
+- `docs/GLOSSARY.md` (if the file exists) — domain vocabulary already locked in by the PRD lane, so questions land using the same terms the user has already settled on.
 - `docs/architecture-decision-record/README.md` — the index of prior decisions. **Do not bulk-open ADR files.** Open an individual ADR only when its index summary suggests overlap with the decision under discussion.
 - `docs/architecture/` — the existing C4-PlantUML diagrams (context / container / component) that describe the system's current shape. Open whichever level matches the question you are about to ask first.
 - Codebase entry points and manifests (`package.json`, `pyproject.toml`, `go.mod`, etc.) for the current stack, services, and shared infra.

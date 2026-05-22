@@ -24,7 +24,22 @@ Do NOT activate to fix a task (use `workflow-engineer-fix-task`), to fix a PR (u
 
 Fetch the slice issue (number, title, body, labels, url) via `gh issue view`.
 
-### 2. Determine the comment window and pull in-scope comments
+### 2. Read project context
+
+Read the baseline product + architecture context before addressing findings:
+
+- `docs/GLOSSARY.md` — domain vocabulary used by the slice body and the reviewer comment.
+- `docs/architecture-decision-record/README.md` — index of architectural decisions.
+
+Then pull entity- / decision-specific context on demand as the finding scope clarifies:
+
+- `docs/architecture-decision-record/<adr-name>.md` — only when the index entry tells you the ADR constrains the fix.
+- `docs/data-model/<entity>.yaml` — for each persistence entity the fix touches.
+- `docs/api-contract/<entity>.yaml` — for each API resource the fix touches.
+
+The two baseline reads happen up front; everything else stays on-demand. Never bulk-load every ADR / contract / data-model.
+
+### 3. Determine the comment window and pull in-scope comments
 
 The cutoff is the authored timestamp of the most recent commit on the slice branch carrying `Refs #<slice-#>`:
 
@@ -40,17 +55,17 @@ If no in-scope reviewer comment exists, halt and surface `fix dispatched but no 
 
 Triage findings: CRITICAL / HIGH / MEDIUM → must-fix. LOW / NIT → fix only when obviously small and in-scope.
 
-### 3. Set up the slice worktree
+### 4. Set up the slice worktree
 
 Create-or-reuse the slice-scoped worktree on the slice branch (no rebase), then `cd` into the worktree path.
 
-### 4. Drive TDD on production code per the findings
+### 5. Drive TDD on production code per the findings
 
 Address each must-fix finding via the agent's loaded TDD pattern (RED before any production change, `rg`-driven pattern propagation, container + `.env.example` drift audit). Production code only — never modify E2E specs in this lane.
 
 Commit at the TDD cadence using the project's Conventional Commits format. Every commit ends with `Refs #<slice-#>` (single trailer — slice-level work, no task context).
 
-### 5. Re-run the slice's E2E specs via testcontainers
+### 6. Re-run the slice's E2E specs via testcontainers
 
 After the production-code fixes are GREEN at the unit/integration layer, re-validate the slice's E2E specs against a real stack:
 
@@ -59,7 +74,7 @@ After the production-code fixes are GREEN at the unit/integration layer, re-vali
 - Slug the slice branch name (lowercase, non-alphanumeric → `-`) for per-slice container isolation.
 - Bring up the stack (pattern-owned details) and run Playwright against the collected specs.
 
-### 6. Iterate on E2E failures (production-only fixes)
+### 7. Iterate on E2E failures (production-only fixes)
 
 For each E2E failure:
 
@@ -68,11 +83,11 @@ For each E2E failure:
 
 **Never modify the E2E specs.** If the production-code fix doesn't land cleanly without spec changes, that's a `status:need-attention` bail.
 
-### 7. Push and add `review:pending`
+### 8. Push and add `review:pending`
 
 Push the slice branch to `origin`, then add the `review:pending` label to the slice issue.
 
-Pre-push hooks gate as usual; a hook failure drops back to step 4 or step 5 as appropriate. Never force-push, never skip hooks.
+Pre-push hooks gate as usual; a hook failure drops back to step 5 or step 6 as appropriate. Never force-push, never skip hooks.
 
 Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`.
 
