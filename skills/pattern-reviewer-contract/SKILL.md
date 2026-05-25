@@ -35,7 +35,7 @@ If a touched implementation has no matching contract file, that itself is a find
 
 - **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
 - **Cite both sides.** Every finding cites the implementation `file:line` AND the contract `file:line`, and quotes the exact contract clause being violated. "Contract says X; code does Y" is the finding shape.
-- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Every contract violation is HIGH.** The contract is the source of truth; any deviation blocks the gate. There is no MEDIUM or LOW severity in this skill — if the implementation does not match the contract verbatim, the finding is HIGH. "Cosmetic" drift (header names, version prefixes, deprecation notices) is still a contract violation and still HIGH.
 - **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 - **Contract wins.** If the implementation disagrees with the contract, the contract is right — even when the implementation "makes more sense." If the contract is genuinely wrong, the engineer halts and surfaces; do not approve a deviation from the contract.
 
@@ -101,17 +101,17 @@ def create_order(...): ...
 - Contract says `Idempotency-Key: supported` → implementation does the same on present-key, no-ops on missing-key.
 - Contract says `Idempotency-Key: not applicable` → endpoint either ignores the header or does not declare it.
 
-#### Rate-limit headers (MEDIUM)
+#### Rate-limit headers (HIGH)
 
 - Contract declares a rate-limit budget → implementation emits the contracted headers on every response (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`).
 - 429 responses include `Retry-After`.
 - Identity-key follows the contract's priority (API key → user → IP).
 
-#### Concurrency / ETag (MEDIUM)
+#### Concurrency / ETag (HIGH)
 
 - Contract declares `If-Match` support → implementation accepts the header on PATCH/PUT, responds 412 on mismatch, emits `ETag` on responses.
 
-#### Versioning + deprecation (LOW)
+#### Versioning + deprecation (HIGH)
 
 - Contract declares a version (`/v1/...`) → implementation mounts under the contracted version prefix.
 - Contract declares a deprecation date → implementation emits the `Deprecation` response header (and a sunset note in logs).
@@ -176,7 +176,7 @@ Both the ORM model (`__table_args__ = (UniqueConstraint(..., name="uq_users_emai
 ```
 ```
 
-- `[SEVERITY]` is per the rule above (mostly HIGH for body / status / envelope; MEDIUM for rate-limit headers / concurrency; LOW for deprecation cosmetics).
+- `[SEVERITY]` is always **HIGH** — every contract violation blocks the gate, regardless of which clause (path, verb, body, status, envelope, idempotency, rate-limit, concurrency, versioning, deprecation) was breached.
 - Cross-references in the same comment use the entity name (`Endpoint POST /v1/orders`, `Model orders`), the quoted finding title, or `F1` / `F2`.
 
 Hand the collected findings back to the dispatching `reviewer` agent — it owns the comment composition, severity counts, verdict line, scope note, posting.
