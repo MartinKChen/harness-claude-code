@@ -1,7 +1,7 @@
 # Commit messages — Conventional Commits
 
 Scaffold-produced commits use the same format the rest of the plugin uses
-(see `skills/git-workflow/` for the canonical reference):
+(see `skills/operation-git/` for the canonical reference):
 
 ```
 <type>(<scope>): <subject>
@@ -19,4 +19,4 @@ Scaffold writes exactly these subjects, one per surface, in this order:
 `<stack>` and `<services>` are filled in from the ADR — never invented.
 
 Scaffold never produces `feat:` commits. Feature behavior lands later via
-`implement-feature-task` and its pattern skills.
+`workflow-engineer-implement-task` and its pattern skills.

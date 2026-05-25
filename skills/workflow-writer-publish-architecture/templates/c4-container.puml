@@ -1,0 +1,36 @@
+' C4 Container diagram — level 2 of the C4 model.
+' Reference: https://github.com/plantuml-stdlib/C4-PlantUML
+'
+' Required for every feature lockin that touches more than one deployable unit (service, database,
+' frontend app, worker, queue). Captures the runtime topology — who calls whom, what protocol,
+' which datastore each container owns. Cross-reference each container to its ADR by ID.
+@startuml <feature-name>-container
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Containers — <Feature Name>
+
+Person(user, "<User role>", "<one-line description>")
+
+System_Boundary(system, "<System Name>") {
+  Container(frontend,  "<Frontend>",     "<tech — e.g. React + Vite>",   "<one-line role>")
+  Container(api,       "<API>",          "<tech — e.g. FastAPI>",        "<one-line role>")
+  Container(worker,    "<Worker>",       "<tech — e.g. Python / Celery>","<one-line role — only if there's async processing>")
+  ContainerQueue(queue,"<Queue / Bus>",  "<tech — e.g. Redis Streams>",  "<one-line role — only if there's async messaging>")
+  ContainerDb(db,      "<Primary Store>","<tech — e.g. PostgreSQL>",     "<one-line role; reference data-models/*.yaml>")
+  ContainerDb(cache,   "<Cache>",        "<tech — e.g. Redis>",          "<one-line role — only if a cache layer is justified>")
+}
+
+System_Ext(external_system, "<External System>", "<what it provides>")
+
+Rel(user, frontend, "Uses", "HTTPS")
+Rel(frontend, api,  "Calls", "JSON/HTTPS")
+Rel(api, db,        "Reads / writes",  "<driver — e.g. asyncpg>")
+Rel(api, cache,     "Reads / writes",  "<driver>")
+Rel(api, queue,     "Publishes",       "<protocol>")
+Rel(worker, queue,  "Consumes",        "<protocol>")
+Rel(worker, db,     "Reads / writes",  "<driver>")
+Rel(api, external_system, "Calls", "REST/HTTPS")
+
+@enduml

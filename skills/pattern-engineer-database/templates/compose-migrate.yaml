@@ -1,0 +1,34 @@
+# Migration service fragment — merge into the existing compose.yaml (created
+# by scaffold-project) when the first migration ships.
+#
+# Placeholders to replace (match the conventions in
+# scaffold-project/templates/compose.yaml):
+#   ${PRODUCT}  — short product slug (same value used by the existing `backend`
+#                 service's image tag)
+#   <DB_NAME>   — application database name
+#   <DB_USER>   — application database user
+#
+# The `backend` block below only shows the `depends_on` edits needed; merge
+# those edges into the existing backend service rather than replacing it.
+
+services:
+  migrate:
+    build:
+      context: ./backend
+      target: final
+    image: ${PRODUCT}-backend:${IMAGE_TAG:-dev}   # same image as backend; no separate Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://<DB_USER>:<DB_USER>@db:5432/<DB_NAME>
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"                                  # one-shot — exits 0 on success
+
+  backend:
+    # ... existing build / image / env / ports ...
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy

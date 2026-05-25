@@ -1,0 +1,35 @@
+' C4 Component diagram — level 3 of the C4 model.
+' Reference: https://github.com/plantuml-stdlib/C4-PlantUML
+'
+' Use this level when a single container's internal modules need diagramming — typically when
+' the feature introduces a new seam between modules inside one service. Apply the
+' `design-deep-module` skill while authoring: components should be deep (small interface, large
+' implementation), seams placed where behaviour actually varies.
+'
+' One file per container that needs a component view (e.g. `c4-component-api.puml`).
+@startuml <feature-name>-component-<container-name>
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+title Components — <Container Name>
+
+Container_Boundary(container, "<Container Name>") {
+  Component(handler,    "<HTTP Handler>",         "<framework — e.g. FastAPI router>", "<one-line role — accepts requests, validates input>")
+  Component(service,    "<Application Service>",  "<language — e.g. Python module>",   "<one-line role — orchestrates the use case>")
+  Component(domain,     "<Domain Model>",         "<language>",                         "<one-line role — invariants, business rules>")
+  Component(repository, "<Repository>",           "<ORM — e.g. SQLAlchemy>",            "<one-line role — persistence boundary>")
+  Component(adapter,    "<External Adapter>",     "<library>",                          "<one-line role — wraps an external dependency>")
+}
+
+ContainerDb(db,           "<Primary Store>",  "<tech>",   "<one-line role>")
+System_Ext(external_system, "<External System>", "<what it provides>")
+
+Rel(handler,    service,         "Calls")
+Rel(service,    domain,          "Invokes")
+Rel(service,    repository,      "Calls")
+Rel(repository, db,              "Reads / writes",  "<driver>")
+Rel(service,    adapter,         "Calls")
+Rel(adapter,    external_system, "Calls",          "REST/HTTPS")
+
+@enduml

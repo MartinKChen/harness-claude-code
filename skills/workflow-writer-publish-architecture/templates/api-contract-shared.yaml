@@ -1,0 +1,152 @@
+# Shared OpenAPI 3.1 components reused across every per-resource api-contract file.
+# Each resource file (e.g. ./user.yaml, ./session.yaml) references the names below via:
+#
+#     $ref: "./_shared.yaml#/components/<bucket>/<name>"
+#
+# Spec reference: https://spec.openapis.org/oas/v3.1.2.html
+#
+# This file is an OpenAPI "fragment": `paths` is empty because no operations live here. Bundle
+# tools (e.g. `swagger-cli bundle`, `redocly bundle`) inline the refs at build time. Lint tools
+# usually tolerate the fragment on its own; CI should validate the **bundled** spec, not the
+# fragment in isolation.
+#
+# Target path on disk:  docs/api-contract/_shared.yaml   (one file repo-wide; not feature-bounded)
+#
+# Conventions:
+#   - Add a new entry here only when it is reused across more than one resource. Resource-specific
+#     schemas (e.g. `User`, `UserCreate`) live in the resource file, not here.
+#   - Names are stable: existing resource files reference them by path.
+openapi: 3.1.0
+
+info:
+  title: Shared API components
+  version: 0.1.0
+  description: |
+    Components reused across every per-resource API contract file under this directory:
+    auth scheme(s), pagination / idempotency / concurrency parameters, rate-limit headers,
+    common error responses, and the canonical error schema.
+
+paths: {}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: <how the JWT is issued; which scopes apply by default>
+    # cookieAuth (alternative — use one or the other, not both):
+    # cookieAuth:
+    #   type: apiKey
+    #   in: cookie
+    #   name: <session-cookie-name>
+    #   description: HttpOnly; Secure; SameSite=Strict session cookie.
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSizeParam:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Client-generated key for safe retries of a mutating request. The server stores the response
+        for the first request with a given key and returns the same response for subsequent retries
+        within the idempotency window.
+      schema:
+        type: string
+        maxLength: 255
+
+    IfMatchHeader:
+      name: If-Match
+      in: header
+      required: false
+      description: Optimistic concurrency control. The server returns 412 if the ETag does not match.
+      schema:
+        type: string
+
+  headers:
+    RateLimitRemaining:
+      description: Requests remaining in the current rate-limit window.
+      schema:
+        type: integer
+
+  responses:
+    BadRequest:
+      description: Validation failure
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated but not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict (duplicate / state mismatch)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PreconditionFailed:
+      description: ETag / If-Match precondition failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable error code, e.g. `validation_failed`.
+        message:
+          type: string
+          description: Human-readable summary. Never leak server internals here.
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              code:  { type: string }

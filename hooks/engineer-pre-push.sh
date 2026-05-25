@@ -14,7 +14,7 @@
 # actually existing in this worktree, so a backend-only or frontend-only
 # project still runs cleanly.
 #
-# Checks (matching skills/tdd-workflow/references/{python,frontend,docker}-patterns.md):
+# Checks (matching skills/pattern-engineer-{python,frontend-standard,container}/SKILL.md):
 #   container-presence: every deployable surface (backend/, frontend/, or a
 #              root-level single-package layout) must have a Dockerfile +
 #              .dockerignore, plus a top-level compose.yaml / docker-compose.yaml.
@@ -39,7 +39,7 @@
 #   frontend:  biome check . / tsc --noEmit / npm audit / jest
 #   container-smoke: presence ≠ correctness. `docker compose up -d --build`
 #              the worktree's stack with a slug-tagged image + slug-named
-#              project, poll `/health` (and the SPA root, and a sample
+#              project, poll `/healthz` (and the SPA root, and a sample
 #              `/api/...` route if declared) for 200s, then
 #              `docker compose down -v` on EXIT. Catches nginx misconfig
 #              (try_files, proxy_pass), missing /health, alembic-not-run,
@@ -342,7 +342,7 @@ trap smoke_teardown EXIT
 run_container_smoke() {
   # Bring the worktree's compose stack up, then probe it. The probes are the
   # minimum that would have caught PR #165's runtime defects:
-  #   - GET /health (any host port the backend or its proxy publishes) →
+  #   - GET /healthz (any host port the backend or its proxy publishes) →
   #     verifies the backend is listening AND that an alembic upgrade ran on
   #     boot (a backend whose ENTRYPOINT forgot `alembic upgrade head` will
   #     /health-fail the moment it touches the DB) AND that
@@ -351,7 +351,7 @@ run_container_smoke() {
   #   - SPA root + a synthetic deep route (e.g. /signup) → if `try_files
   #     $uri $uri/ /index.html` is missing, the deep route returns nginx's
   #     404 instead of the SPA shell.
-  #   - One backend API path through the proxy (e.g. `GET /api/v1/health` or
+  #   - One backend API path through the proxy (e.g. `GET /api/v1/healthz` or
   #     a benign GET listed in $SMOKE_API_PATHS) → if the nginx proxy block
   #     is missing or below the SPA catch-all, the API request returns
   #     `index.html` as `text/html` instead of JSON.
@@ -395,11 +395,11 @@ run_container_smoke() {
 
   # Probe URLs come from env (so a project can declare the right routes) with
   # sensible defaults that match scaffold-project's nginx + FastAPI templates.
-  local health_url="${SMOKE_HEALTH_URL:-http://localhost:8000/health}"
+  local health_url="${SMOKE_HEALTH_URL:-http://localhost:8000/healthz}"
   local spa_url="${SMOKE_SPA_URL:-http://localhost:5173/}"
   local api_url="${SMOKE_API_URL:-}"  # optional — only probed if set
 
-  # Poll /health with a real backoff: 30 attempts * 2s = up to 60s for the
+  # Poll /healthz with a real backoff: 30 attempts * 2s = up to 60s for the
   # backend's first-boot migration + uvicorn warmup.
   local i
   local probe_ok=0
@@ -537,9 +537,9 @@ run_container_presence_checks() {
     for m in "${missing[@]}"; do list+=$'\n  - '"${m}"; done
     deny \
       "engineer-pre-push: blocking git push for ${slice_branch} — missing required container artifacts: ${missing[*]}" \
-      "Every deployable surface in the worktree must ship with a Dockerfile + .dockerignore, plus a top-level compose file. See agents/engineer.md (Best Practices → 'Container setup is a pre-push gate') and skills/tdd-workflow/references/docker-patterns.md for the multi-stage / pinned / non-root template. Missing now:${list}
+      "Every deployable surface in the worktree must ship with a Dockerfile + .dockerignore, plus a top-level compose file. See agents/engineer.md (Best Practices → 'Container setup is a pre-push gate') and skills/pattern-engineer-container/SKILL.md for the multi-stage / pinned / non-root template. Missing now:${list}
 
-Scaffold the missing files (multi-stage, pinned tags, non-root user, secrets via env, no .venv inside images), commit via git-workflow as chore(scaffold): <what>, and retry the push."
+Scaffold the missing files (multi-stage, pinned tags, non-root user, secrets via env, no .venv inside images), commit via operation-git as chore(scaffold): <what>, and retry the push."
   fi
 
   note "container presence check OK"

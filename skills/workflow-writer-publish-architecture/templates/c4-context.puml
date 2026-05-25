@@ -1,0 +1,26 @@
+' C4 System Context diagram — level 1 of the C4 model.
+' Reference: https://github.com/plantuml-stdlib/C4-PlantUML
+'
+' Use this level when the feature changes who interacts with the system, or which external systems
+' the system depends on. For most feature lockins the context diagram already exists project-wide
+' and only the container / component levels need a new diagram.
+@startuml <feature-name>-context
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+title System Context — <Feature Name>
+
+Person(user, "<User role>", "<one-line description of who this is and what they want>")
+Person_Ext(external_user, "<External actor>", "<optional — only when the feature introduces a new external actor>")
+
+System(system, "<System Name>", "<one-line description of what the system does, from the user's point of view>")
+
+System_Ext(external_system, "<External System>", "<what it provides; why we depend on it>")
+SystemDb_Ext(external_db, "<External Datastore>", "<only when the system reads/writes a datastore it doesn't own>")
+
+Rel(user, system, "<verb phrase>", "<protocol / channel — e.g. HTTPS, mobile app>")
+Rel(system, external_system, "<verb phrase>", "<protocol — e.g. REST/HTTPS, webhook, gRPC>")
+Rel_Back(external_system, system, "<callback / async event>", "<protocol>")     ' optional
+
+@enduml

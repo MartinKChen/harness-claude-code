@@ -1,18 +1,18 @@
 ---
 name: create-issues
-description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues, each split into sequential typed task sub-issues (e2e → backend → frontend). Always invoked with a `<feature-name>` pointing at `docs/PRDs/<feature-name>/`; no free-form mode. Verifies the merged `feature-lockin` PR on the milestone, reads the PRD pair, `docs/CRITICALPATHs/` (drives E2E user flows), `docs/GLOSSARY.md`, and `docs/ADRs/`; quizzes the user on a slice + task breakdown; on approval opens each slice issue + `feature/<slice#>-<intent>` branch via `gh issue develop` plus typed task sub-issues with 1-up `Blocked by` chains, grouped under the feature milestone. Activate on 'create issues for <feature-name>', 'turn this PRD into issues', 'slice this feature', 'open issues for <feature-name>'; verbs (create, scaffold, slice, break down, decompose) + nouns (issue, ticket, slice, backlog). Do NOT activate without a `<feature-name>`, for one-off issues, or PRD authoring."
+description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues, each split into sequential typed task sub-issues (e2e → backend → frontend). Always invoked with a `<feature-name>` pointing at `docs/product-requirement-document/<feature-name>/`; no free-form mode. Verifies the merged `feature-lockin` PR on the milestone, reads the PRD pair, `docs/critical-path/` (drives E2E user flows), `docs/GLOSSARY.md`, and `docs/ADRs/`; quizzes the user on a slice + task breakdown; on approval opens each slice issue + `feature/<slice#>-<intent>` branch via `gh issue develop` plus typed task sub-issues with 1-up `Blocked by` chains, grouped under the feature milestone. Activate on 'create issues for <feature-name>', 'turn this PRD into issues', 'slice this feature', 'open issues for <feature-name>'; verbs (create, scaffold, slice, break down, decompose) + nouns (issue, ticket, slice, backlog). Do NOT activate without a `<feature-name>`, for one-off issues, or PRD authoring."
 ---
 
 # create-issues
 
-Turn a locked-in feature into a set of release-safe **vertical slice** GitHub issues, each broken down into typed **task sub-issues** (e2e / backend / frontend). The skill is always invoked with a `<feature-name>` that points at `docs/PRDs/<feature-name>/` — there is no free-form / ad-hoc input path. It decomposes the work, quizzes the user for explicit approval, then creates the parent issue + task sub-issues per slice.
+Turn a locked-in feature into a set of release-safe **vertical slice** GitHub issues, each broken down into typed **task sub-issues** (e2e / backend / frontend). The skill is always invoked with a `<feature-name>` that points at `docs/product-requirement-document/<feature-name>/` — there is no free-form / ad-hoc input path. It decomposes the work, quizzes the user for explicit approval, then creates the parent issue + task sub-issues per slice.
 
 ## When to activate
 
 Activate this skill whenever the user:
 
 - Asks to "create issues", "open issues", "scaffold tickets", or "generate the backlog" for a feature.
-- Hands over a `<feature-name>` and asks for issues — interpret as "read the PRD under `docs/PRDs/<feature-name>/` and slice it".
+- Hands over a `<feature-name>` and asks for issues — interpret as "read the PRD under `docs/product-requirement-document/<feature-name>/` and slice it".
 - Asks to "break this down into vertical slices" or "slice this work into tracer bullets" for a named feature.
 
 Do NOT activate when the user is asking for a single one-off issue with no decomposition needed, when they want to update an existing issue, when they are asking for a roadmap/PRD instead of issues, or when no `<feature-name>` is in play (the skill has no free-form mode — ask the user to point at a feature first).
@@ -53,15 +53,15 @@ Do not silently widen the check (e.g. don't accept an open PR, don't match by ti
 Read every source listed below in full — partial reads will skew the slice breakdown.
 
 - **PRD pair (mandatory).** Both files together are the source of truth for what to build:
-  - `docs/PRDs/<feature-name>/requirement.md`
-  - `docs/PRDs/<feature-name>/implement-detail.md`
+  - `docs/product-requirement-document/<feature-name>/requirement.md`
+  - `docs/product-requirement-document/<feature-name>/implement-detail.md`
 
   Read the on-disk copies. The merged `feature-lockin` PR (verified in Step 1) is what guarantees these files are present and current — do not re-check, and do not fall back to a different ref or a free-form description if a read returns empty. If a file genuinely fails to read, that's a lock-in contract violation: halt and surface, do not invent context. Note any user stories present in the source — they will be carried into the slice breakdown.
 
-- **Critical paths (mandatory).** List `docs/CRITICALPATHs/` and read every critical-path file whose entry point, steps, or summary touches the surface this feature is changing. Critical paths are organized by user flow, not by feature, so a single feature can touch one, several, or zero of them — list first, then decide which to read.
+- **Critical paths (mandatory).** List `docs/critical-path/` and read every critical-path file whose entry point, steps, or summary touches the surface this feature is changing. Critical paths are organized by user flow, not by feature, so a single feature can touch one, several, or zero of them — list first, then decide which to read.
 
   ```bash
-  ls docs/CRITICALPATHs/
+  ls docs/critical-path/
   ```
 
   Critical paths are the **primary input for designing E2E test cases**: each `e2e` task in step 3 should map its UI user flows onto an existing critical-path flow when one exists, and extend rather than fragment that flow. If the feature introduces a brand-new critical path, flag it — that's typically a sign that `/deep-dive-feature` should have produced one and the lock-in is incomplete.
@@ -123,7 +123,7 @@ For each task, decide:
   1.fe.2    blocked by: 1.fe.1           ← real dep: component uses the hook
   ```
 
-  After `1.e2e.2` closes, three tasks (`1.be.1`, `1.fe.1`, and — once `1.fe.1` finishes — `1.fe.2` in turn) become pickable. The orchestrator dispatches one at a time per slice (worktree-per-slice is serial within the slice); the deterministic tiebreaker for which-comes-first lives in `implement-task-issue`, not in the issue graph.
+  After `1.e2e.2` closes, three tasks (`1.be.1`, `1.fe.1`, and — once `1.fe.1` finishes — `1.fe.2` in turn) become pickable. The orchestrator dispatches one at a time per slice (worktree-per-slice is serial within the slice); the deterministic tiebreaker for which-comes-first is enforced at dispatch time, not in the issue graph.
 
   Cross-slice blockers (a task that genuinely depends on a task in a prior slice) are still allowed when truly required, but should be rare — most cross-slice dependencies are already captured at the slice level. Stay **1-up**: never include a transitive ancestor.
 
@@ -143,7 +143,7 @@ Iterate. Re-present the updated breakdown each round. Do not move on until the u
 
 ### 5. Create the issues
 
-Once approved, create issues in this order using the inline `gh` commands shown — do **not** delegate to the `git-workflow` skill. Throughout, keep a running mapping `<local task ID> → #<real issue number>` so dependency references can be translated as we go (e.g. `1.e2e → #142`, `1.be.1 → #143`, `2 → #150`).
+Once approved, create issues in this order using the inline `gh` commands shown. Throughout, keep a running mapping `<local task ID> → #<real issue number>` so dependency references can be translated as we go (e.g. `1.e2e → #142`, `1.be.1 → #143`, `2 → #150`).
 
 **Dependency rule (1-up only).** When the breakdown has a chain `s1 → s2 → s3`, only mark `s3` `Blocked by s2` and `s2` `Blocked by s1`. Do **not** also mark `s3` `Blocked by s1` — transitive blockers are inferred by GitHub. The same rule applies to the sequential task chain within a slice (`1.e2e → 1.be.1 → 1.be.2 → 1.fe.1`): each task lists only its immediate predecessor in the chain as `Blocked by`, never an ancestor further back.
 
@@ -288,12 +288,12 @@ Good — vertical tracer bullets, each merge leaves the product working. Tasks w
 - **Release safe.** Each merged slice must leave the product in a working state. If a slice can't be merged independently without breaking the product, it's wrong — re-slice it (feature flags, no-op stubs, dark-launch, etc.).
 - **Milestone-grouped.** Every parent issue and task sub-issue created MUST be set to `--milestone "<feature-name>"`. The skill always runs against a locked-in feature, so the milestone is never optional.
 - **Use the project's vocabulary.** Issue titles and descriptions must use terms from the project's domain glossary verbatim — no synonyms, no rephrasings. Respect ADRs in any area you touch.
-- **Critical paths drive E2E design.** `e2e` task user-flow deliveries are mapped onto an existing `docs/CRITICALPATHs/` flow when one exists, and extend rather than fragment that flow. A feature that introduces a brand-new critical path means lock-in is incomplete — halt and surface, do not invent the critical path inside an issue body.
+- **Critical paths drive E2E design.** `e2e` task user-flow deliveries are mapped onto an existing `docs/critical-path/` flow when one exists, and extend rather than fragment that flow. A feature that introduces a brand-new critical path means lock-in is incomplete — halt and surface, do not invent the critical path inside an issue body.
 - **Quiz before locking.** Never create issues until the user explicitly approves the slice + task breakdown.
 - **Atomic tasks.** Each task delivers **exactly one** unit of work — one E2E test case (= one user flow), one API endpoint, one utility, one page, one component, or one hook. Data-model + migration changes are NOT a unit on their own — they ride along with the first endpoint (or other consumer) that introduces them, in the same task. Splitting is mandatory: if a task description requires the word "and" to join two endpoints, two utilities, two components, two hooks, or two pages, it MUST be split into two tasks ordered via `Blocked by`. Many small atomic tasks are correct; "bundled for convenience" tasks are not.
 - **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>.<index>` (`e2e` / `be` / `fe`); the index is always present, even when the slice happens to have only one task of that type. IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers as each issue is created in step 5.
 - **1-up `Blocked by` only.** For any chain `a → b → c` (slice or task level), record only the immediate upstream on each node. Never include transitive ancestors — GitHub infers them.
-- **DAG dependencies within a slice.** Tasks within a slice form a DAG, not a single chain. `e2e` tasks stay sequential among themselves. The first `backend` task and the first `frontend` task are each blocked by the last `e2e`. Beyond that, `Blocked by` records only real upstream needs (an endpoint blocked by the prior task that introduced its model; a component blocked by its hook; a page blocked by its primary component). Independent endpoints, independent hooks, and independent components are siblings — they share an upstream but not an edge between them. The runtime tiebreaker for multiple-ready tasks (`type:e2e` → `type:backend` → `type:frontend`, then lowest issue number) lives in `implement-task-issue`, not in the issue graph.
+- **DAG dependencies within a slice.** Tasks within a slice form a DAG, not a single chain. `e2e` tasks stay sequential among themselves. The first `backend` task and the first `frontend` task are each blocked by the last `e2e`. Beyond that, `Blocked by` records only real upstream needs (an endpoint blocked by the prior task that introduced its model; a component blocked by its hook; a page blocked by its primary component). Independent endpoints, independent hooks, and independent components are siblings — they share an upstream but not an edge between them. The runtime tiebreaker for multiple-ready tasks (`type:e2e` → `type:backend` → `type:frontend`, then lowest issue number) is enforced at dispatch time, not in the issue graph.
 - **Slice branch is created at issue-creation time.** Step 5a opens the slice issue and immediately creates its `feature/<slice#>-<intent>` branch via `gh issue develop`. The slice is born ready for downstream task work — there is no separate "pickup slice" loop that materializes branches afterwards.
 - **Task sub-issues share the slice branch.** Every task sub-issue created in 5b has the slice's `feature/<slice#>-<intent>` branch (from 5a) linked to it via `gh issue develop --name`. There is no per-task branch — all task work for a slice integrates onto the single slice branch, and the GitHub "Development" link on each task surfaces that shared target.
 - **Branch intent name is hand-picked, not auto-slugged.** The `<intent>` segment is a short kebab-case noun-phrase (≤40 chars) that conveys what the slice does, chosen during step 5a. Do NOT mechanically slugify the issue title — titles are written for humans scanning a list, branch names need to read well in isolation.

@@ -1,0 +1,187 @@
+# Per-resource API contract (OpenAPI 3.1).
+# Repo-wide: one file per API resource under `docs/api-contract/`. Not feature-bounded — features
+# that touch this resource reference it from their `implement-detail.md`.
+#
+# Spec reference: https://spec.openapis.org/oas/v3.1.2.html
+#
+# Target path on disk:  docs/api-contract/{entity}.yaml
+#
+# Conventions enforced by this template:
+#   - **One file per resource.** Group every operation (list / read / create / update / delete /
+#     custom action) for that resource into this file under `paths:`.
+#   - **Shared components live in `./_shared.yaml`.** Auth scheme, pagination / idempotency /
+#     concurrency parameters, rate-limit headers, common error responses, and the canonical
+#     `Error` schema are defined once there and referenced via `$ref` below. Never re-declare
+#     them locally — drift here is a maintenance trap.
+#   - **Resource-specific schemas live in `components.schemas` of this file** (e.g. `User`,
+#     `UserCreate`, `UserUpdate`, `UserList`). Promote a schema to `_shared.yaml` only when a
+#     second resource starts depending on it.
+#   - **The `bearerAuth` name in `security:` is resolved against the bundled spec.** CI should
+#     validate the bundle (e.g. `redocly bundle docs/api-contract/*.yaml`) — not each fragment in
+#     isolation.
+openapi: 3.1.0
+
+info:
+  title: <Resource Name> API
+  version: 0.1.0
+  summary: <1-line summary of what this resource represents to API clients>
+  description: |
+    <1-2 sentences: what this resource represents to API clients and which data-model entity
+     (or entities) back it. Cross-reference ../data-model/<entity>.yaml.>
+
+servers:
+  - url: <https://host/api/v1>
+    description: <e.g. production / staging / local>
+
+tags:
+  - name: <resource-name>
+    description: <one-line description>
+
+security:
+  - bearerAuth: []   # name defined in ./_shared.yaml#/components/securitySchemes/bearerAuth
+
+paths:
+  /<resources>:
+    get:
+      tags: [<resource-name>]
+      operationId: list<Resources>
+      summary: List <resources>
+      description: <one-line description>
+      parameters:
+        - $ref: "./_shared.yaml#/components/parameters/PageParam"
+        - $ref: "./_shared.yaml#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-RateLimit-Remaining:
+              $ref: "./_shared.yaml#/components/headers/RateLimitRemaining"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/<Resource>List"
+        "401": { $ref: "./_shared.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./_shared.yaml#/components/responses/Forbidden" }
+        "429": { $ref: "./_shared.yaml#/components/responses/RateLimited" }
+
+    post:
+      tags: [<resource-name>]
+      operationId: create<Resource>
+      summary: Create <resource>
+      description: <one-line description>
+      parameters:
+        - $ref: "./_shared.yaml#/components/parameters/IdempotencyKeyHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/<Resource>Create"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/<Resource>"
+        "400": { $ref: "./_shared.yaml#/components/responses/BadRequest" }
+        "401": { $ref: "./_shared.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./_shared.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "./_shared.yaml#/components/responses/Conflict" }
+        "429": { $ref: "./_shared.yaml#/components/responses/RateLimited" }
+
+  /<resources>/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [<resource-name>]
+      operationId: get<Resource>
+      summary: Read <resource>
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/<Resource>"
+        "401": { $ref: "./_shared.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./_shared.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./_shared.yaml#/components/responses/NotFound" }
+    patch:
+      tags: [<resource-name>]
+      operationId: update<Resource>
+      summary: Update <resource>
+      parameters:
+        - $ref: "./_shared.yaml#/components/parameters/IfMatchHeader"   # optimistic concurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/<Resource>Update"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/<Resource>"
+        "400": { $ref: "./_shared.yaml#/components/responses/BadRequest" }
+        "401": { $ref: "./_shared.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./_shared.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./_shared.yaml#/components/responses/NotFound" }
+        "409": { $ref: "./_shared.yaml#/components/responses/Conflict" }
+        "412": { $ref: "./_shared.yaml#/components/responses/PreconditionFailed" }
+    delete:
+      tags: [<resource-name>]
+      operationId: delete<Resource>
+      summary: Delete <resource>
+      responses:
+        "204":
+          description: No Content
+        "401": { $ref: "./_shared.yaml#/components/responses/Unauthorized" }
+        "403": { $ref: "./_shared.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "./_shared.yaml#/components/responses/NotFound" }
+
+components:
+  # Resource-specific schemas only. Anything reused across resources belongs in ./_shared.yaml.
+  schemas:
+    <Resource>:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        # <field>:
+        #   type: <string | integer | boolean | number>
+        #   description: <one-line note>
+
+    <Resource>Create:
+      type: object
+      # required: [<fields>]
+      # properties: …
+      additionalProperties: false
+
+    <Resource>Update:
+      type: object
+      # properties: subset of <Resource> writable fields
+      additionalProperties: false
+
+    <Resource>List:
+      type: object
+      required: [data, page, page_size, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/<Resource>"
+        page:       { type: integer }
+        page_size:  { type: integer }
+        total:      { type: integer }

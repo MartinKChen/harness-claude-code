@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>harness-claude-code — how the workflow works</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1f2630;
+    --ink: #e6edf3;
+    --muted: #9aa4b2;
+    --rule: #30363d;
+    --accent: #f0883e;
+    --accent-2: #58a6ff;
+    --good: #56d364;
+    --bad: #f85149;
+    --warn: #d29922;
+    --purple: #bc8cff;
+    --mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: var(--mono); font-size: 0.92em; }
+  code {
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  pre {
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    line-height: 1.45;
+  }
+  pre code { background: transparent; border: 0; padding: 0; }
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+  header.hero { margin-bottom: 48px; }
+  .eyebrow {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0 0 12px;
+  }
+  h1 {
+    font-size: 2.4rem;
+    line-height: 1.15;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  h1 .arrow { color: var(--muted); margin: 0 6px; font-weight: 400; }
+  .lede {
+    color: var(--muted);
+    max-width: 72ch;
+    margin: 0;
+    font-size: 1.05rem;
+  }
+  h2 {
+    font-size: 1.45rem;
+    margin: 56px 0 18px;
+    letter-spacing: -0.005em;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 24px 0 8px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 14px; }
+
+  /* TOC */
+  nav.toc {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 32px;
+    font-size: 0.92rem;
+  }
+  nav.toc ol { margin: 0; padding-left: 22px; column-count: 2; column-gap: 28px; }
+  nav.toc li { margin-bottom: 4px; break-inside: avoid; }
+  @media (max-width: 640px) { nav.toc ol { column-count: 1; } }
+
+  /* Phase / role cards */
+  .phase-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-top: 8px;
+  }
+  .phase {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .phase.discovery { border-top: 3px solid var(--accent-2); }
+  .phase.exec      { border-top: 3px solid var(--good); }
+  .phase h3 { margin-top: 0; font-size: 1.15rem; }
+  .phase h3 .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .phase.discovery .tag { background: rgba(88,166,255,0.12); color: var(--accent-2); border: 1px solid rgba(88,166,255,0.4); }
+  .phase.exec     .tag  { background: rgba(86,211,100,0.12); color: var(--good); border: 1px solid rgba(86,211,100,0.4); }
+  .phase ul { padding-left: 20px; margin: 8px 0 0; }
+  .phase li { margin-bottom: 6px; }
+
+  /* Agent matrix */
+  table.matrix {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  table.matrix th, table.matrix td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    font-size: 0.93rem;
+  }
+  table.matrix th {
+    background: var(--panel-2);
+    text-align: left;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  table.matrix tr:last-child td { border-bottom: 0; }
+  table.matrix td.role { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+  table.matrix td.model { color: var(--muted); font-family: var(--mono); }
+  table.matrix td .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+    border: 1px solid var(--rule);
+    color: var(--muted);
+  }
+  td .badge.r  { color: var(--accent-2); border-color: rgba(88,166,255,0.4); }
+  td .badge.w  { color: var(--good); border-color: rgba(86,211,100,0.4); }
+
+  /* Lifecycle steps */
+  .lifecycle {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 8px;
+  }
+  @media (max-width: 880px) { .lifecycle { grid-template-columns: 1fr; } }
+  .step {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .step .n {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .step h4 {
+    margin: 0 0 8px;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    color: var(--accent-2);
+  }
+  .step .who { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; }
+  .step ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+  .step li { margin-bottom: 4px; }
+
+  /* ASCII diagrams */
+  .ascii {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+  }
+  .ascii pre {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--ink);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  /* Interaction lanes */
+  .lanes {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  @media (max-width: 880px) { .lanes { grid-template-columns: 1fr; } }
+  .lane {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .lane h4 {
+    margin: 0 0 8px;
+    font-size: 0.98rem;
+    color: var(--accent-2);
+  }
+  .lane .when { color: var(--muted); font-size: 0.85rem; margin-bottom: 8px; font-family: var(--mono); }
+  .lane ul { margin: 0; padding-left: 18px; font-size: 0.92rem; }
+
+  /* Label legend */
+  .labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  @media (max-width: 720px) { .labels { grid-template-columns: 1fr; } }
+  .lbl-fam {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .lbl-fam h4 {
+    font-family: var(--mono);
+    margin: 0 0 8px;
+    color: var(--accent);
+    font-size: 0.92rem;
+  }
+  .lbl-fam ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+  .lbl-fam li { margin-bottom: 4px; }
+  .lbl-fam code { font-size: 0.85em; }
+
+  /* Pill colors for label families */
+  .pill {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    margin: 0 2px;
+  }
+  .pill.status  { color: var(--accent);    border-color: rgba(240,136,62,0.4); }
+  .pill.review  { color: var(--accent-2);  border-color: rgba(88,166,255,0.4); }
+  .pill.kind    { color: var(--purple);    border-color: rgba(188,140,255,0.4); }
+  .pill.type    { color: var(--good);      border-color: rgba(86,211,100,0.4); }
+  .pill.level   { color: var(--muted);     border-color: var(--rule); }
+
+  /* Label-flip flow lanes */
+  .flows {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 18px;
+    margin-top: 8px;
+  }
+  @media (max-width: 1100px) { .flows { grid-template-columns: 1fr; } }
+  .flow-lane {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 18px 18px 22px;
+  }
+  .flow-lane h3 {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    color: var(--accent-2);
+    font-family: var(--mono);
+  }
+  .flow-state {
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .flow-state.start {
+    background: transparent;
+    border-style: dashed;
+    color: var(--muted);
+  }
+  .flow-state.terminal {
+    border-color: rgba(86,211,100,0.5);
+    background: rgba(86,211,100,0.06);
+    color: var(--good);
+  }
+  .flow-state.attention {
+    border-color: rgba(248,81,73,0.5);
+    background: rgba(248,81,73,0.06);
+    color: var(--bad);
+  }
+  .flow-arrow {
+    text-align: center;
+    padding: 4px 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+  .flow-arrow::before {
+    content: "│";
+    display: block;
+    color: var(--rule);
+    font-family: var(--mono);
+    line-height: 1;
+    margin: 2px 0;
+  }
+  .flow-arrow::after {
+    content: "▼";
+    display: block;
+    color: var(--rule);
+    font-family: var(--mono);
+    line-height: 1;
+    margin-top: 2px;
+  }
+  .flow-arrow .actor {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: var(--bg);
+    margin: 2px 0;
+  }
+  .flow-arrow .actor.skill  { color: var(--accent);    border-color: rgba(240,136,62,0.4); }
+  .flow-arrow .actor.agent  { color: var(--accent-2);  border-color: rgba(88,166,255,0.4); }
+  .flow-arrow .actor.human  { color: var(--muted); }
+  .flow-arrow .actor.github { color: var(--good);      border-color: rgba(86,211,100,0.4); }
+  .flow-arrow .effect {
+    display: block;
+    font-size: 0.74rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .flow-branch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 4px 0;
+  }
+  .flow-branch .col { padding: 0; }
+  .flow-branch .col h5 {
+    margin: 0 0 6px;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    text-align: center;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+  }
+  .flow-branch .col.approve h5 { color: var(--good); }
+  .flow-branch .col.block   h5 { color: var(--bad); }
+  .flow-loop {
+    background: rgba(210,153,34,0.08);
+    border-left: 3px solid var(--warn);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin: 6px 0;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .flow-loop strong { color: var(--warn); font-family: var(--mono); }
+
+  .actor-legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin: 12px 0 0;
+  }
+  .actor-legend .actor {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: var(--bg);
+    margin-right: 4px;
+  }
+  .actor-legend .actor.skill  { color: var(--accent);    border-color: rgba(240,136,62,0.4); }
+  .actor-legend .actor.agent  { color: var(--accent-2);  border-color: rgba(88,166,255,0.4); }
+  .actor-legend .actor.human  { color: var(--muted); }
+  .actor-legend .actor.github { color: var(--good);      border-color: rgba(86,211,100,0.4); }
+
+  footer.foot {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">harness-claude-code · workflow guide</p>
+  <h1>How the workflow works</h1>
+  <p class="lede">
+    A walkthrough of the two top-level commands, the seven role-based agents,
+    and the GitHub-issue lifecycle they drive together — including who talks to
+    whom, where the user sits in the loop, and how every state transition is
+    recoverable because the source of truth lives on issues and labels.
+  </p>
+</header>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#big-picture">The big picture</a></li>
+    <li><a href="#phases">Discovery vs. execution</a></li>
+    <li><a href="#agents">The agents</a></li>
+    <li><a href="#discovery-flow">Discovery: <code>/deep-dive-feature</code></a></li>
+    <li><a href="#scaffold-flow">Scaffold: <code>/scaffold-project</code></a></li>
+    <li><a href="#exec-flow">Execution: <code>/implement-feature</code></a></li>
+    <li><a href="#labels">Labels are the protocol</a></li>
+    <li><a href="#label-flips">How labels flip</a></li>
+    <li><a href="#interactions">Who talks to whom</a></li>
+    <li><a href="#user-loop">Where the user sits</a></li>
+  </ol>
+</nav>
+
+<section id="big-picture">
+  <h2>The big picture</h2>
+  <p>
+    The harness has <strong>three top-level commands</strong> and <strong>seven role-based agents</strong>. Commands
+    are <em>orchestrators</em>: they don't write code themselves; they bring agents
+    onto a team, brief them, route messages, and chain idempotent workflow
+    skills. Every meaningful state transition is recorded as a GitHub issue
+    label flip — which means the loop can be stopped, resumed, or re-run
+    without losing track of where work is.
+  </p>
+  <div class="ascii">
+<pre>
+                ┌──────────────────────────────────────────────────────────┐
+                │                       USER (you)                        │
+                └──┬────────────────────┬──────────────────────────────┬──┘
+                   │ /deep-dive-feature │ /scaffold-project            │ /implement-feature &lt;feature-name&gt;
+                   ▼                    ▼                              ▼
+            ┌────────────┐         ┌────────────┐                ┌──────────────┐
+            │ product-   │         │ scaffold-  │                │ orchestrator │
+            │  owner →   │         │  project   │                │ (chains 9    │
+            │ architect  │         │ (templates │                │  workflow-*  │
+            │ + writers  │         │ + design)  │                │  skills)     │
+            └─────┬──────┘         └─────┬──────┘                └──────┬───────┘
+                  │                      │                              │
+                  ▼                      ▼                              ▼
+          PRD + ADRs + contracts   bootable stack + tokens    GitHub issues + labels
+          (committed on feature    (compose up; PR opened)    drive engineer / e2e /
+           branch; PR opened)                                 reviewer dispatches
+</pre>
+  </div>
+</section>
+
+<section id="phases">
+  <h2>Discovery vs. execution</h2>
+  <p>
+    There are two distinct phases, and they don't share state in memory — they
+    share state through git and GitHub. Discovery produces <em>documents</em>;
+    execution consumes those documents and produces <em>code</em>.
+  </p>
+  <div class="phase-grid">
+    <div class="phase discovery">
+      <h3>Discovery <span class="tag">documents</span></h3>
+      <p>
+        Run once per feature, before any code lands. The user converses with
+        <code>product-owner</code> until the requirement is locked, then with
+        <code>architect</code> until the technical decisions are locked. Each
+        interviewer is <strong>read-only</strong>; writer teammates
+        (<code>doc-writer</code> instances) commit the artifacts. The phase
+        ends with a single PR titled <code>feature-lockin</code>.
+      </p>
+      <ul>
+        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + ADRs + implement-detail + per-entity api-contract / data-model files</li>
+        <li><code>/scaffold-project</code> — greenfield only; reads the ADRs and brings up a bootable stack</li>
+      </ul>
+    </div>
+    <div class="phase exec">
+      <h3>Execution <span class="tag">code</span></h3>
+      <p>
+        Run repeatedly per feature, idempotently, against GitHub-issue state.
+        The orchestrator chains nine workflow skills in order; each is
+        self-skipping and label-scoped, so a single pass safely advances
+        whatever is ready. Wrap with <code>/loop</code> for unattended
+        end-to-end shipping.
+      </p>
+      <ul>
+        <li><code>/implement-feature &lt;feature-name&gt;</code> drives task → slice → PR lanes</li>
+        <li>Dispatches background agents — <code>engineer</code>, <code>e2e-author</code>, <code>reviewer</code></li>
+        <li>Every dispatch is a one-shot sub-agent; nothing is held in memory between passes</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <h2>The agents</h2>
+  <p>
+    Seven role-based subagents under <code>agents/</code>. Each one is briefed
+    by a command or a workflow skill, never by the user directly. Roles are
+    sharp on purpose: <code>product-owner</code> never writes architecture;
+    <code>engineer</code> never writes E2E specs; <code>reviewer</code> is
+    read-only on production code.
+  </p>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:14%">Agent</th>
+        <th style="width:8%">Model</th>
+        <th style="width:8%">Mode</th>
+        <th>Owns</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="role">product-owner</td>
+        <td class="model">opus</td>
+        <td><span class="badge r">read</span></td>
+        <td>Interviews the user about the six product axes (user, problem, success criteria, scope-in, non-goals, edge cases). Composes a dispatch prompt for the <code>requirement-writer</code> at the end; never writes files.</td>
+      </tr>
+      <tr>
+        <td class="role">architect</td>
+        <td class="model">opus</td>
+        <td><span class="badge r">read</span></td>
+        <td>Interviews the user about technical decisions. Composes four scoped dispatch prompts (implement-detail, ADR, api-contract, data-model). Reads PRD; never writes files.</td>
+      </tr>
+      <tr>
+        <td class="role">doc-writer</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge w">write</span></td>
+        <td>Five named instances: <code>requirement-writer</code> (Phase 1), then <code>implement-detail-writer</code>, <code>adr-writer</code>, <code>api-contract-writer</code>, <code>data-model-writer</code> (Phase 2). Each writer pulls its scoped payload from the matching interviewer via <code>SendMessage</code>, then commits its artifacts.</td>
+      </tr>
+      <tr>
+        <td class="role">engineer</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge w">write</span></td>
+        <td>Fullstack implementer. Routes by dispatch verb: <strong>implement-task</strong> (new work), <strong>fix-task</strong> / <strong>fix-slice</strong> (reviewer findings), <strong>fix-pr</strong> (CI / merge conflict). Strict outside-in TDD. Refuses <code>type:e2e</code> dispatches.</td>
+      </tr>
+      <tr>
+        <td class="role">e2e-author</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge w">write</span></td>
+        <td>Authors and fixes Playwright E2E specs for <code>type:e2e</code> tasks. Sets up its own slice worktree, smoke-runs each touched spec, commits and pushes, flips <code>review:pending</code>.</td>
+      </tr>
+      <tr>
+        <td class="role">reviewer</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge r">read</span></td>
+        <td>One-shot reviewer for a single task (or slice). Picks pattern-skills from the task's <code>type:*</code> label and covers both code-quality and security in one pass. Posts one structured <code># Review</code> comment and flips <code>review:running</code> → <code>review:passed</code> / <code>review:need-fix</code>.</td>
+      </tr>
+      <tr>
+        <td class="role">sre</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge w">write</span></td>
+        <td>CI/CD owner (GitHub Actions, OIDC, environments, image promotion). Defined but not yet auto-dispatched by any workflow skill — invoke manually for now.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="discovery-flow">
+  <h2>Discovery — <code>/deep-dive-feature</code></h2>
+  <p>
+    Two sequential phases, eleven numbered steps. The orchestrator
+    <em>grows the team one teammate at a time</em>: it does not pre-create
+    writers until the interviewer they answer is ready to hand off a
+    dispatch payload.
+  </p>
+  <div class="lifecycle">
+    <div class="step">
+      <div class="n">STEP 1–4</div>
+      <h4>Phase 1: product</h4>
+      <div class="who"><code>product-owner</code> + user</div>
+      <ul>
+        <li>Orchestrator spins up a team with one teammate</li>
+        <li>User talks to <code>product-owner</code> directly</li>
+        <li>User "locks requirements" explicitly</li>
+        <li>Product owner composes a scoped dispatch prompt, names the kebab-case feature</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">STEP 5–6</div>
+      <h4>Phase 1 publish</h4>
+      <div class="who">orchestrator + <code>requirement-writer</code></div>
+      <ul>
+        <li>Orchestrator creates a milestone and a worktree-backed branch <code>docs/&lt;feature-name&gt;</code></li>
+        <li>Invites <code>requirement-writer</code> (<code>subagent_type = doc-writer</code>)</li>
+        <li>Writer pulls payload from <code>product-owner</code> via <code>SendMessage</code></li>
+        <li>Writer commits PRD, critical-path, glossary updates</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">STEP 7–9</div>
+      <h4>Phase 2: architecture</h4>
+      <div class="who"><code>architect</code> + user</div>
+      <ul>
+        <li>Orchestrator invites <code>architect</code></li>
+        <li>User talks to <code>architect</code> directly</li>
+        <li>User "locks decisions" explicitly</li>
+        <li>Architect composes four scoped dispatch prompts</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">STEP 10</div>
+      <h4>Phase 2 publish</h4>
+      <div class="who">orchestrator + 4 writers</div>
+      <ul>
+        <li>Orchestrator invites four <code>doc-writer</code> instances</li>
+        <li>Each writer pulls its scope-appropriate payload from <code>architect</code></li>
+        <li>Implement-detail, ADRs, api-contracts, data-models are committed</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">STEP 11</div>
+      <h4>Lock in</h4>
+      <div class="who">orchestrator</div>
+      <ul>
+        <li>Push the <code>docs/&lt;feature-name&gt;</code> branch</li>
+        <li>Open a single PR labeled <code>feature-lockin</code></li>
+        <li>User reviews and merges manually — discovery is done</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">GUARDRAILS</div>
+      <h4>What the orchestrator <em>does not</em> do</h4>
+      <div class="who">policy</div>
+      <ul>
+        <li>Never answers product questions itself</li>
+        <li>Never answers <em>for</em> the user — interviewer questions reach the human verbatim</li>
+        <li>Never skips a lock gate</li>
+        <li>Never invites writers ahead of their interviewer</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="scaffold-flow">
+  <h2>Scaffold — <code>/scaffold-project</code></h2>
+  <p>
+    Optional, runs once on a greenfield project (the skill aborts if any of
+    <code>backend/</code>, <code>frontend/</code>, a compose file, or
+    <code>e2e/</code> already exists). Reads stack and topology decisions
+    from <code>docs/architecture-decision-record/</code> and materializes a
+    bootable skeleton from templates. Ends in its own PR.
+  </p>
+  <ol>
+    <li>Confirm greenfield — all four surfaces (<code>backend</code>, <code>frontend</code>, <code>compose</code>, <code>e2e</code>) must be missing.</li>
+    <li>Read the ADRs to pick backend / frontend stack variants and the compose service list.</li>
+    <li>Create <code>chore/scaffold-project</code>.</li>
+    <li>Materialize backend → commit. Materialize frontend → commit. Materialize <code>docker-compose.yaml</code> → commit.</li>
+    <li><strong>Boot check</strong>: <code>docker compose up -d --build</code>, probe each framework-metadata endpoint, then <code>docker compose down</code>. Stops on failure — does not mutate templates to mask a broken boot.</li>
+    <li>Materialize Playwright e2e → <code>npm install</code> → commit.</li>
+    <li>Discover any installed UI/UX design skills; ask the user once whether to bring one in.</li>
+    <li>If a design skill is picked, invoke it via the <code>Skill</code> tool. The design skill drives its own interview and commits design artifacts under <code>docs/design-system/</code>.</li>
+    <li>If <code>docs/design-system/tokens.md</code> landed, translate the tokens into <code>frontend/src/styles/tokens.css</code> and import them from the frontend entry → commit.</li>
+    <li>Push and open the PR.</li>
+  </ol>
+</section>
+
+<section id="exec-flow">
+  <h2>Execution — <code>/implement-feature &lt;feature-name&gt;</code></h2>
+  <p>
+    One sweep through nine workflow skills, in order. Each skill is
+    <strong>milestone-scoped</strong> (filtered by the feature name on every
+    <code>gh</code> query), <strong>label-driven</strong> (picks up whatever
+    has the right labels right now), and <strong>self-skipping</strong>
+    (reports "nothing to pick up" and returns instantly when empty). One
+    invocation = one pass — wrap with <code>/loop</code> to keep advancing
+    until the feature ships.
+  </p>
+  <p>
+    The orchestrator <em>does not</em> wait for backgrounded agents. Once a
+    workflow skill dispatches its agents, the orchestrator moves on; the
+    agents push commits and flip labels asynchronously, and the next pass
+    picks them up.
+  </p>
+
+  <h3>Task lane</h3>
+  <div class="lifecycle">
+    <div class="step">
+      <div class="n">1</div>
+      <h4>kickoff-slice</h4>
+      <div class="who">label flip</div>
+      <ul>
+        <li>Picks slices with <code>level:slice</code> + <code>kind:feature</code> + <code>status:ready-to-implement</code></li>
+        <li>Skips any with open <code>Blocked by</code></li>
+        <li>Flips slice → <code>status:in-progress</code></li>
+        <li>Adds <code>status:ready-to-implement</code> on every task sub-issue</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">2</div>
+      <h4>implement-task</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks unblocked tasks with <code>status:ready-to-implement</code></li>
+        <li>Locks each with <code>status:in-progress</code></li>
+        <li>Dispatches <code>engineer</code> (Mode A) or <code>e2e-author</code> by <code>type:*</code></li>
+        <li>Agent commits, pushes, adds <code>review:pending</code></li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">3</div>
+      <h4>review-task</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks tasks with <code>review:pending</code></li>
+        <li>Flips the gate to <code>review:running</code></li>
+        <li>Dispatches a one-shot <code>reviewer</code> per task</li>
+        <li>On <code>review:passed</code> the reviewer also closes the task; on <code>review:need-fix</code> the verdict stays</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">4</div>
+      <h4>fix-task</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks tasks with <code>review:need-fix</code> (gate not <code>review:running</code>)</li>
+        <li>Strips the <code>need-fix</code> label (the lock)</li>
+        <li>Dispatches <code>engineer</code> (Mode C) or <code>e2e-author</code></li>
+        <li>Agent fixes, pushes, re-adds <code>review:pending</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Slice lane</h3>
+  <div class="lifecycle">
+    <div class="step">
+      <div class="n">5</div>
+      <h4>prepare-slice</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks slices whose task sub-issues have all closed and have no <code>review:*</code> / <code>e2e:*</code> yet</li>
+        <li>Locks slice with <code>e2e:running</code></li>
+        <li>Dispatches <code>engineer</code> (Mode D) to run the slice's E2E specs against a live stack</li>
+        <li>On green: adds <code>review:pending</code> on the slice. On test-case constraint: <code>status:need-attention</code></li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">6</div>
+      <h4>review-slice</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks slices with <code>review:pending</code></li>
+        <li>Dispatches <code>reviewer</code></li>
+        <li>On pass: reviewer opens the draft PR with <code>Closes #&lt;slice-#&gt;</code> body</li>
+        <li>On fail: <code>review:need-fix</code></li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">7</div>
+      <h4>fix-slice</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks slices with <code>review:need-fix</code></li>
+        <li>Dispatches <code>engineer</code> to fix findings + re-validate E2E</li>
+        <li>Re-adds <code>review:pending</code> on success</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>PR lane</h3>
+  <div class="lifecycle">
+    <div class="step">
+      <div class="n">8</div>
+      <h4>fix-pr</h4>
+      <div class="who">dispatch</div>
+      <ul>
+        <li>Picks draft PRs with failing CI and/or merge conflicts (no in-flight lock)</li>
+        <li>Locks with <code>status:fix-in-progress</code></li>
+        <li>Dispatches <code>engineer</code> (Mode B) with the scenario set</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">9</div>
+      <h4>close-pr</h4>
+      <div class="who">merge</div>
+      <ul>
+        <li>Picks <code>MERGEABLE</code> draft PRs with all CI green and <code>merge:auto</code></li>
+        <li>Promotes draft → ready, squash-merges, deletes the branch</li>
+        <li>GitHub auto-closes the slice via the <code>Closes #&lt;slice-#&gt;</code> body</li>
+        <li><code>merge:manual</code> PRs are left for the user to merge</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">LOOP</div>
+      <h4>Wrap to keep advancing</h4>
+      <div class="who">recommended</div>
+      <ul>
+        <li><code>/loop /implement-feature &lt;feature-name&gt;</code></li>
+        <li>Each pass picks up whatever moved since the last pass</li>
+        <li>Backgrounded agents finish on their own schedule</li>
+        <li>Resumable: the loop survives interrupts because labels are the state</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="labels">
+  <h2>Labels are the protocol</h2>
+  <p>
+    Agents don't share memory. They share GitHub labels. Every dispatch is
+    keyed on a label combination; every terminal action is a label flip.
+    That's why the lifecycle survives crashes, context limits, and user
+    interruptions — the next pass just reads the labels and re-derives where
+    work is.
+  </p>
+  <div class="labels">
+    <div class="lbl-fam">
+      <h4>level:*</h4>
+      <ul>
+        <li><span class="pill level">level:slice</span> — a vertical user-visible increment</li>
+        <li><span class="pill level">level:task</span> — a single typed unit of work</li>
+      </ul>
+    </div>
+    <div class="lbl-fam">
+      <h4>kind:*</h4>
+      <ul>
+        <li><span class="pill kind">kind:feature</span> — full lifecycle today</li>
+        <li><span class="pill kind">kind:bug</span> / <span class="pill kind">kind:enhancement</span> — issue-tracked but not yet looped</li>
+      </ul>
+    </div>
+    <div class="lbl-fam">
+      <h4>type:* (tasks)</h4>
+      <ul>
+        <li><span class="pill type">type:e2e</span> — Playwright, owned by <code>e2e-author</code></li>
+        <li><span class="pill type">type:backend</span> / <span class="pill type">type:frontend</span> — owned by <code>engineer</code></li>
+      </ul>
+    </div>
+    <div class="lbl-fam">
+      <h4>status:*</h4>
+      <ul>
+        <li><span class="pill status">status:ready-to-review</span> — human approval gate</li>
+        <li><span class="pill status">status:ready-to-implement</span> — orchestrator picks this up</li>
+        <li><span class="pill status">status:in-progress</span> — orchestrator's lock</li>
+        <li><span class="pill status">status:fix-in-progress</span> — PR-level lock</li>
+        <li><span class="pill status">status:need-attention</span> — agent bailed; human owns the next move</li>
+      </ul>
+    </div>
+    <div class="lbl-fam">
+      <h4>review:*</h4>
+      <ul>
+        <li>One gate per issue (task or slice) — covers code + security in one pass</li>
+        <li><span class="pill review">review:pending</span> — reviewer dispatch armed</li>
+        <li><span class="pill review">review:running</span> — reviewer in flight</li>
+        <li><span class="pill review">review:passed</span> / <span class="pill review">review:need-fix</span> — verdicts</li>
+        <li>fix-* skills only fire when the gate is not <code>review:running</code></li>
+      </ul>
+    </div>
+    <div class="lbl-fam">
+      <h4>merge:* / e2e:* / lockin</h4>
+      <ul>
+        <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior</li>
+        <li><span class="pill status">e2e:running</span> — prepare-slice lock</li>
+        <li><span class="pill kind">feature-lockin</span> — the discovery PR</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="label-flips">
+  <h2>How labels flip</h2>
+  <p>
+    Each lifecycle below is a state machine over GitHub labels. Read top to
+    bottom for the happy path; the orange call-outs mark the failure loops.
+    The pill on each arrow is the actor that performs the flip — an
+    orchestrator skill, a sub-agent, the human, or GitHub itself.
+  </p>
+  <div class="actor-legend">
+    <span><span class="actor skill">skill</span> orchestrator workflow-* skill</span>
+    <span><span class="actor agent">agent</span> dispatched sub-agent</span>
+    <span><span class="actor human">human</span> the user</span>
+    <span><span class="actor github">github</span> GitHub automation (PR merge auto-closes linked issues)</span>
+  </div>
+
+  <div class="flows">
+
+    <!-- ============================== TASK ISSUE ============================== -->
+    <div class="flow-lane">
+      <h3>Task issue</h3>
+
+      <div class="flow-state start">(issue does not exist)</div>
+      <div class="flow-arrow">
+        <span class="actor skill">create-issues</span>
+        <span class="effect">opens issue with <code>level:task</code> + <code>kind:feature</code> + <code>type:*</code></span>
+      </div>
+      <div class="flow-state">level:task &middot; kind:feature &middot; type:{e2e|backend|frontend}</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-kickoff-slice</span>
+        <span class="effect">parent slice promoted → cascades label to every task sub-issue</span>
+      </div>
+      <div class="flow-state">+ status:ready-to-implement</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-implement-task</span>
+        <span class="effect">picks unblocked task; dispatches <code>engineer</code> Mode A or <code>e2e-author</code></span>
+      </div>
+      <div class="flow-state">status:ready-to-implement → status:in-progress</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">engineer / e2e-author</span>
+        <span class="effect">commits + pushes; terminal step adds <code>review:pending</code></span>
+      </div>
+      <div class="flow-state">+ review:pending</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-review-task</span>
+        <span class="effect">dispatches <code>reviewer</code></span>
+      </div>
+      <div class="flow-state">review:pending → review:running</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">reviewer</span>
+        <span class="effect">posts <code># Review</code> comment; verdict APPROVE or BLOCK</span>
+      </div>
+
+      <div class="flow-branch">
+        <div class="col approve">
+          <h5>APPROVE</h5>
+          <div class="flow-state terminal">review:passed + issue closed</div>
+        </div>
+        <div class="col block">
+          <h5>BLOCK</h5>
+          <div class="flow-state">review:running → review:need-fix</div>
+        </div>
+      </div>
+
+      <div class="flow-loop">
+        <strong>need-fix loop:</strong>
+        <span class="actor skill">workflow-orchestrator-fix-task</span>
+        strips <code>review:need-fix</code> and dispatches
+        <span class="actor agent">engineer Mode C / e2e-author</span>
+        to fix. After push the agent re-adds <code>review:pending</code>, looping back to
+        <em>review-task</em>.
+      </div>
+    </div>
+
+    <!-- ============================== SLICE ISSUE ============================== -->
+    <div class="flow-lane">
+      <h3>Slice issue</h3>
+
+      <div class="flow-state start">(issue does not exist)</div>
+      <div class="flow-arrow">
+        <span class="actor skill">create-issues</span>
+        <span class="effect">opens issue + attaches slice branch</span>
+      </div>
+      <div class="flow-state">level:slice &middot; kind:feature &middot; status:ready-to-review</div>
+
+      <div class="flow-arrow">
+        <span class="actor human">human</span>
+        <span class="effect">approves the slice scope</span>
+      </div>
+      <div class="flow-state">status:ready-to-review → status:ready-to-implement</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-kickoff-slice</span>
+        <span class="effect">skips if any open <code>Blocked by</code>; otherwise locks</span>
+      </div>
+      <div class="flow-state">status:ready-to-implement → status:in-progress</div>
+
+      <div class="flow-arrow">
+        <span class="actor github">github</span>
+        <span class="effect">every task sub-issue closes (see task lane)</span>
+      </div>
+      <div class="flow-state">(all task sub-issues closed)</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-prepare-slice</span>
+        <span class="effect">dispatches <code>engineer</code> Mode D to run touched E2E specs</span>
+      </div>
+      <div class="flow-state">+ e2e:running</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">engineer (Mode D)</span>
+        <span class="effect">strips <code>e2e:running</code>; adds <code>review:pending</code> on green</span>
+      </div>
+      <div class="flow-state">e2e:running → review:pending</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-review-slice</span>
+        <span class="effect">dispatches <code>reviewer</code></span>
+      </div>
+      <div class="flow-state">review:pending → review:running</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">reviewer</span>
+        <span class="effect">posts <code># Slice Review</code> comment</span>
+      </div>
+
+      <div class="flow-branch">
+        <div class="col approve">
+          <h5>APPROVE</h5>
+          <div class="flow-state">review:passed + draft PR opened (<code>merge:manual</code>)</div>
+        </div>
+        <div class="col block">
+          <h5>BLOCK</h5>
+          <div class="flow-state">review:running → review:need-fix</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="actor github">github</span>
+        <span class="effect">on PR merge: <code>Closes #&lt;slice-#&gt;</code> body closes this issue</span>
+      </div>
+      <div class="flow-state terminal">issue closed (slice shipped)</div>
+
+      <div class="flow-loop">
+        <strong>need-fix loop:</strong>
+        <span class="actor skill">workflow-orchestrator-fix-slice</span>
+        dispatches <span class="actor agent">engineer</span> to fix findings + re-validate the E2E suite.
+        On green the engineer re-adds <code>review:pending</code>; on test-case constraints it bails to
+        <code>status:need-attention</code> for the human to edit the spec.
+      </div>
+    </div>
+
+    <!-- ============================== DRAFT PR ============================== -->
+    <div class="flow-lane">
+      <h3>Draft slice PR</h3>
+
+      <div class="flow-state start">(PR does not exist)</div>
+      <div class="flow-arrow">
+        <span class="actor agent">reviewer</span>
+        <span class="effect">opens draft PR on slice-review APPROVE; body contains <code>Closes #&lt;slice-#&gt;</code></span>
+      </div>
+      <div class="flow-state">draft &middot; merge:manual</div>
+
+      <div class="flow-arrow">
+        <span class="actor human">human</span>
+        <span class="effect">optional: opt into auto-merge</span>
+      </div>
+      <div class="flow-state">merge:manual → merge:auto</div>
+
+      <div class="flow-arrow">
+        <span class="actor github">github</span>
+        <span class="effect">CI runs on the slice branch</span>
+      </div>
+
+      <div class="flow-branch">
+        <div class="col approve">
+          <h5>GREEN + MERGEABLE</h5>
+          <div class="flow-state">ready to close</div>
+        </div>
+        <div class="col block">
+          <h5>RED or CONFLICT</h5>
+          <div class="flow-state">CI fail / merge conflict</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-fix-pr</span>
+        <span class="effect">locks the red PR and dispatches <code>engineer</code> Mode B</span>
+      </div>
+      <div class="flow-state">+ status:fix-in-progress</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">engineer (Mode B)</span>
+        <span class="effect">resolves conflict / fixes CI; strips lock on success</span>
+      </div>
+      <div class="flow-state">status:fix-in-progress → (removed)</div>
+
+      <div class="flow-arrow">
+        <span class="actor skill">workflow-orchestrator-close-pr</span>
+        <span class="effect">scope: <code>merge:auto</code> + green + MERGEABLE</span>
+      </div>
+      <div class="flow-state terminal">draft → ready → squash-merged + branch deleted</div>
+
+      <div class="flow-loop">
+        <strong>bail path:</strong>
+        when the CI failure points at an E2E-spec rewrite, the engineer flips the PR to
+        <span class="actor"><span class="pill status">status:need-attention</span></span>
+        instead of guessing. The PR stays parked until the human edits the spec and removes the label.
+      </div>
+    </div>
+
+  </div>
+
+  <p style="margin-top:28px">
+    Two cross-cutting rules emerge from the diagrams. (1) <strong>The
+    presence of a <code>review:running</code> or <code>e2e:running</code>
+    label is the in-flight lock</strong> — fix skills refuse to dispatch
+    while a reviewer or validator is still working. (2) <strong>The
+    absence of any <code>review:*</code> label is what unblocks
+    <code>fix-task</code> / <code>fix-slice</code></strong> after they
+    strip <code>need-fix</code> — the agent re-adding
+    <code>review:pending</code> is what re-enters the review loop.
+  </p>
+</section>
+
+<section id="interactions">
+  <h2>Who talks to whom</h2>
+  <p>
+    Two distinct channels: a <strong>Team</strong>-shared channel for the
+    interactive discovery agents (<code>product-owner</code>,
+    <code>architect</code>, <code>doc-writer</code> instances) and a
+    <strong>one-shot dispatch</strong> channel for the lifecycle agents
+    (<code>engineer</code>, <code>e2e-author</code>, <code>reviewer</code>).
+  </p>
+  <div class="lanes">
+    <div class="lane">
+      <h4>Team mode</h4>
+      <div class="when">discovery (deep-dive-feature)</div>
+      <p>
+        <code>TeamCreate</code> spins up named teammates that can
+        <code>SendMessage</code> each other. The orchestrator grows the team
+        one teammate at a time. Writers pull dispatch payloads from
+        interviewers via <code>SendMessage</code> — the orchestrator never
+        forwards artifacts inline.
+      </p>
+      <ul>
+        <li><code>product-owner</code> ↔ user (direct)</li>
+        <li><code>product-owner</code> ↔ <code>requirement-writer</code> (pull payload)</li>
+        <li><code>architect</code> ↔ user (direct)</li>
+        <li><code>architect</code> ↔ 4 writers (pull scoped payloads)</li>
+      </ul>
+    </div>
+    <div class="lane">
+      <h4>Dispatch mode</h4>
+      <div class="when">execution (workflow-orchestrator-* skills)</div>
+      <p>
+        Each workflow skill issues one <code>Agent</code> call per eligible
+        unit of work. The agent runs to completion in the background, makes
+        its commits, pushes, and flips its terminal label. No shared memory;
+        no back-and-forth conversation.
+      </p>
+      <ul>
+        <li>Skill → <code>engineer</code> (one-shot, per task / slice / PR)</li>
+        <li>Skill → <code>e2e-author</code> (one-shot, per E2E task)</li>
+        <li>Skill → <code>reviewer</code> (one-shot, per task or slice)</li>
+        <li>Agent → GitHub (commits, comments, label flips)</li>
+      </ul>
+    </div>
+    <div class="lane">
+      <h4>Hook mode</h4>
+      <div class="when">engineer worktree pushes</div>
+      <p>
+        <code>engineer-pre-push.sh</code> fires as a <code>PreToolUse</code>
+        hook on every <code>Bash</code> call. It no-ops unless the command
+        contains <code>git push</code> in an engineer worktree. On a real
+        push it runs the lint / type / security / test gate for the relevant
+        stack and denies the push on failure.
+      </p>
+      <ul>
+        <li>Hook → engineer (deny / allow)</li>
+        <li>Engineer reads the denial summary, fixes, retries the push</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px">SendMessage handshake — Phase 2 example</h3>
+  <div class="ascii">
+<pre>
+            ┌──────────────┐               ┌────────────────────┐
+            │    USER      │               │   orchestrator     │
+            └──────┬───────┘               │ (/deep-dive)       │
+                   │                       └─────────┬──────────┘
+                   │   talks directly to             │ invites + briefs
+                   │                                 │
+                   ▼                                 ▼
+            ┌──────────────┐    SendMessage    ┌────────────────┐
+            │  architect   │ ◄──── pull ───────│ adr-writer     │
+            │  (read-only) │ ─── payload ────► │ (subagent_type │
+            │              │                   │  = doc-writer) │
+            └──────────────┘                   └────────────────┘
+                   ▲                                  │
+                   │  also answers:                   │ commits ADRs
+                   │  • implement-detail-writer       │ on the feature
+                   │  • api-contract-writer           │ branch
+                   │  • data-model-writer             │
+</pre>
+  </div>
+</section>
+
+<section id="user-loop">
+  <h2>Where the user sits</h2>
+  <p>
+    The user is in the loop in three specific places — and intentionally
+    out of the loop everywhere else.
+  </p>
+  <table class="matrix">
+    <thead>
+      <tr><th style="width:18%">Moment</th><th>Why</th><th style="width:24%">What the user does</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="role">discovery interview</td>
+        <td>Only the user knows what they want to build. <code>product-owner</code> and <code>architect</code> talk to the user <strong>directly</strong> — the orchestrator does not interpose, paraphrase, or guess.</td>
+        <td>Answers questions. Says "lock requirements" / "lock decisions" when ready.</td>
+      </tr>
+      <tr>
+        <td class="role">scaffold opt-in</td>
+        <td><code>/scaffold-project</code> asks once, via <code>AskUserQuestion</code>, whether to bring a UI/UX design skill in before opening the scaffold PR.</td>
+        <td>Picks a design skill, or skips. If picked, talks to the design skill directly.</td>
+      </tr>
+      <tr>
+        <td class="role">PR review</td>
+        <td>Every workflow ends with a PR. Discovery PRs (<code>feature-lockin</code>) and scaffold PRs require a human merge. <code>merge:manual</code> slice PRs (reviewer's default) too.</td>
+        <td>Reviews, requests changes via comments, merges manually — or relabels to <code>merge:auto</code> to let <code>close-pr</code> land it.</td>
+      </tr>
+      <tr>
+        <td class="role"><code>status:need-attention</code></td>
+        <td>Agents bail rather than guess when an E2E spec rewrite is needed or scope is ambiguous. The lifecycle stops on that slice / PR until the human clears the label.</td>
+        <td>Edits the spec / clarifies scope / removes the label so the next pass picks the work up.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top:24px">
+    Everywhere else — task dispatch, code review, security review, fix
+    loops, draft PR creation, merge of <code>merge:auto</code> PRs — the
+    user can step away. The loop reads labels, dispatches one-shot agents,
+    and advances. <code>/loop /implement-feature &lt;feature-name&gt;</code>
+    keeps it going until the feature is shipped or until something hits
+    <code>status:need-attention</code>.
+  </p>
+</section>
+
+<footer class="foot">
+  See <a href="../README.md">README.md</a> for the command + skill + agent
+  index. Skill source lives under
+  <a href="../skills/">skills/</a>; agents live under
+  <a href="../agents/">agents/</a>.
+</footer>
+
+</div>
+</body>
+</html>
