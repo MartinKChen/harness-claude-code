@@ -9,6 +9,14 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/engineer-pre-push.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/pre-tool-use.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -22,6 +30,24 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-edit-dockerfile.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/post-tool-use.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/subagent-stop.sh"
           }
         ]
       }

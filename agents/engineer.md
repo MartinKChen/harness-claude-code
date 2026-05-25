@@ -64,8 +64,13 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 ## Execution Flow
 
-1. **Load skills.**
+1. **Telemetry bootstrap.** Before anything else, run:
+   ```bash
+   bash "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/bootstrap.sh" engineer "<verbatim dispatch prompt>"
+   ```
+   Substitute `<verbatim dispatch prompt>` with the exact dispatch prompt that triggered this run (e.g. `Implement GitHub task issue #142`). The script writes a per-session metadata file under `<consuming-project>/.claude/memory/signals/runtime/` so the runtime-telemetry hooks can capture tool calls, skills, token usage, and duration for this dispatch. Skips silently if the consuming project has not opted in by creating `.claude/memory/`. See `memory-convention` (Runtime telemetry signals).
+2. **Load skills.**
    - Read every skill listed under **Always on**.
    - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
-2. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
+3. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.

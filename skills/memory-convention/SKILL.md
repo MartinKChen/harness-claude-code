@@ -1,6 +1,6 @@
 ---
 name: memory-convention
-description: "Reference doc for the per-consuming-project agent memory system. Defines where memory lives in the consuming project (`.claude/memory/`), the schema of each signal file written by engineer/reviewer workflows, the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence rules. Referenced by signal-capture steps in workflow skills, by overlay-load sections in pattern skills, and by `workflow-consolidate-memory`. Not invoked as a workflow — purely descriptive."
+description: "Reference doc for the per-consuming-project agent memory system. Defines where memory lives in the consuming project (`.claude/memory/`), the schema of each signal file written by engineer/reviewer workflows, the runtime-telemetry signals captured per engineer/reviewer dispatch (agent identity, dispatch prompt, tool calls, skills loaded, token usage, duration), the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence rules. Referenced by signal-capture steps in workflow skills, by overlay-load sections in pattern skills, by the runtime-telemetry hook scripts, and by `workflow-consolidate-memory`. Not invoked as a workflow — purely descriptive."
 ---
 
 # memory-convention
@@ -38,6 +38,8 @@ Directory layout once opted in:
     missed/<slice#>.jsonl          ← findings caught downstream that an earlier stage missed
     cycles/<task#>.json            ← per-task summary written on task review:passed
     cycles/slice-<slice#>.json     ← per-slice summary written on PR merge
+    runtime/<session-id>.meta.json ← per-session telemetry metadata (engineer / reviewer only)
+    runtime/<session-id>.jsonl     ← per-session tool-call event stream (engineer / reviewer only)
     .archive/                      ← consumed-and-archived signal files (optional)
   patterns/
     <pattern-skill-name>.md        ← per-skill project overlay, written by consolidation
@@ -126,6 +128,84 @@ Written by `workflow-orchestrator-close-pr` when the slice PR merges. Captures t
 ```
 
 `task_review_cycles_sum` = sum of `total_cycles` across the slice's tasks (read from `signals/cycles/<task#>.json`). `slice_review_cycles` = count of `Refs #<slice-#>` commits on the slice branch produced after the first slice review. `pr_review_cycles` = count of distinct user comments on the PR matching `^# (Review|Code Review)` (proxy for human PR-level reviews).
+
+## Runtime telemetry signals
+
+A separate signal family captures **per-dispatch operational telemetry** for `engineer` and `reviewer` subagent runs — agent identity, dispatch prompt, every tool call, every skill loaded, token usage, wall-clock duration, and stop reason. This is distinct from the review-evolution signals above: those answer *what did the review find?*, while runtime telemetry answers *how did this dispatch actually execute?*. Consolidation (`workflow-consolidate-memory`) does not consume runtime telemetry — it is for ad-hoc analysis only.
+
+**Scope is intentionally narrow.** Only `engineer` and `reviewer` dispatches emit runtime telemetry. The orchestrator, `doc-writer`, `e2e-author`, `architect`, `product-owner`, and `sre` agents do **not**. The narrowing mechanism is mechanical and described under [Capture mechanism](#capture-mechanism) below: only those two agents run the bootstrap script that registers the session, and the hooks no-op when no session is registered.
+
+### `signals/runtime/<session-id>.meta.json` — per-session metadata
+
+One JSON object per dispatch. Written by `hooks/runtime-telemetry/bootstrap.sh` at session start, mutated incrementally by the PreToolUse hook (`skills_invoked`), and finalized by `hooks/runtime-telemetry/subagent-stop.sh` at session end.
+
+```json
+{
+  "session_id": "0193f4a8-2c1b-7a3c-9def-deadbeef0001",
+  "agent_type": "engineer",
+  "agent_name": "harness-claude-code:engineer",
+  "dispatch_prompt": "Implement GitHub task issue #142",
+  "transcript_path": "",
+  "cwd": "/tmp/git-worktree/feature-138-add-receipts",
+  "started_at": "2026-05-25T14:32:17Z",
+  "ended_at": "2026-05-25T14:58:03Z",
+  "duration_ms": 1546000,
+  "token_usage": {
+    "input_tokens": 12340,
+    "output_tokens": 4521,
+    "cache_creation_input_tokens": 8200,
+    "cache_read_input_tokens": 102000
+  },
+  "skills_invoked": [
+    "operation-git",
+    "pattern-engineer-coding-standard",
+    "pattern-engineer-python",
+    "workflow-engineer-implement-task"
+  ],
+  "stop_reason": "end_turn"
+}
+```
+
+Required keys: `session_id`, `agent_type`, `agent_name`, `dispatch_prompt`, `started_at`. The remaining fields are written incrementally: `skills_invoked` accumulates as the agent loads skills; `ended_at`, `duration_ms`, `token_usage`, `stop_reason` are populated on `SubagentStop`.
+
+`agent_type` is exactly one of `engineer` or `reviewer`. `session_id` is taken from the `CLAUDE_SESSION_ID` env var (bootstrap side) and the hook stdin payload's `session_id` (hook side) — both sides MUST agree on the same value or telemetry is not captured.
+
+### `signals/runtime/<session-id>.jsonl` — tool-call event stream
+
+One row per tool invocation, paired by sequence. The PreToolUse hook appends a `tool_use` row when a call starts; the PostToolUse hook appends a `tool_result` row when it ends. The N-th `tool_result` corresponds to the N-th `tool_use` (single-agent calls are serial, so positional pairing is unambiguous).
+
+```json
+{"ts": "2026-05-25T14:32:18Z", "event": "tool_use",    "tool": "Bash",  "input_summary": "gh issue view 142 --json title,body,labels", "session_id": "0193f4a8-..."}
+{"ts": "2026-05-25T14:32:18Z", "event": "tool_result", "tool": "Bash",  "success": true,                                                "session_id": "0193f4a8-..."}
+{"ts": "2026-05-25T14:32:19Z", "event": "tool_use",    "tool": "Read",  "input_summary": "/path/to/skills/operation-git/SKILL.md",     "session_id": "0193f4a8-..."}
+{"ts": "2026-05-25T14:32:19Z", "event": "tool_result", "tool": "Read",  "success": true,                                                "session_id": "0193f4a8-..."}
+```
+
+Required keys on every row: `ts`, `event`, `tool`, `session_id`. `input_summary` is bounded to ~200 chars and reflects the first identifying argument of the call (command for `Bash`, file path for `Read` / `Edit` / `Write`, pattern for `Grep` / `Glob`, url/query for `WebFetch` / `WebSearch`, skill name for `Skill`, description / subject for `Agent` / `TaskCreate` / `TaskUpdate` / `SendMessage`). `success` is a heuristic derived from the PostToolUse payload's `tool_response.is_error` or `error` field.
+
+### Capture mechanism
+
+Three hook scripts under `hooks/runtime-telemetry/` and one bootstrap script implement the capture. The hooks are wired by the plugin's `hooks/hooks.json`:
+
+| Component | Owner | Trigger | What it writes |
+|-----------|-------|---------|----------------|
+| `bootstrap.sh` | engineer / reviewer agent first execution step | Agent runs it explicitly | Creates `<session-id>.meta.json` with `agent_type`, `agent_name`, `dispatch_prompt`, `started_at`, `cwd`. **This is the gate** — without this file, the hooks below all no-op. |
+| `pre-tool-use.sh` | plugin (PreToolUse hook, no matcher) | Every tool call | Appends `tool_use` row to `<session-id>.jsonl`; also extracts the skill name when the tool is `Read` against `*/skills/*/SKILL.md` or `Skill` with a `skill` parameter, and merges it into `meta.json#skills_invoked` (deduped). |
+| `post-tool-use.sh` | plugin (PostToolUse hook, no matcher) | Every tool call | Appends `tool_result` row to `<session-id>.jsonl` with `success`. |
+| `subagent-stop.sh` | plugin (SubagentStop hook) | Subagent terminates | Finalizes `meta.json` with `ended_at`, `duration_ms`, `token_usage` (parsed from the last assistant turn in `transcript_path`), and `stop_reason`. |
+
+**Why this design limits capture to engineer + reviewer:**
+
+1. Only `agents/engineer.md` and `agents/reviewer.md` carry the "Telemetry bootstrap" execution step that invokes `bootstrap.sh`.
+2. Hooks fire for every tool call across every agent (orchestrator, doc-writer, e2e-author, architect, product-owner, sre) — but the very first thing they do is look up `<session-id>.meta.json`. Without that marker, they exit 0 immediately. So orchestrator and helper agents incur a microsecond of disk lookup per tool call and contribute zero telemetry rows.
+
+**Opt-in / opt-out:** identical to the rest of the memory system. `mkdir -p .claude/memory/{signals,patterns}` enables capture; `rm -rf .claude/memory/` disables it. Runtime telemetry needs no extra setup beyond that.
+
+**Rotation:** completed session files accumulate forever otherwise. Move `<session-id>.meta.json` + `<session-id>.jsonl` pairs whose `meta.json#ended_at` is older than your chosen retention into `signals/.archive/` on whatever cadence you prefer; nothing in the plugin enforces a schedule.
+
+### Cross-platform requirements
+
+The hook + bootstrap scripts depend on `jq` and `git` being on PATH. `subagent-stop.sh` additionally needs either GNU `date -d` or BSD `date -j -f` for ISO-8601 → epoch conversion (handles both). If any of these is missing, telemetry silently no-ops for that hook — the agent's primary work is never affected.
 
 ## Overlay file shape
 
