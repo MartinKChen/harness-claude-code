@@ -1,6 +1,6 @@
 ---
 name: memory-convention
-description: "Reference doc for the per-consuming-project agent memory system. Defines where memory lives in the consuming project (`.claude/memory/`), the schema of each signal file written by engineer/reviewer workflows, the runtime-telemetry signals captured per engineer/reviewer dispatch (agent identity, dispatch prompt, tool calls, skills loaded, token usage, duration), the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence rules. Referenced by signal-capture steps in workflow skills, by overlay-load sections in pattern skills, by the runtime-telemetry hook scripts, and by `workflow-consolidate-memory`. Not invoked as a workflow — purely descriptive."
+description: "Reference doc for the per-consuming-project agent memory system. Defines where memory lives (`$TMPDIR/claude-memory/<project-slug>/`, auto-created, always-on), the schema of each signal file written by engineer/reviewer workflows, the runtime-telemetry signals captured per engineer/reviewer dispatch (agent identity, dispatch prompt, tool calls, skills loaded, token usage, duration), the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence rules. Referenced by signal-capture steps in workflow skills, by overlay-load sections in pattern skills, by the runtime-telemetry hook scripts, and by `workflow-consolidate-memory`. Not invoked as a workflow — purely descriptive."
 ---
 
 # memory-convention
@@ -15,21 +15,31 @@ This skill defines the contract three other skill families honor:
 
 ## Where memory lives
 
-All memory lives under `<consuming-project-root>/.claude/memory/`. The consuming-project root is the **main working tree** of the consuming project — never a slice worktree.
+All memory lives under `$TMPDIR/claude-memory/<project-slug>/`. The slug is derived from the consuming project's **main working tree** absolute path, so every slice worktree of the same project resolves to the same memory root, and two unrelated projects with the same basename never collide.
 
 To resolve it portably from inside any worktree:
 
 ```bash
 MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
+PROJECT_SLUG="$(basename "$MAIN_ROOT")-$(printf '%s' "$MAIN_ROOT" | shasum -a 256 | cut -c1-8)"
+MEMORY_ROOT="${TMPDIR:-/tmp}/claude-memory/$PROJECT_SLUG"
+mkdir -p "$MEMORY_ROOT/signals" "$MEMORY_ROOT/patterns"
 ```
 
-If `$MEMORY_ROOT` does not exist, **skip silently** — the consuming project has not opted in. Do not create it. Opt-in is the user's `mkdir`.
+The directory is **auto-created on first use** — there is no opt-in step. Capture is always on for engineer / reviewer dispatches.
 
-Directory layout once opted in:
+**Persistence caveat.** `$TMPDIR` is best-effort storage:
+
+- On macOS, `$TMPDIR` is per-user under `/var/folders/…/T/` and survives reboots, but the OS periodically purges files untouched for ~3 days.
+- On Linux, `/tmp` is typically tmpfs (cleared on reboot) unless the distro persists it.
+- In containers / CI sandboxes, the temp dir usually disappears with the container.
+
+Treat memory as a short-horizon evidence buffer. Run `workflow-consolidate-memory` regularly to distill signals into `patterns/<skill>.md` overlays before the underlying signal files age out. If you need durable storage, copy `$MEMORY_ROOT/patterns/` and any signal files you want to keep into version control or a persistent location yourself.
+
+Directory layout:
 
 ```
-.claude/memory/
+$TMPDIR/claude-memory/<project-slug>/
   signals/
     reviews/<task#>.jsonl          ← findings from a task-level reviewer dispatch
     reviews/slice-<slice#>.jsonl   ← findings from a slice-level reviewer dispatch
@@ -199,7 +209,7 @@ Three hook scripts under `hooks/runtime-telemetry/` and one bootstrap script imp
 1. Only `agents/engineer.md` and `agents/reviewer.md` carry the "Telemetry bootstrap" execution step that invokes `bootstrap.sh`.
 2. Hooks fire for every tool call across every agent (orchestrator, doc-writer, e2e-author, architect, product-owner, sre) — but the very first thing they do is look up `<session-id>.meta.json`. Without that marker, they exit 0 immediately. So orchestrator and helper agents incur a microsecond of disk lookup per tool call and contribute zero telemetry rows.
 
-**Opt-in / opt-out:** identical to the rest of the memory system. `mkdir -p .claude/memory/{signals,patterns}` enables capture; `rm -rf .claude/memory/` disables it. Runtime telemetry needs no extra setup beyond that.
+**Always-on:** identical to the rest of the memory system. The memory root under `$TMPDIR/claude-memory/<project-slug>/` is auto-created on first use; runtime telemetry starts emitting on the next engineer / reviewer dispatch with no setup step. To clear telemetry for a project, delete the slug directory — it will be re-created on the next dispatch.
 
 **Rotation:** completed session files accumulate forever otherwise. Move `<session-id>.meta.json` + `<session-id>.jsonl` pairs whose `meta.json#ended_at` is older than your chosen retention into `signals/.archive/` on whatever cadence you prefer; nothing in the plugin enforces a schedule.
 
@@ -240,12 +250,13 @@ When a pattern skill loads, it reads its own SKILL.md first, then checks `$MEMOR
 2. **Never silently override.** If an overlay rule contradicts a baseline rule (e.g. baseline says HIGH, overlay says LOW for the same situation), the agent must surface the conflict in its output rather than picking one. A conflict means consolidation has drifted from baseline and a human needs to reconcile — either by editing the overlay or by sending the rule upstream to the plugin.
 3. **Overlay severity cannot exceed baseline severity.** An overlay can downgrade a baseline rule's severity for a specific carve-out (LOW for a documented internal-only API) but cannot upgrade a LOW rule to CRITICAL — that's a new rule, not an overlay.
 
-## Opt-in / opt-out
+## Always-on
 
-- **Opt in:** `mkdir -p .claude/memory/signals .claude/memory/patterns` in the consuming project root. The next engineer / reviewer dispatch starts writing signals; the next pattern-skill load starts checking for overlays.
-- **Opt out:** `rm -rf .claude/memory/` in the consuming project root. All signal capture and overlay loading silently no-ops.
+Memory capture is always on for engineer / reviewer dispatches. The memory root under `$TMPDIR/claude-memory/<project-slug>/` is auto-created on first use; signal files and pattern overlays land there without any per-project setup step.
 
-No flags, no settings, no plugin config. Presence of the directory is the contract.
+To clear memory for a project, `rm -rf "$TMPDIR/claude-memory/<project-slug>/"` — it will be re-created on the next dispatch. There is no flag or env-var off switch; disabling capture entirely requires removing the bootstrap step from the engineer / reviewer agent definitions in this plugin.
+
+No per-project flags, no settings, no plugin config. The slug derived from the main worktree path is the contract.
 
 ## What this skill does NOT do
 
