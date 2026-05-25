@@ -19,7 +19,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 ## Best Practices & Principles
 
-- **Pattern selection follows the labels + touched paths, not the dispatch prompt wording.** Read the issue's `type:*` (tasks) or the touched paths (slices) to derive the pattern set — never invent a pattern, never skip one the labels select.
+- **Pattern selection depends on review level.** Task reviews (`level:task`) load `pattern-reviewer-test-coverage` only — no conditional patterns, regardless of `type:*` label or touched files. Slice reviews (`level:slice`) layer touched-path-driven conditional patterns on top of test-coverage; read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select.
 - **Aggregate, then post once.** Run every selected pattern to completion, collect every finding, then compose ONE structured comment. Do not stream partial findings.
 - **The verdict line is the agent's, not the patterns'.** Patterns emit findings only; APPROVE / BLOCK is computed by the workflow skill from aggregated severity counts (any CRITICAL / HIGH → BLOCK; otherwise APPROVE — MEDIUM / LOW reported but do not block).
 - **GitHub is the single source of truth.** Findings live as a single structured comment on the issue; the verdict lives as the issue's terminal label. On task pass also: `status:in-progress` removed + issue closed. On slice pass also: draft PR created (`merge:manual`) with `Closes #<slice-#>` body. Do not return a structured summary, do not `SendMessage` other agents.
@@ -36,20 +36,22 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 **Conditionally invoked — pattern / principle**
 
+> **Slice reviews only.** This entire section is evaluated only when the dispatched issue carries `level:slice`. Task-level reviews (`level:task`) load no conditional pattern skills — they exercise `pattern-reviewer-test-coverage` against the task's `Done criteria (EARS)` and `Scenarios (Gherkin)` and nothing else.
+
 | Skill | When to invoke |
 |-------|----------------|
-| `pattern-reviewer-coding-standard` | When the issue under review is a backend or frontend issue (`type:backend` / `type:frontend` tasks, or slices touching such code). |
-| `pattern-reviewer-observability` | When the issue under review is a backend or frontend issue. |
-| `pattern-reviewer-security` | When the issue under review is a backend or frontend issue. |
-| `pattern-reviewer-contract` | When the issue under review is a backend or frontend issue and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
-| `pattern-reviewer-backend-standard` | When the review touches backend code. |
-| `pattern-reviewer-database` | When the review touches backend code that includes ORM models or migrations. |
-| `pattern-reviewer-frontend-standard` | When the review touches frontend code. |
-| `pattern-reviewer-container` | When the review touches container artifacts (`Dockerfile`, `docker-compose.yaml`, `.dockerignore`, nginx config, entrypoint scripts). |
-| `pattern-reviewer-fastapi` | When the review touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. |
-| `pattern-reviewer-python` | When the review touches Python (`.py`) files. |
-| `pattern-reviewer-typescript` | When the review touches TypeScript (`.ts` / `.tsx`) files. |
-| `pattern-reviewer-vite` | When the review touches frontend code that runs under Vite (`vite.config.*`, `vitest.config.*`, `import.meta.env`). |
+| `pattern-reviewer-coding-standard` | When the slice touches backend or frontend code. |
+| `pattern-reviewer-observability` | When the slice touches backend or frontend code. |
+| `pattern-reviewer-security` | When the slice touches backend or frontend code. |
+| `pattern-reviewer-contract` | When the slice touches backend or frontend code and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
+| `pattern-reviewer-backend-standard` | When the slice touches backend code. |
+| `pattern-reviewer-database` | When the slice touches backend code that includes ORM models or migrations. |
+| `pattern-reviewer-frontend-standard` | When the slice touches frontend code. |
+| `pattern-reviewer-container` | When the slice touches container artifacts (`Dockerfile`, `docker-compose.yaml`, `.dockerignore`, nginx config, entrypoint scripts). |
+| `pattern-reviewer-fastapi` | When the slice touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. |
+| `pattern-reviewer-python` | When the slice touches Python (`.py`) files. |
+| `pattern-reviewer-typescript` | When the slice touches TypeScript (`.ts` / `.tsx`) files. |
+| `pattern-reviewer-vite` | When the slice touches frontend code that runs under Vite (`vite.config.*`, `vitest.config.*`, `import.meta.env`). |
 
 **Conditionally invoked — workflow**
 
@@ -69,6 +71,6 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
    Substitute `<verbatim dispatch prompt>` with the exact dispatch prompt that triggered this run (e.g. `Review GitHub task issue #142`). The script writes a per-session metadata file under `<consuming-project>/.claude/memory/signals/runtime/` so the runtime-telemetry hooks can capture tool calls, skills, token usage, and duration for this dispatch. Skips silently if the consuming project has not opted in by creating `.claude/memory/`. See `memory-convention` (Runtime telemetry signals).
 2. **Load skills.**
    - Read every skill listed under **Always on**.
-   - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load.
+   - **Only if the dispatched issue carries `level:slice`:** for each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, language, framework) and load it if the trigger matches. Multiple may load. Task-level reviews skip this step entirely — they proceed with `pattern-reviewer-test-coverage` as the sole lens.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
 3. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
