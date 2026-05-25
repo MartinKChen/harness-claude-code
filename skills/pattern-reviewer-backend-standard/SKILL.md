@@ -12,6 +12,10 @@ Backend implementation best-practice audit. This skill focuses on implementation
 - The dispatched caller is reviewing a `type:backend` task's production-code diff.
 - A user says "review the queries / auth flow / error handling / log redaction / health endpoint".
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-backend-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Iron rules
 
 - **>80% confidence filter.** Report only when you are >80% confident. Skip stylistic preferences unless they violate a documented convention. Consolidate similar findings.

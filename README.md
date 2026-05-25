@@ -74,6 +74,8 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `principle-engineer-tdd` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
 | `operation-git` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
+| `memory-convention` | Reference doc for the per-consuming-project agent memory system — where `.claude/memory/` lives, the schema of each signal file written by engineer/reviewer workflows, the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence. |
+| `workflow-consolidate-memory` | Distills accumulated `.claude/memory/signals/*.jsonl` into curated rule additions under `.claude/memory/patterns/<skill>.md` for the project. User-invoked; every overlay edit is gated on explicit user approval. |
 
 ### Engineer patterns
 
@@ -121,6 +123,23 @@ Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the 
 | `pattern-reviewer-observability` | OTel audit — no vendor SDKs in `src/`, no `print` / `console.log`, span naming low-cardinality, semantic-convention attributes, errors via `record_exception`, bounded metric labels, structured JSON logs with trace correlation, batch processors, single SDK bootstrap, sampling lives in the Collector. |
 | `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for `type:backend` / `type:frontend` task reviews (skipped for `type:e2e`). Fourteen patterns; cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
 
+## Memory (per-consuming-project, opt-in)
+
+Engineer and reviewer dispatches are stateless by default — every review starts from the baseline pattern skills shipped here. Consuming projects can opt in to a per-project memory overlay that grows from their own review history without ever flowing back upstream into this plugin.
+
+**Opt-in:** `mkdir -p .claude/memory/{signals,patterns}` in the consuming project root.
+
+Once opted in:
+
+- Engineer / reviewer workflow skills append signal rows (reviewer findings, engineer fix actions, missed catches caught downstream, per-task / per-slice cycle summaries) under `.claude/memory/signals/` at the end of each dispatch — fire-and-forget, never blocking the terminal label flip.
+- Every pattern skill (`pattern-engineer-*`, `pattern-reviewer-*`) checks `.claude/memory/patterns/<skill-name>.md` at load time and applies its rules additively (sharpened triggers, project-specific carve-outs, new rules, BAD/GOOD examples worth pinning).
+- `/workflow-consolidate-memory` (on demand, or via `/loop`) reads accumulated signal, proposes overlay edits diff-by-diff, and writes the approved overlays. Every edit is user-confirmed; baseline pattern skills are never auto-modified.
+- **Runtime telemetry** (engineer + reviewer only): every dispatch writes `signals/runtime/<session-id>.meta.json` (agent identity, dispatch prompt, started/ended timestamps, duration, token usage, stop reason, skills loaded) and a paired `<session-id>.jsonl` event stream (one row per tool call). Captured by the bundled `hooks/runtime-telemetry/` scripts; scope is limited to engineer / reviewer by their bootstrap step — other agents incur a no-op disk check and produce zero telemetry rows.
+
+**Opt-out:** `rm -rf .claude/memory/` — all signal capture and overlay loading silently no-op.
+
+See [`skills/memory-convention/SKILL.md`](skills/memory-convention/SKILL.md) for the full contract (file schemas, overlay shape, precedence rules, severity floor, conflict surfacing).
+
 ## Hooks
 
 Hooks live in [`hooks/`](hooks/) and are wired up by `hooks/hooks.json`.
@@ -128,6 +147,10 @@ Hooks live in [`hooks/`](hooks/) and are wired up by `hooks/hooks.json`.
 | Hook | When it fires | What it does |
 | --- | --- | --- |
 | `engineer-pre-push.sh` | `PreToolUse` on every `Bash` call, but no-ops unless the command contains `git push` *and* the cwd is an engineer worktree under `/tmp/git-worktree/`. | Runs lint / type / security / test checks against the engineer's worktree before allowing the push. If no draft PR exists for the slice yet (first push of the slice), narrows checks to the active task's `type:backend` / `type:frontend` stack via the most recent `Refs #<n>` trailer; once a PR is open, runs both stacks. Backend = `ruff` / `mypy` / `bandit` / `pytest`; frontend = `biome` / `tsc --noEmit` / `npm audit` / `jest`. On failure, denies the `Bash` tool call so the engineer sees the failure summary, fixes it, and retries the push. |
+| `runtime-telemetry/bootstrap.sh` | Invoked explicitly by the engineer / reviewer agent as the first step of its Execution Flow. | Writes `<session-id>.meta.json` under the consuming project's `.claude/memory/signals/runtime/` with agent identity, dispatch prompt, started timestamp, cwd. Silent no-op if `.claude/memory/` is absent (opt-out) or `$CLAUDE_SESSION_ID` is empty. This marker file is the gate that limits all subsequent runtime-telemetry capture to engineer + reviewer dispatches only. |
+| `runtime-telemetry/pre-tool-use.sh` | `PreToolUse` on every tool call (no matcher). | If a `<session-id>.meta.json` exists for the firing session, appends a `tool_use` row to `<session-id>.jsonl` and, when the tool is `Read` on a `*/skills/*/SKILL.md` file or `Skill` with a `skill` parameter, merges the skill name into `meta.json#skills_invoked`. Always exits 0; never blocks a tool call. |
+| `runtime-telemetry/post-tool-use.sh` | `PostToolUse` on every tool call (no matcher). | If a `<session-id>.meta.json` exists for the firing session, appends a `tool_result` row to `<session-id>.jsonl` with `success` (heuristic from the tool response's `is_error` / `error` fields). Always exits 0. |
+| `runtime-telemetry/subagent-stop.sh` | `SubagentStop` once per subagent termination. | If a `<session-id>.meta.json` exists for the firing session, finalizes it with `ended_at`, `duration_ms`, `token_usage` (parsed from the last assistant turn in `transcript_path`), and `stop_reason`. |
 
 ## Layout
 

@@ -46,7 +46,31 @@ Write to `/tmp/review-slice-<slice-#>.md`.
 
 Atomically post the verdict comment on the slice issue and flip the gate label — on APPROVE: remove `review:running`, add `review:passed`. On BLOCK: remove `review:running`, add `review:need-fix`.
 
-### 6. On APPROVE, create the draft PR
+### 6. Capture signal to the consuming project's memory store
+
+Per `memory-convention`, if `$MAIN_ROOT/.claude/memory/` exists in the consuming project, append the slice review's signal rows. If it does not exist, skip silently. Never block the terminal label flip or PR creation.
+
+```bash
+MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
+[ -d "$MEMORY_ROOT" ] || exit 0
+```
+
+Write one JSON Lines row per finding to `$MEMORY_ROOT/signals/reviews/slice-<slice#>.jsonl` (append, create parent dir; note the `slice-` prefix). Row shape:
+
+```json
+{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "severity": "<CRITICAL|HIGH|MEDIUM|LOW>", "location": "<file:line>", "title": "<one-line>"}
+```
+
+**Missed-catch detection.** For each finding emitted in this slice review, cross-reference the slice's closed task sub-issues' review rows in `$MEMORY_ROOT/signals/reviews/<task#>.jsonl`. If the slice finding's `location` falls inside a path that one of those tasks' commits touched (`git diff --name-only` against the task's `Refs #<task#>` commits) AND no row in that task's review file shares `(pattern_skill, category)`, the task review missed it. Append one row to `$MEMORY_ROOT/signals/missed/<slice#>.jsonl`:
+
+```json
+{"ts": "<iso8601>", "slice": <n>, "parent_task": <task#>, "caught_by": "slice-review", "missed_by": "task-review", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "location": "<file:line>", "title": "<one-line>"}
+```
+
+These rows are the primary input that `workflow-consolidate-memory` uses to propose **new rules** for the task-level reviewer's pattern set.
+
+### 7. On APPROVE, create the draft PR
 
 Compose the PR body from the project's PR-body template:
 
@@ -75,3 +99,4 @@ If something prevents the review (worktree setup failed, slice branch missing, d
 - **PR creation is idempotent.** Re-running the skill after a partial failure doesn't create duplicate PRs.
 - **Refuse what the labels forbid.** Missing `review:running` → halt.
 - **On a blocked run, do NOT flip the label.** Leave `review:running` for human triage.
+- **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a review must never be blocked by it.

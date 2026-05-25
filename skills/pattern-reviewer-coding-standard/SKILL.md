@@ -11,6 +11,10 @@ description: "Language-agnostic code-quality review patterns: Pre-Report Gate (c
 - A user says "review this diff for quality", "look for bugs", "audit the change".
 - Do NOT activate for `type:e2e`.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-coding-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## References
 
 | Reference | When to read |

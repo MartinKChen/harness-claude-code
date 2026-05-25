@@ -9,6 +9,10 @@ description: "React frontend bullets: composition-first components, custom hooks
 
 Activate when writing or editing React components, hooks, pages, routes, layouts, forms, modals, lists, tables, or navigation in any React-based app (Next.js or Vite). Skip for pure backend code or non-React frontends.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-frontend-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Component design

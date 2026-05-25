@@ -11,6 +11,10 @@ FastAPI implementation patterns for routes, dependencies, middleware, exception 
 
 Activate when editing FastAPI route handlers (`@router.get` / `@router.post` / …), `APIRouter` mounts, `Depends()` graphs, Pydantic request/response models, middleware (`app.add_middleware(...)`), exception handlers (`@app.exception_handler(...)`), `create_app()` / `main.py` wiring, OpenAPI customization, or `Depends`-based dependency injection. Skip for non-FastAPI Python code.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-fastapi.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Routes + routers

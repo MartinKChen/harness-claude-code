@@ -10,6 +10,10 @@ description: "Python audit: f-string SQL injection (CRITICAL); pickle/yaml.load 
 - Reviewing a diff that includes `.py` files.
 - A user says "review the Python code / type hints / bandit findings".
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-python.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Iron rules
 
 - **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.

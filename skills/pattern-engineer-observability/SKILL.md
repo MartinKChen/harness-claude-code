@@ -13,6 +13,10 @@ Activate whenever you add/edit/remove a log statement, span, metric, or trace-co
 
 Skip for local one-off `print` debugging in throwaway scripts or pure log-aggregation tooling that doesn't touch the app code path.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-observability.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Rules
 
 ### Instrumentation surface

@@ -9,6 +9,10 @@ description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char l
 
 Activate when writing or editing any `.py` file, scaffolding a Python service, modifying `pyproject.toml`, working with FastAPI / Flask / Django / SQLAlchemy / Pydantic / pytest, or running `mypy` / `ruff` / `bandit` / `pytest` / `uv`. Skip for non-Python code.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-python.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Environment — `uv` only

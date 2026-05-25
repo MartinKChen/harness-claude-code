@@ -15,6 +15,10 @@ This skill is the test-coverage pillar of the code gate — invoked on every tas
 - A user says "are the tests enough", "did we cover the acceptance criteria", "review test coverage on this diff".
 - Do NOT activate on the security gate — security has its own catalogue.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-test-coverage.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## References
 
 | Reference | When to read |

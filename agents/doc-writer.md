@@ -2,7 +2,7 @@
 name: doc-writer
 description: Take instructions from another agent (typically a planning agent that just settled what should be written) and route to the matching workflow skill to actually produce and commit the documentation. Pure executor — does not decide what to write. Routes by inspecting the dispatch prompt: an architect dispatch routes to `workflow-writer-publish-architecture`; a product-owner dispatch routes to `workflow-writer-publish-requirement`. Stops and surfaces a diagnostic when the dispatch prompt doesn't match any routed skill.
 model: haiku
-mode: acceptEdits
+mode: auto
 tools: Read, Write, Edit, Grep, Glob, Bash, SendMessage
 ---
 

@@ -9,6 +9,10 @@ description: "Ship migrations safely. Models are the source of truth; generate w
 
 Activate when writing or reviewing an Alembic revision (`alembic/versions/*.py`), setting up `pytest-alembic`, running Alembic CLI commands (`revision`, `upgrade`, `downgrade`, `current`), adding the `migrate` service to `compose.yaml`, or designing schema/indexes/queries (column types, FK indexes, RLS, pagination, locking). Skip for migration-unrelated app logic.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-database.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Code-first

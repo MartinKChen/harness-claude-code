@@ -12,6 +12,10 @@ Security guardrails for production-code authoring. This skill is a quiet referen
 - Writing or editing any production code that touches secrets, user input, queries, auth / sessions, output rendering, CSRF, rate limits, logging, errors, dependencies, outbound HTTP, webhooks, CORS, file uploads, or balance / quota / token mutations.
 - Do NOT activate for purely cosmetic changes (formatting, renaming an internal-only variable, comment edits) or conceptual questions that don't touch code.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-security.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Always do (no exceptions)
 
 - **Validate every external input with a schema at the boundary** (Zod / Pydantic). Bound string lengths, numeric ranges, enum values. Trust internal callers; never trust the network.

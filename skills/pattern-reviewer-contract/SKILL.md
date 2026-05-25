@@ -18,6 +18,10 @@ Do NOT activate when:
 - The diff has no API routes and no ORM model changes.
 - The project has no `docs/api-contract/` or `docs/data-model/` directory (no contracts to compare against — surface the absence to the user rather than inventing a verdict).
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-contract.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Resolving the contract files
 
 The contracts are project-level, not feature-scoped. For each entity the diff touches:

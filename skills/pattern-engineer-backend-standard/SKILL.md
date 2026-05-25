@@ -9,6 +9,10 @@ description: "Backend implementation bullets — what the contract doesn't say. 
 
 Activate whenever you write or edit backend code: HTTP routes/handlers, service modules, middleware, database queries, background workers, queue consumers, auth flows, webhook receivers, container entrypoints, env-var loading, logging bootstrap.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-backend-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Follow the contract — don't redecide
 
 Before implementing any endpoint, open the api contract at `docs/api-contract/<entity>.yaml`. Take from the contract — never invent — the **path** (including trailing-slash spelling), **HTTP verb**, **request body schema**, **response body schema**, **status codes per outcome**, **error envelope shape + `code` values**, **Idempotency-Key policy**, **rate-limit budget**, and **versioning notes**. If the contract is missing or ambiguous for an endpoint the task touches, halt and surface "no api contract for `<endpoint>`".

@@ -10,6 +10,10 @@ description: "Migration audit: code-first (models drive migration, not the rever
 - Reviewing a diff that touches `alembic/versions/*.py`, ORM models with new tables / columns / constraints, `compose.yaml` `migrate` service, or `pytest-alembic` test files.
 - Reviewing a diff that adds or substantially changes SQL queries, RLS policies, indexes, pagination, or worker-queue locking logic.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-database.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Iron rules
 
 - **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
