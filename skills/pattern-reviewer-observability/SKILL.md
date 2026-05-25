@@ -11,6 +11,10 @@ OpenTelemetry instrumentation audit catalogue and the architectural reference th
 
 Reviewing a diff that touches: instrumentation (logs, spans, metrics, trace-context propagation), OTel SDK bootstrap, Collector config, `OTEL_*` env vars, dashboards / alerts / SLOs that consume traces / metrics / logs.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-observability.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Iron rules
 
 - **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.

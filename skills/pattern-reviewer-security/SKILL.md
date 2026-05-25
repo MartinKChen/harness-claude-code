@@ -13,6 +13,10 @@ The canonical security-review catalogue. This skill is BOTH the catalogue of pat
 - A user says "security-review this PR", "audit secrets / cookies / SQL injection / CSP / rate limits", "scan the image for CVEs".
 - Do NOT activate for `type:e2e` — test code skips the security gate by design (fixtures contain placeholder secrets; flagging them is noise).
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-security.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## References
 
 | Reference | When to read |

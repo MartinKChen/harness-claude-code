@@ -10,6 +10,10 @@ description: "React-specific code-quality audit for a frontend diff: component d
 - The dispatched caller is reviewing a `type:frontend` task's production-code diff (React).
 - A user says "review the React components / hooks / forms / routing".
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-reviewer-frontend-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Iron rules
 
 ## Patterns to review

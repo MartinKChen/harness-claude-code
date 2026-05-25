@@ -56,6 +56,25 @@ Track as skipped (merge race) and continue. A later fire will re-pick.
 
 The slice issue closes automatically when the PR merges — the PR body opens with `Closes #<slice-#>` (added by `workflow-reviewer-review-slice` when it created the draft).
 
+**3.3 Capture per-slice cycle summary to memory (post-merge, fire-and-forget).**
+
+After a successful merge, write the slice's lifetime churn summary if the consuming project has opted into memory:
+
+```bash
+MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
+[ -d "$MEMORY_ROOT" ] || continue   # opt-in by directory presence; skip to next PR
+```
+
+Parse the slice number from the PR body's `Closes #<slice-#>` first line. Resolve the slice's task sub-issues. Compose the summary file at `$MEMORY_ROOT/signals/cycles/slice-<slice#>.json` per `memory-convention`:
+
+- `task_count` = number of closed sub-issues of the slice.
+- `task_review_cycles_sum` = sum of `total_cycles` read from each `$MEMORY_ROOT/signals/cycles/<task#>.json` (skip tasks with missing cycle files).
+- `slice_review_cycles` = `git log origin/main --grep="Refs #<slice-#>" --oneline | wc -l` (commits on main after squash will fold; instead, derive from the merged PR's commit history: `gh pr view <pr-#> --json commits --jq '[.commits[] | select(.messageHeadline + "\n" + .messageBody | contains("Refs #<slice-#>"))] | length'`).
+- `pr_review_cycles` = `gh pr view <pr-#> --json comments --jq '[.comments[] | select(.body | test("^# (Review|Code Review)"))] | length'`.
+
+Errors are swallowed; never let signal capture block PR processing or the next PR's merge.
+
 ### 4. Honor the cap and report
 
 `Merged <X>; skipped <Y>; <Z> remaining eligible.`
@@ -70,3 +89,4 @@ The slice issue closes automatically when the PR merges — the PR body opens wi
 - **No promotion to ready on a non-mergeable PR.** Only promote when step 3.1 confirms MERGEABLE + SUCCESS. Undo the promotion on a merge race.
 - **No PR-state changes on a skip.** A skipped PR ends the run in the exact state it started.
 - **Skip, don't fail, on benign outcomes.** Race, transient state, cap reached — track internally and continue.
+- **Per-slice signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue to the next PR. Memory is per-consuming-project opt-in (see `memory-convention`).

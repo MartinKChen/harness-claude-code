@@ -60,6 +60,8 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 | `workflow-engineer-fix-slice` | Dispatch prompt opens with `Fix the review feedback on GitHub slice issue #<n>` (no review label — locked by the orchestrator). |
 | `workflow-engineer-fix-pr` | Dispatch prompt opens with `Fix PR #<n>` and the PR carries `status:fix-in-progress`. |
 
+> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how a consuming project opts in to per-project overlays (`.claude/memory/patterns/<skill>.md`) and how engineer/reviewer dispatches write signal rows under `.claude/memory/signals/`. Signal-capture is wired into `workflow-engineer-fix-task` and `workflow-engineer-fix-slice` as their terminal steps. Overlay loading is wired into every pattern skill. Consolidation (`workflow-consolidate-memory`) is user-invoked, not part of this agent's dispatch flow.
+
 ## Execution Flow
 
 1. **Load skills.**

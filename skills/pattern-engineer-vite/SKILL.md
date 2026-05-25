@@ -9,6 +9,10 @@ description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SE
 
 Activate when editing `vite.config.ts` / `vite.config.js`, `vitest.config.ts`, scaffolding a Vite-based React app, switching between Vite and Next.js, configuring dev-server proxy / plugins / aliases, or touching `import.meta.env`. Skip for Next.js apps (use Next-specific patterns instead) or non-frontend code.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-vite.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Stack choice

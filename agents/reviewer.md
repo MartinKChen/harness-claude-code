@@ -58,6 +58,8 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 | `workflow-reviewer-review-task` | Dispatch prompt opens with `Review GitHub task issue #<n>` and the issue carries `level:task` + `kind:feature` + `status:in-progress` + `review:running`. |
 | `workflow-reviewer-review-slice` | Dispatch prompt opens with `Review GitHub slice issue #<n>` and the issue carries `level:slice` + `kind:feature` + `status:in-progress` + `review:running`. |
 
+> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how a consuming project opts in to per-project overlays (`.claude/memory/patterns/<skill>.md`) and how reviewer dispatches write signal rows under `.claude/memory/signals/`. Signal-capture is wired into `workflow-reviewer-review-task` (findings + time-to-green on pass) and `workflow-reviewer-review-slice` (findings + missed-catch detection by cross-ref with closed task reviews). Overlay loading is wired into every pattern skill. Consolidation (`workflow-consolidate-memory`) is user-invoked, not part of this agent's dispatch flow.
+
 ## Execution Flow
 
 1. **Load skills.**

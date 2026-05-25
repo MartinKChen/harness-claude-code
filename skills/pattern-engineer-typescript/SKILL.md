@@ -9,6 +9,10 @@ description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exact
 
 Activate when editing any `.ts` / `.tsx` file, `tsconfig.json`, type-only declarations, generics, or TypeScript-specific tooling (tsc, biome's TS rules). Applies to both frontend and Node/TS backend code. Skip for `.js` / `.jsx` files in JS-only projects.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-typescript.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### tsconfig — non-negotiable flags

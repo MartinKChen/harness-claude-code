@@ -74,6 +74,8 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `principle-engineer-tdd` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
 | `operation-git` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
+| `memory-convention` | Reference doc for the per-consuming-project agent memory system — where `.claude/memory/` lives, the schema of each signal file written by engineer/reviewer workflows, the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence. |
+| `workflow-consolidate-memory` | Distills accumulated `.claude/memory/signals/*.jsonl` into curated rule additions under `.claude/memory/patterns/<skill>.md` for the project. User-invoked; every overlay edit is gated on explicit user approval. |
 
 ### Engineer patterns
 
@@ -120,6 +122,22 @@ Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the 
 | `pattern-reviewer-database` | Migration audit — code-first, autogenerate review, `pytest-alembic` round-trip, post-state assertions by name, extension cleanup on downgrade, ORM ↔ migration name parity, both-direction constraint tests, no `conftest.py` pre-warming, `migrate` compose service. |
 | `pattern-reviewer-observability` | OTel audit — no vendor SDKs in `src/`, no `print` / `console.log`, span naming low-cardinality, semantic-convention attributes, errors via `record_exception`, bounded metric labels, structured JSON logs with trace correlation, batch processors, single SDK bootstrap, sampling lives in the Collector. |
 | `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for `type:backend` / `type:frontend` task reviews (skipped for `type:e2e`). Fourteen patterns; cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
+
+## Memory (per-consuming-project, opt-in)
+
+Engineer and reviewer dispatches are stateless by default — every review starts from the baseline pattern skills shipped here. Consuming projects can opt in to a per-project memory overlay that grows from their own review history without ever flowing back upstream into this plugin.
+
+**Opt-in:** `mkdir -p .claude/memory/{signals,patterns}` in the consuming project root.
+
+Once opted in:
+
+- Engineer / reviewer workflow skills append signal rows (reviewer findings, engineer fix actions, missed catches caught downstream, per-task / per-slice cycle summaries) under `.claude/memory/signals/` at the end of each dispatch — fire-and-forget, never blocking the terminal label flip.
+- Every pattern skill (`pattern-engineer-*`, `pattern-reviewer-*`) checks `.claude/memory/patterns/<skill-name>.md` at load time and applies its rules additively (sharpened triggers, project-specific carve-outs, new rules, BAD/GOOD examples worth pinning).
+- `/workflow-consolidate-memory` (on demand, or via `/loop`) reads accumulated signal, proposes overlay edits diff-by-diff, and writes the approved overlays. Every edit is user-confirmed; baseline pattern skills are never auto-modified.
+
+**Opt-out:** `rm -rf .claude/memory/` — all signal capture and overlay loading silently no-op.
+
+See [`skills/memory-convention/SKILL.md`](skills/memory-convention/SKILL.md) for the full contract (file schemas, overlay shape, precedence rules, severity floor, conflict surfacing).
 
 ## Hooks
 

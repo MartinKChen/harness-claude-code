@@ -9,6 +9,10 @@ description: "Containerized setups: every Dockerfile is multi-stage (`base`/`bui
 
 Activate when editing `Dockerfile`, `docker-compose.yaml` / `.yml`, `compose.yaml` / `.yml`, `.dockerignore`, or scaffolding container artifacts. Skip for Kubernetes / Helm / non-Docker runtimes without an explicit Docker tie-in.
 
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-engineer-container.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
 ## Patterns
 
 ### Dockerfile shape
