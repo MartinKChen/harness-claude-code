@@ -149,3 +149,4 @@ The skill / agent layout, lifecycle shape, and TDD discipline here draw on ideas
 - [obra/superpowers](https://github.com/obra/superpowers)
 - [affaan-m/everything-claude-code](https://github.com/affaan-m/everything-claude-code)
 - [mattpocock/skills](https://github.com/mattpocock/skills)
+- [ruvnet/ruflo](https://github.com/ruvnet/ruflo)
