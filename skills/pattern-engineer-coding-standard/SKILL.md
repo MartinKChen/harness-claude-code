@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-coding-standard
-description: "Language-agnostic coding standards. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; files 200–400 lines (800 cap); refactor and feature stay in separate commits; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
+description: "Language-agnostic coding standards. Contract is iron: implement the task's `Done criteria`, `docs/api-contract/*`, `docs/data-model/*`, and binding ADRs verbatim — halt on ambiguity, never invent. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; files 200–400 lines (800 cap); refactor and feature stay in separate commits; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
 ---
 
 # pattern-engineer-coding-standard
@@ -15,9 +15,30 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 ## Patterns
 
+### Contract is iron (non-negotiable)
+
+Published contracts decide shape; this skill (and language-specific patterns) decide how to express it. Code conforms to the contract, never the reverse.
+
+The **contract** = whichever of these apply to the change:
+
+- The task issue's `Done criteria` (acceptance) and `Scenarios` (behavior) — the unit-of-work spec.
+- `docs/api-contract/<entity>.yaml` for any API resource touched — path (including trailing-slash spelling), HTTP verb, request body schema, response body schema, status codes per outcome, error envelope shape + `code` values, `Idempotency-Key` policy, rate-limit budget, versioning notes.
+- `docs/data-model/<entity>.yaml` for any persistence entity touched — table / collection names, column types, constraints, indexes.
+- `docs/architecture-decision-record/<adr>.md` for any decision that constrains the change (referenced from the ADR index).
+
+Rules:
+
+- **Implement the contract verbatim.** Match names, shapes, status codes, types, and constraints exactly — including spelling, casing, and trailing-slash conventions.
+- **Halt and surface on ambiguity.** If the contract is missing for a touched endpoint / entity, or is internally contradictory, or contradicts the task body — stop and ask. Do not invent shape to keep moving.
+- **Disagreement is a question, not a code change.** If the contract looks wrong, open a question on the task. Never silently ship code that contradicts a published contract.
+- **Code may be stricter than the contract, never looser.** A contract-declared `max_length: 100` may be enforced more tightly only if the task asks for it; it may not be relaxed.
+- **No invented endpoints, fields, error codes, or columns.** If the contract doesn't declare it, it doesn't exist in this change.
+
+This rule overrides the priority hierarchy below. Readability / KISS / DRY / YAGNI choose between conforming implementations — they never license a deviation from the contract.
+
 ### Priority
 
-Apply in this order when principles conflict: **Readability → KISS → DRY → YAGNI**.
+Apply in this order when principles conflict (and only within contract-conforming options): **Readability → KISS → DRY → YAGNI**.
 
 - **Readability first.** Code is read more than written.
 - **KISS.** Simplest solution that works. No clever code when straightforward works.
