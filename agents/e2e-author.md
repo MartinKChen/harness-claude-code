@@ -33,6 +33,7 @@ Does NOT own: writing or modifying production code (backend or frontend) to make
 **Always on**
 
 - `operation-git`
+- `pattern-engineer-coding-standard`
 
 **Conditionally invoked — workflow**
 
