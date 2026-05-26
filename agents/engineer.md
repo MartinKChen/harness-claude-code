@@ -34,6 +34,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 **Always on**
 
+- `memory-convention`
 - `operation-git`
 - `operation-engineer-handoff`
 - `pattern-engineer-coding-standard`

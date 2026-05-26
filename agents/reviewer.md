@@ -31,6 +31,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 **Always on**
 
+- `memory-convention`
 - `operation-git`
 - `pattern-reviewer-test-coverage`
 
