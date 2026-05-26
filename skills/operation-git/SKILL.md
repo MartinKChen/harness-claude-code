@@ -5,7 +5,7 @@ description: "Single source of truth for every git / GitHub operation the workfl
 
 # operation-git
 
-Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-orchestrator-*`, `workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory.
+Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-task-finder-*`, `workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory.
 
 ## When to activate
 

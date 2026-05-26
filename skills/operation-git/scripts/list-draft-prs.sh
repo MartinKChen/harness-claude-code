@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # List open draft PRs filtered by labels, missing-labels, and check/conflict
-# status. Used by workflow-orchestrator-fix-pr and workflow-orchestrator-close-pr.
+# status. Used by workflow-task-finder-fix-pr and workflow-task-finder-close-pr.
 #
 # --status options:
 #   green     mergeable=MERGEABLE AND every check SUCCESS (default = no filter)

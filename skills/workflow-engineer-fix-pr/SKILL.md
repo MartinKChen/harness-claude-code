@@ -5,7 +5,7 @@ description: "Fix merge-blocking issues on one open draft slice PR. Determine th
 
 # workflow-engineer-fix-pr
 
-Address `{conflict, ci}` blockers on a single open draft slice PR dispatched by `workflow-orchestrator-fix-pr`. The orchestrator has added `status:fix-in-progress` as its lock; this skill determines the specific scope from the live PR state, fixes it, pushes, and removes the lock.
+Address `{conflict, ci}` blockers on a single open draft slice PR dispatched by the `/implement-feature` command's fix-pr stage. The dispatcher has added `status:fix-in-progress` as its lock; this skill determines the specific scope from the live PR state, fixes it, pushes, and removes the lock.
 
 When a CI failure is confirmed to require modifying an E2E spec rather than production code, STOP and flip the PR to `status:need-attention` — the user owns spec rewrites.
 
@@ -16,7 +16,7 @@ Activate this skill whenever:
 - The dispatch prompt opens with `Fix PR #<pr-#>` and the PR carries `status:fix-in-progress`.
 - The user types `/workflow-engineer-fix-pr`, or phrases like "fix the failing CI on PR #<n>", "resolve the merge conflict on this PR".
 
-Do NOT activate to merge a clean PR (use `workflow-orchestrator-close-pr`), to review code (reviewer's lane), or to fix issue-level reviewer findings (use `workflow-engineer-fix-task`).
+Do NOT activate to merge a clean PR (the `/implement-feature` command's close-pr stage handles that), to review code (reviewer's lane), or to fix issue-level reviewer findings (use `workflow-engineer-fix-task`).
 
 ## Workflow
 

@@ -5,7 +5,7 @@ description: "Run every E2E spec created or modified on a slice branch against t
 
 # workflow-engineer-e2e
 
-Validate the slice's E2E specs end-to-end before the slice goes into slice-level review. The orchestrator (`workflow-orchestrator-prepare-slice`) has added `e2e:running` as its lock; this skill runs the specs against a real stack via testcontainers, drives TDD on production code to green every failure, and only ever modifies production code — never the E2E specs themselves.
+Validate the slice's E2E specs end-to-end before the slice goes into slice-level review. The dispatcher (`/implement-feature` command's prepare-slice stage) has added `e2e:running` as its lock; this skill runs the specs against a real stack via testcontainers, drives TDD on production code to green every failure, and only ever modifies production code — never the E2E specs themselves.
 
 When a spec's failure cannot be addressed via production-code changes (a real test-case constraint — bad assertion, wrong selector, broken fixture identity), STOP and flip the slice to `status:need-attention`. The user / `e2e-author` owns spec corrections.
 

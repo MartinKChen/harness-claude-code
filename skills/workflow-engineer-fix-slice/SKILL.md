@@ -5,7 +5,7 @@ description: "Address reviewer findings on one slice issue, then re-validate the
 
 # workflow-engineer-fix-slice
 
-Slice-level counterpart of `workflow-engineer-fix-task`. Address reviewer findings on a single `level:slice` GitHub issue dispatched by `workflow-orchestrator-fix-slice`. The orchestrator has stripped `review:need-fix` as its lock; scope is read from the most recent reviewer comment on the slice issue (newer than the slice branch's last `Refs #<slice-#>` commit), with user directives in the same window overriding.
+Slice-level counterpart of `workflow-engineer-fix-task`. Address reviewer findings on a single `level:slice` GitHub issue dispatched by the `/implement-feature` command's fix-slice stage. The dispatcher has stripped `review:need-fix` as its lock; scope is read from the most recent reviewer comment on the slice issue (newer than the slice branch's last `Refs #<slice-#>` commit), with user directives in the same window overriding.
 
 After production-code fixes land, this skill **re-runs the slice's E2E specs via testcontainers** — slice-level reviewer findings often introduce regressions, and the slice can't go back into review until the E2E suite is still green. Never modify the E2E specs; bail to `status:need-attention` if a spec failure cannot be addressed via production-code changes.
 

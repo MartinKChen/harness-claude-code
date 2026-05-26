@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # List open slice issues whose ALL sub-issues are closed. Used by
-# workflow-orchestrator-prepare-slice to find slices that finished
+# workflow-task-finder-prepare-slice to find slices that finished
 # implementation and are ready for the slice-level review.
 #
 # Filters: open + level:slice + kind:feature + status:in-progress, minus any

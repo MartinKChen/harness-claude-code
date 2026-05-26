@@ -5,7 +5,7 @@ description: "Review a single task issue end-to-end. Read the issue body, set up
 
 # workflow-reviewer-review-task
 
-Review a single task issue dispatched by `workflow-orchestrator-review-task`. The orchestrator has already flipped `review:pending` → `review:running` as its lock. This skill is read-only on code, walks the reviewer's loaded pattern set, aggregates findings into one structured comment, and flips the gate to its terminal state. On pass, it also closes the task issue.
+Review a single task issue dispatched by the `/implement-feature` command's review-task stage. The dispatcher has already flipped `review:pending` → `review:running` as its lock. This skill is read-only on code, walks the reviewer's loaded pattern set, aggregates findings into one structured comment, and flips the gate to its terminal state. On pass, it also closes the task issue.
 
 The reviewer agent loads its own pattern set at kickoff (code quality, security, language-specific, contract conformance, container, observability, etc.) — pattern *selection* is the agent's responsibility. This skill owns the workflow primitives only.
 

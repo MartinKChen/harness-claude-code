@@ -9,7 +9,7 @@ The harness ships baseline pattern skills that every consuming project starts fr
 
 This skill defines the contract three other skill families honor:
 
-- **Workflow skills** (`workflow-engineer-*`, `workflow-reviewer-*`, `workflow-orchestrator-close-pr`) append rows to the signal store at the end of each dispatch.
+- **Workflow skills** (`workflow-engineer-*`, `workflow-reviewer-*`) and **the `/implement-feature` command** (in its close-pr stage) append rows to the signal store at the end of each dispatch / merge.
 - **Pattern skills** (`pattern-engineer-*`, `pattern-reviewer-*`) check for a per-skill overlay file at load time and treat its contents as additive guidance.
 - **`workflow-consolidate-memory`** reads the signal store and proposes edits to the overlay files.
 
@@ -93,7 +93,7 @@ Required keys: `ts`, `task`, `slice`, `finding_handle`, `pattern_skill`, `catego
 
 ### `signals/missed/<slice#>.jsonl` — caught-by-downstream
 
-Written by `workflow-reviewer-review-slice` and `workflow-orchestrator-close-pr` when they surface a finding that an earlier stage should have caught.
+Written by `workflow-reviewer-review-slice` and by the `/implement-feature` command's close-pr stage when they surface a finding that an earlier stage should have caught.
 
 ```json
 {"ts": "2026-05-25T16:22:09Z", "slice": 138, "parent_task": 142, "caught_by": "slice-review", "missed_by": "task-review", "pattern_skill": "pattern-reviewer-python", "category": "narrow-except", "location": "src/api/users.py:88", "title": "broad except Exception swallows DB error"}
@@ -124,7 +124,7 @@ Written by `workflow-reviewer-review-task` on the terminal `review:passed` flip.
 
 ### `signals/cycles/slice-<slice#>.json` — per-slice lifetime summary
 
-Written by `workflow-orchestrator-close-pr` when the slice PR merges. Captures the slice's churn from first task implementation to merge.
+Written by the `/implement-feature` command's close-pr stage when the slice PR merges. Captures the slice's churn from first task implementation to merge.
 
 ```json
 {

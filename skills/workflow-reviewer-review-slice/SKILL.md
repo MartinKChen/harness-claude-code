@@ -5,7 +5,7 @@ description: "Review a single slice issue end-to-end. Read the slice body and ev
 
 # workflow-reviewer-review-slice
 
-Slice-level counterpart of `workflow-reviewer-review-task`. The orchestrator has flipped `review:pending` → `review:running` on the slice as its lock. This skill reviews the slice as a whole (cross-task integration, contract coverage, seams between tasks), composes one structured `# Slice Review` comment, and flips the gate. On pass, it also opens the draft slice PR labeled `merge:manual` so `workflow-orchestrator-close-pr` (for `merge:auto`) or the user (for `merge:manual`) can take it from there.
+Slice-level counterpart of `workflow-reviewer-review-task`. The dispatcher (`/implement-feature` command's review-slice stage) has flipped `review:pending` → `review:running` on the slice as its lock. This skill reviews the slice as a whole (cross-task integration, contract coverage, seams between tasks), composes one structured `# Slice Review` comment, and flips the gate. On pass, it also opens the draft slice PR labeled `merge:manual` so the `/implement-feature` command's close-pr stage (for `merge:auto`) or the user (for `merge:manual`) can take it from there.
 
 The reviewer agent loads its own pattern set at kickoff. This skill owns workflow primitives only.
 
@@ -103,7 +103,7 @@ Title is the slice's title prefixed with the slice's conventional type/scope (e.
 
 Create the draft PR for the slice branch with the title, the body file, and `merge:manual` as a label. PR creation is idempotent — if a PR already exists for the branch (e.g. a previous run created it before failing later), use the existing PR number and do not attempt re-creation.
 
-Terminal action. Exit. The user (or `workflow-orchestrator-close-pr` if the user opts into `merge:auto` later) handles the merge.
+Terminal action. Exit. The user (or the `/implement-feature` command's close-pr stage if the user opts into `merge:auto` later) handles the merge.
 
 ### Blocked-run branch
 
@@ -118,7 +118,7 @@ If something prevents the review (worktree setup failed, slice branch missing, d
 - **The slice-level reviewer pattern set is owned by the agent.**
 - **GitHub is the single source of truth.** The verdict comment + terminal label + (on pass) draft PR are the only outputs.
 - **PR body's first line is `Closes #<slice-#>`.** GitHub auto-closes the slice when the PR merges; this skill never closes the slice directly.
-- **Draft PR gets `merge:manual` by default.** The user opts into `merge:auto` if they want `workflow-orchestrator-close-pr` to handle the merge automatically.
+- **Draft PR gets `merge:manual` by default.** The user opts into `merge:auto` if they want the `/implement-feature` command's close-pr stage to handle the merge automatically.
 - **PR creation is idempotent.** Re-running the skill after a partial failure doesn't create duplicate PRs.
 - **Refuse what the labels forbid.** Missing `review:running` → halt.
 - **On a blocked run, do NOT flip the label.** Leave `review:running` for human triage.
