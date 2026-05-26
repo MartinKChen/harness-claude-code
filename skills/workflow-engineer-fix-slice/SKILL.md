@@ -53,7 +53,15 @@ Pull every comment on the slice issue. Read **non-reviewer comments first** — 
 
 If no in-scope reviewer comment exists, halt and surface `fix dispatched but no reviewer comment newer than the last Refs #<slice-#> commit on the slice`.
 
-Triage findings: CRITICAL / HIGH / MEDIUM → must-fix. LOW / NIT → fix only when obviously small and in-scope.
+**Triage by the reviewer's fix-class, not by raw severity.** Every finding in the reviewer comment is tagged `[<class> · I:<x>/E:<y>] <title>` where `<class>` ∈ {`Fix now`, `Defer`, `Nit`}. The class is the reviewer's projection of (Impact, Effort/Risk) onto a single pickup decision (see `workflow-reviewer-review-slice` step 4 for the matrix). Pick up findings by class:
+
+- **Fix now** — MUST address in this cycle. Each gets its own RED → GREEN (step 5).
+- **Defer** — advisory; do NOT address this cycle. The reviewer explicitly traded impact against effort and decided it's not worth the churn now. Skipping it is the correct action. Slice-level Defer findings are common — cross-task integration fixes often demand multi-task or schema-level churn that doesn't earn its keep within a single slice cycle.
+- **Nit** — optional. Fix only when obviously trivial AND already in-scope.
+
+A user directive in the comment window can promote a `Defer` or `Nit` to must-fix, or demote a `Fix now` to skip — user directives always win. If no `Fix now` finding exists *and* no user directive promotes anything, halt and surface `fix dispatched but no Fix-now findings or promoting user directives in the in-scope window`.
+
+**Legacy reviewer comments** (severity-only, no `[<class> · I:<x>/E:<y>]` prefix): treat CRITICAL / HIGH as `Fix now`, MEDIUM as `Defer`, LOW as `Nit`.
 
 ### 4. Set up the slice worktree
 
@@ -99,7 +107,13 @@ MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
 [ -d "$MEMORY_ROOT" ] || exit 0
 ```
 
-For each finding in the in-scope reviewer comment from step 3, classify the engineer action (`fixed` / `rejected` / `modified` — see `memory-convention` for the contract; `rejected` requires a `note`).
+For each finding in the in-scope reviewer comment from step 3, classify the engineer action:
+
+- `fixed` — applied the suggested fix (or a semantically equivalent one). Expected for every `Fix now`.
+- `rejected` — pushed back; the rule does not apply here. `note` required.
+- `modified` — applied a different fix than suggested. `note` required.
+- `deferred` — finding's class was `Defer` and you correctly skipped it. No `note` required.
+- `skipped-nit` — finding's class was `Nit` and you chose not to fix it. No `note` required.
 
 Compute the cycle number from the slice branch's git history:
 
@@ -107,13 +121,13 @@ Compute the cycle number from the slice branch's git history:
 CYCLE_NUMBER=$(git log "origin/<slice-branch>" --grep="Refs #<slice-#>" --oneline | wc -l)
 ```
 
-Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/slice-<slice#>.jsonl` (append mode, create parent dir if missing; note the `slice-` prefix per the convention's naming rule). Row shape:
+Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/slice-<slice#>.jsonl` (append mode, create parent dir if missing; note the `slice-` prefix per the convention's naming rule). Row shape, extended with `fix_class`:
 
 ```json
-{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "engineer_action": "<fixed|rejected|modified>", "cycle_number": <n>, "note": "<empty for 'fixed'; required for 'rejected'/'modified'>"}
+{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "fix_class": "<Fix|Defer|Nit>", "engineer_action": "<fixed|rejected|modified|deferred|skipped-nit>", "cycle_number": <n>, "note": "<empty for 'fixed'/'deferred'/'skipped-nit'; required for 'rejected'/'modified'>"}
 ```
 
-Slice-level fixes set `task: null` because the finding is attributed to the slice, not a specific task. `pattern_skill` and `category` come from the matching row in `signals/reviews/slice-<slice#>.jsonl`.
+Slice-level fixes set `task: null` because the finding is attributed to the slice, not a specific task. `pattern_skill`, `category`, and `fix_class` come from the matching row in `signals/reviews/slice-<slice#>.jsonl`.
 
 Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`.
 
@@ -126,6 +140,7 @@ Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`
 - **Re-validate E2E after the reviewer-driven fix.** A reviewer finding addressed in isolation is half done — confirm the slice's E2E suite is still green before flipping `review:pending`.
 - **Bail loud on E2E test-case constraints.** `status:need-attention` + diagnostic comment, then exit.
 - **Every commit carries `Refs #<slice-#>`** (single trailer).
-- **Each must-fix finding starts with a failing test.** Propagate equivalents via `rg`.
+- **Pick up by the reviewer's `Fix now` class.** Effort is the reviewer's call — do not self-promote a `Defer` back to must-fix without a user directive.
+- **Each Fix-now finding starts with a failing test.** Propagate equivalents via `rg`.
 - **Truth is in Git and on the slice labels.**
 - **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a fix dispatch must never be blocked by it.

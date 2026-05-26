@@ -44,7 +44,13 @@ Rebase conflict → bail to `status:need-attention` (post a diagnostic comment o
 
 ### 4. Modify / add specs per the in-scope comment(s)
 
-The agent's loaded pattern set owns the E2E conventions; this skill owns only the workflow. Apply each must-fix finding from the latest reviewer comment, honoring any user directive in the same window. Smoke-run each touched spec; confirm it reaches a real assertion.
+The agent's loaded pattern set owns the E2E conventions; this skill owns only the workflow.
+
+**Pickup by the reviewer's fix-class.** Reviewer comments tag every finding `[<class> · I:<x>/E:<y>] <title>` where `<class>` ∈ {`Fix now`, `Defer`, `Nit`} (see `workflow-reviewer-review-task` step 5 for the Impact × Effort/Risk matrix). Apply only `Fix now` findings in this cycle; treat `Defer` as advisory and `Nit` as optional unless obviously trivial and already in-scope. User directives in the same comment window override the class — they always win.
+
+Legacy reviewer comments (severity-only, no `[<class>]` prefix): CRITICAL / HIGH → Fix now, MEDIUM → Defer, LOW → Nit.
+
+Smoke-run each touched spec; confirm it reaches a real assertion.
 
 ### 5. Commit with dual `Refs` trailers
 

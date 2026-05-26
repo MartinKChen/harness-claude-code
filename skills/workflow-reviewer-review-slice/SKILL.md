@@ -32,21 +32,43 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 ### 3. Walk the loaded slice-level reviewer pattern set
 
-The reviewer agent's patterns for the slice level cover cross-task integration, end-to-end contract conformance, seams (do the e2e specs cover all the task-level features?), and slice-wide coherence. Each pattern emits findings as `{title, severity, location, evidence, fix}` records.
+The reviewer agent's patterns for the slice level cover cross-task integration, end-to-end contract conformance, seams (do the e2e specs cover all the task-level features?), and slice-wide coherence. Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records.
 
-### 4. Compose the verdict comment and compute APPROVE / BLOCK
+### 4. Score each finding on Impact × Effort/Risk and derive its fix-now class
+
+Identical to the task-side scoring — see `workflow-reviewer-review-task` step 5 for the full Impact / Effort / fix-class definitions and the projection matrix. Summary:
+
+- **Impact** is derived mechanically from pattern severity: CRITICAL/HIGH → `I:H`, MEDIUM → `I:M`, LOW → `I:L`.
+- **Effort/Risk** is the reviewer's judgement of cost-to-fix-now: `E:L` (localized, ≲ 30 min), `E:M` (multi-file or new tests), `E:H` (design rework, schema/contract change, or unknown blast radius).
+- **Fix-class** is the deterministic projection: `I:H × any` and `I:M × E:L` → `Fix`; `I:M × E:M/H` and `I:L × E:M/H` → `Defer`; `I:L × E:L` → `Nit`; the rest are `Drop` and never reach the comment.
+
+Slice-level findings tend toward higher Effort (cross-task integration fixes often require touching multiple tasks' code or the slice's seams), so expect a heavier `Defer` column than at the task level.
+
+### 5. Compose the verdict comment and compute APPROVE / BLOCK
 
 Header: `# Slice Review` (single literal — downstream flows may grep for it).
 
-Compose: severity-count summary → every finding → verdict. Verdict logic same as task review (CRITICAL / HIGH → BLOCK; otherwise APPROVE).
+Compose, in order:
+
+1. **Summary matrix** — a 3×3 count of `(Impact, Effort)` cells over all reported findings (Drop excluded).
+2. **Disposition line** — `Fix now: <n>  •  Deferred: <n>  •  Nits: <n>`.
+3. **Findings** — each printed with the bracketed prefix `### [<class> · I:<x>/E:<y>] <title>` followed by `**Impact (<x>):**`, `**Effort/Risk (<y>):**`, `**Fix:**`, and the BAD / GOOD snippets per the pattern's template.
+4. **Verdict** line.
+
+Verdict is computed from Impact alone — Effort never blocks:
+
+- **APPROVE** — no `I:H` finding remains. Terminal label: `review:passed`.
+- **BLOCK** — at least one `I:H` finding. Terminal label: `review:need-fix`.
+
+The downstream engineer pickup uses the per-finding `Fix` / `Defer` / `Nit` class, not the verdict — see `workflow-engineer-fix-slice` step 3.
 
 Write to `/tmp/review-slice-<slice-#>.md`.
 
-### 5. Post the verdict + flip the gate label
+### 6. Post the verdict + flip the gate label
 
 Atomically post the verdict comment on the slice issue and flip the gate label — on APPROVE: remove `review:running`, add `review:passed`. On BLOCK: remove `review:running`, add `review:need-fix`.
 
-### 6. Capture signal to the consuming project's memory store
+### 7. Capture signal to the consuming project's memory store
 
 Per `memory-convention`, if `$MAIN_ROOT/.claude/memory/` exists in the consuming project, append the slice review's signal rows. If it does not exist, skip silently. Never block the terminal label flip or PR creation.
 
@@ -56,10 +78,10 @@ MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
 [ -d "$MEMORY_ROOT" ] || exit 0
 ```
 
-Write one JSON Lines row per finding to `$MEMORY_ROOT/signals/reviews/slice-<slice#>.jsonl` (append, create parent dir; note the `slice-` prefix). Row shape:
+Write one JSON Lines row per finding to `$MEMORY_ROOT/signals/reviews/slice-<slice#>.jsonl` (append, create parent dir; note the `slice-` prefix). The schema retains `severity` for backward compatibility and adds `impact`, `effort`, and `fix_class`:
 
 ```json
-{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "severity": "<CRITICAL|HIGH|MEDIUM|LOW>", "location": "<file:line>", "title": "<one-line>"}
+{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "severity": "<CRITICAL|HIGH|MEDIUM|LOW>", "impact": "<H|M|L>", "effort": "<L|M|H>", "fix_class": "<Fix|Defer|Nit>", "location": "<file:line>", "title": "<one-line>"}
 ```
 
 **Missed-catch detection.** For each finding emitted in this slice review, cross-reference the slice's closed task sub-issues' review rows in `$MEMORY_ROOT/signals/reviews/<task#>.jsonl`. If the slice finding's `location` falls inside a path that one of those tasks' commits touched (`git diff --name-only` against the task's `Refs #<task#>` commits) AND no row in that task's review file shares `(pattern_skill, category)`, the task review missed it. Append one row to `$MEMORY_ROOT/signals/missed/<slice#>.jsonl`:
@@ -70,7 +92,7 @@ Write one JSON Lines row per finding to `$MEMORY_ROOT/signals/reviews/slice-<sli
 
 These rows are the primary input that `workflow-consolidate-memory` uses to propose **new rules** for the task-level reviewer's pattern set.
 
-### 7. On APPROVE, create the draft PR
+### 8. On APPROVE, create the draft PR
 
 Compose the PR body from the project's PR-body template:
 
@@ -91,7 +113,8 @@ If something prevents the review (worktree setup failed, slice branch missing, d
 
 - **Read-only on code.** No edits, no pushes, no `git reset --hard` outside the worktree setup. Writes are: one verdict comment, one terminal label flip, on pass one draft-PR create.
 - **One review, one comment, one terminal label, one draft PR.** Single-shot. No loop, no re-validation.
-- **APPROVE / BLOCK is computed here from aggregated findings.**
+- **Every finding carries `(I:<x>, E:<y>, <class>)`.** Impact is derived mechanically from pattern severity; Effort is the reviewer's judgement; class is the matrix projection onto Fix / Defer / Nit / Drop. `Drop` findings never reach the comment.
+- **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE. The per-finding `Fix` / `Defer` / `Nit` class drives the *engineer's* pickup, not the verdict.
 - **The slice-level reviewer pattern set is owned by the agent.**
 - **GitHub is the single source of truth.** The verdict comment + terminal label + (on pass) draft PR are the only outputs.
 - **PR body's first line is `Closes #<slice-#>`.** GitHub auto-closes the slice when the PR merges; this skill never closes the slice directly.

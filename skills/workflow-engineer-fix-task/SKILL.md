@@ -53,7 +53,15 @@ Pull every comment on the task issue. Read **non-reviewer comments first** — u
 
 If no in-scope reviewer comment exists, halt and surface `fix dispatched but no reviewer comment newer than the last Refs #<task-#> commit on the task`.
 
-Triage findings: CRITICAL / HIGH / MEDIUM → must-fix. LOW / NIT → fix only when obviously small and in-scope.
+**Triage by the reviewer's fix-class, not by raw severity.** Every finding in the reviewer comment is tagged `[<class> · I:<x>/E:<y>] <title>` where `<class>` ∈ {`Fix now`, `Defer`, `Nit`}. The class is the reviewer's projection of (Impact, Effort/Risk) onto a single pickup decision (see `workflow-reviewer-review-task` step 5 for the matrix). Pick up findings by class:
+
+- **Fix now** — MUST address in this cycle. Each gets its own RED → GREEN (step 5).
+- **Defer** — advisory; do NOT address this cycle. The reviewer explicitly traded impact against effort and decided it's not worth the churn now. Skipping it is the correct action.
+- **Nit** — optional. Fix only when obviously trivial AND already in-scope (e.g. you're editing the same line for a `Fix now`). When in doubt, skip.
+
+A user directive in the comment window can promote a `Defer` or `Nit` to must-fix, or demote a `Fix now` to skip — user directives always win. If no `Fix now` finding exists *and* no user directive promotes anything, halt and surface `fix dispatched but no Fix-now findings or promoting user directives in the in-scope window`.
+
+**Legacy reviewer comments** that pre-date the 2-axis model (severity-only, no `[<class> · I:<x>/E:<y>]` prefix): treat CRITICAL / HIGH as `Fix now`, MEDIUM as `Defer`, LOW as `Nit`. This fallback exists only for fix dispatches against tasks whose review was posted before the 2-axis rollout; do not invent classes for the current model.
 
 ### 4. Set up the slice worktree
 
@@ -99,9 +107,11 @@ MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
 
 For each finding listed in the in-scope reviewer comment from step 3, classify your action:
 
-- `fixed` — you applied the suggested fix (or a semantically equivalent one).
+- `fixed` — you applied the suggested fix (or a semantically equivalent one). Expected for every `Fix now` finding.
 - `rejected` — you pushed back because the rule does not apply here / the finding is a false positive. The `note` must explain why; this row is the primary input that consolidation uses to propose project-specific carve-outs.
 - `modified` — you applied a different fix than suggested. The `note` must explain the difference.
+- `deferred` — the finding's class was `Defer` and you correctly skipped it. No `note` required (the reviewer's rationale lives in the comment itself; this row is purely for consolidation to track defer rates per pattern/category).
+- `skipped-nit` — the finding's class was `Nit` and you chose not to fix it. No `note` required.
 
 Compute the cycle number from the slice branch's git history:
 
@@ -109,13 +119,13 @@ Compute the cycle number from the slice branch's git history:
 CYCLE_NUMBER=$(git log "origin/<slice-branch>" --grep="Refs #<task-#>" --oneline | wc -l)
 ```
 
-Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/<task#>.jsonl` (append mode, create parent dir if missing). Row shape per `memory-convention`:
+Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/<task#>.jsonl` (append mode, create parent dir if missing). Row shape per `memory-convention`, extended with `fix_class` so consolidation can compute per-class metrics (defer rate, nit rate):
 
 ```json
-{"ts": "<iso8601>", "task": <n>, "slice": <parent#>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "engineer_action": "<fixed|rejected|modified>", "cycle_number": <n>, "note": "<empty for 'fixed'; required for 'rejected'/'modified'>"}
+{"ts": "<iso8601>", "task": <n>, "slice": <parent#>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "fix_class": "<Fix|Defer|Nit>", "engineer_action": "<fixed|rejected|modified|deferred|skipped-nit>", "cycle_number": <n>, "note": "<empty for 'fixed'/'deferred'/'skipped-nit'; required for 'rejected'/'modified'>"}
 ```
 
-`pattern_skill` and `category` are copied from the matching row in `signals/reviews/<task#>.jsonl` (join on `finding_handle`). If no review-side row exists for this finding (memory was opted-in after the review was posted), copy from the reviewer comment's metadata, or fall back to `pattern_skill="unknown"` and a category derived from the finding title.
+`pattern_skill`, `category`, and `fix_class` are copied from the matching row in `signals/reviews/<task#>.jsonl` (join on `finding_handle`). If no review-side row exists for this finding (memory was opted-in after the review was posted), copy from the reviewer comment's `[<class> · I:<x>/E:<y>]` prefix, or fall back to `pattern_skill="unknown"`, a category derived from the title, and `fix_class="Fix"` for legacy CRITICAL/HIGH/MEDIUM rows.
 
 Repeated-fix detection is **derived by consolidation**, not emitted here — `workflow-consolidate-memory` scans all `signals/fixes/*.jsonl` to find `pattern_skill + category` combinations whose `engineer_action="fixed"` count crosses ≥ 3.
 
@@ -126,9 +136,10 @@ Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`.
 - **User directives in the comment window override everything else.** Read non-reviewer comments first.
 - **Scope from the comment window, not from labels.** The orchestrator's lock stripped the gate label.
 - **Skip previously-addressed rounds.** Only consider reviewer comments created strictly after the last `Refs #<task-#>` commit.
-- **Treat each finding as a class, not an instance — propagate via `rg`.** Each equivalent site gets its own RED→GREEN. List the additional sites in the commit body.
+- **Pick up by the reviewer's `Fix now` class — Effort is the reviewer's call, not yours.** If the reviewer marked a finding `Defer` because it has high Effort/Risk, do not promote it back to must-fix on your own. The class is the contract; a user directive in the comment window is the only override.
+- **Treat each Fix-now finding as a class, not an instance — propagate via `rg`.** Each equivalent site gets its own RED→GREEN. List the additional sites in the commit body.
 - **Every commit carries BOTH `Refs` trailers.**
-- **Each must-fix finding starts with a failing test.**
+- **Each Fix-now finding starts with a failing test.**
 - **Truth is in Git and on the task labels.**
 - **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a fix dispatch must never be blocked by it.
 - **A `rejected` action must carry a `note`.** Consolidation treats `rejected` rows as the primary signal that the baseline rule does not apply in this project — an empty note makes that signal useless.
