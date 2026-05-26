@@ -27,12 +27,15 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 - Scaffold first, test second. Missing structure (manifests, runner config, framework entry points, container artifacts) lands in discrete `chore(scaffold): <what>` (or `build: <what>` for tooling/dep changes) commits BEFORE the first RED.
 - Per-slice container isolation: slug-tag built images and slug-name the compose project from the slice branch; if a host port is in use, override the port via env vars on the same `docker compose` command — never edit committed `Dockerfile` / `docker-compose.yaml` to dodge a conflict.
 - Stop and report when the acceptance criteria / fix scope are met. Do not bundle unrequested improvements; never skip hooks; never force-push.
+- **Pick up before pressing on.** At kickoff, run the **Incoming pickup** procedure from `operation-engineer-handoff`. If a handoff doc exists for this unit of work, the previous agent's recorded stop point is the starting point — don't redo committed work, don't second-guess recorded decisions.
+- **Hand off before you starve.** If the conversation context approaches ~100K tokens at any point during the workflow, invoke `operation-engineer-handoff`'s **Outgoing handoff** procedure: finish the current TDD step, commit + push, write the handoff doc, exit. Running out of context mid-edit costs more than the handoff round-trip.
 
 ## Available Skills
 
 **Always on**
 
 - `operation-git`
+- `operation-engineer-handoff`
 - `pattern-engineer-coding-standard`
 - `pattern-engineer-observability`
 - `pattern-engineer-security`
@@ -74,3 +77,5 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
    - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
 3. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
+   - **After the workflow's worktree-setup step, before any implementation step**, invoke `operation-engineer-handoff`'s **Incoming pickup** procedure. If a handoff doc exists, the skill defines how to read it, verify the WIP commits, and resume from its **Where to pick up next**; if not, proceed normally.
+   - **Throughout the workflow**, monitor the conversation budget. When approaching ~100K tokens, invoke `operation-engineer-handoff`'s **Outgoing handoff** procedure (finish the current TDD step, commit + push, write the handoff doc, exit) instead of pressing on.

@@ -1,0 +1,80 @@
+---
+name: pattern-e2e-coding-standard
+description: "E2E coding standard for data seeding. Contract is iron: when seeding via API (Playwright `request` fixture, raw HTTP), respect `docs/api-contract/<entity>.yaml` — path, verb, status codes, request/response body. When seeding directly to the database (SQL fixtures, ORM helpers, factory scripts), respect `docs/data-model/<entity>.yaml` — table name, column types, constraints, defaults, FKs. Halt on missing/contradictory contracts; never invent shape. Activate on any E2E spec / fixture / seed helper."
+---
+
+# pattern-e2e-coding-standard
+
+## When to activate
+
+Activate when authoring, extending, or fixing Playwright E2E specs and their supporting fixtures / seed helpers. Specifically:
+
+- Editing `.spec.ts` / `.spec.tsx` files under the E2E test root.
+- Editing any fixture, factory, or seed helper used by E2E specs (e.g. `playwright/fixtures/*`, `playwright/seed/*`, `e2e/support/*`).
+- Designing the data shape a test will arrive at — whether via the UI, via the Playwright `request` fixture, or via direct DB seeding.
+
+Skip for production code (engineer's lane) and for backend / frontend unit / integration tests inside the service packages.
+
+## Project memory overlay
+
+After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern-e2e-coding-standard.md` in the consuming project (resolve `MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"`). If present, load it as an **additive overlay** to the rules below; if absent, skip silently. See `memory-convention` for the full contract (additivity, severity floor, conflict surfacing).
+
+## Patterns
+
+### Contract is iron (non-negotiable)
+
+Published contracts decide the shape of seeded data. The E2E spec conforms to the contract, never the reverse. The **contract** = whichever of these apply to the seeding path:
+
+- **API seeding** — when the spec (or its fixture) creates state by calling backend HTTP endpoints (Playwright's `request` fixture, raw `fetch`, etc.): `docs/api-contract/<entity>.yaml` is binding. Path (including trailing-slash spelling), HTTP verb, request body schema (field names, casing, types, required vs optional, enums), response body schema, expected status codes per outcome, error envelope shape + `code` values, `Idempotency-Key` policy, and rate-limit budget all apply exactly as published.
+- **Direct DB seeding** — when the spec (or its fixture) creates state by writing rows directly to the database (SQL inserts, ORM helpers, factory scripts, fixtures loaded via `psql` / `pg-promise` / `prisma db seed` / `alembic` data migrations): `docs/data-model/<entity>.yaml` is binding. Table / collection names, column names + types, NOT NULL / UNIQUE / CHECK constraints, default values, foreign keys, and required indexes all apply exactly as published.
+
+Rules:
+
+- **Seed against the contract verbatim.** Match names, shapes, status codes, types, and constraints exactly — including spelling, casing, and trailing-slash conventions. If the API contract says `POST /api/v1/groups/` returns `201` with `{ id, name, created_at }`, the seed helper sends `POST /api/v1/groups/` (with the trailing slash) and reads `id`/`name`/`created_at` from the response — not `groupId`, not `groupName`, not `createdOn`.
+- **Halt and surface on ambiguity.** If the contract is missing for the entity / endpoint the spec needs to seed, or is internally contradictory, or contradicts what the production code actually does — stop and surface a diagnostic. Do not guess a payload shape to keep moving.
+- **Disagreement is a question, not an invented payload.** If the contract looks wrong for the test scenario, open a question on the task. Never silently send a payload that contradicts the published contract just to make the test pass.
+- **Seeded data may be stricter than the contract, never looser.** A contract-declared `max_length: 100` field may be seeded with shorter values; it may not be seeded with longer ones, even if production code happens to accept it today.
+- **No invented endpoints, fields, error codes, or columns.** If the contract doesn't declare it, the spec does not seed it.
+- **Pick the right contract for the seeding path.** API-level seeding reads `docs/api-contract/`; DB-level seeding reads `docs/data-model/`. Cross-checking is fine (and encouraged when the entity touches both), but the binding contract is the one that matches the wire the seed actually crosses.
+
+This rule overrides any local convention the spec might otherwise inherit. Specs conform to the published contract, never the reverse.
+
+### Pick the seeding path deliberately
+
+Default order of preference for setting up E2E state, from most realistic to most invasive:
+
+1. **Drive through the UI** — same critical path the user walks. Highest fidelity; use whenever the precondition is one of the test's own user-facing prerequisites (e.g. "log in", "create the first group").
+2. **API seeding via the Playwright `request` fixture** — when UI setup would balloon test length without adding coverage value (e.g. seeding 30 historical records before testing pagination). Honors backend validation, authz, side-effects, and the API contract end-to-end.
+3. **Direct DB seeding** — last resort, only when the API genuinely cannot express the precondition (e.g. backfilling a column added in a migration, simulating a partial / corrupted state that the API refuses to produce). Bypasses backend invariants, so use sparingly and always document why API seeding wasn't sufficient in a one-line comment on the seed call.
+
+Never mix: a single precondition is seeded through exactly one path. Don't `INSERT` a row and then `PATCH` it via the API to "round out the state" — pick one and stick to it.
+
+### API seeding — patterns
+
+- Read `docs/api-contract/<entity>.yaml` BEFORE writing the seed call. Identify: path, verb, required request fields, response shape, success status code, the auth header it requires, and any `Idempotency-Key` requirement.
+- Use Playwright's `request` fixture (or `request.newContext()` for a fresh context). Never hand-roll `fetch` inside a spec when the fixture is available — the fixture honors base URL config and cookie state.
+- Assert the response status matches the contract's success code before reading the body. A `request.post(...)` that returns `500` should fail the seed loudly, not be ignored.
+- Read response IDs / timestamps from the response body; don't guess them. A test that hard-codes `id: 1` because "the DB is empty" will break the moment another test runs first.
+- Mirror the contract's casing exactly in the request body (snake_case vs camelCase is contract-defined, not stylistic).
+- When the contract requires `Idempotency-Key`, generate a fresh UUID per seed call. Reusing one across retries silently no-ops the second call.
+
+### Direct DB seeding — patterns
+
+- Read `docs/data-model/<entity>.yaml` BEFORE writing the insert. Identify: table name, every NOT NULL column (must be set explicitly), default values (skip in the insert to use the default), FK columns (must reference an existing row), and any UNIQUE / CHECK constraint that the seed values must satisfy.
+- Insert in FK dependency order: parents first, children second. If `posts.user_id` references `users.id`, seed the user before the post.
+- Use the canonical client / helper the project ships (e.g. a `pg-promise` connection, a SQLAlchemy session, a Prisma `prisma.user.create({...})` call). Don't open ad-hoc connections from the spec — re-use the configured client so connection strings and transactions stay consistent.
+- Wrap related inserts in a transaction so a partial failure rolls back cleanly. A spec that leaves a half-seeded `user` row makes downstream tests non-deterministic.
+- Set timestamps explicitly when the data model declares them NOT NULL with no default. Don't rely on DB-side `now()` defaults if the model says the column is not nullable AND has no default — that's a contract bug to surface, not to paper over.
+- Always isolate seeded data per test (unique slugs / emails / IDs) so concurrent specs don't collide on UNIQUE constraints. A test that hard-codes `email: "test@example.com"` will fight every other test that does the same.
+- Clean up after the spec (transaction rollback in a fixture teardown, or explicit delete) unless the harness already truncates between tests.
+
+### Anti-patterns (flag and fix)
+
+- **Invented payload fields.** Sending `{ "user_name": ... }` because it "looks right" when the contract says `{ "username": ... }`. → Read the contract; halt if missing.
+- **Invented columns / tables.** `INSERT INTO accounts ...` when the data model only declares `users`. → Read the data model; halt if missing.
+- **Hard-coded IDs.** Asserting on `id: 1` instead of capturing it from the API response or the insert's returning clause.
+- **Bypassing the API to dodge validation.** Direct DB insert with `status = 'verified'` because the API requires an email round-trip — only acceptable if explicitly documented and necessary; otherwise honor the API flow.
+- **Shared mutable seed data across tests.** Hard-coded email / slug / name that two specs both insert. → Use per-test unique identifiers.
+- **Silent failures.** Seed call returns 4xx / 5xx and the spec continues. → Always assert the status matches the contract.
+- **Mixing seed paths for one precondition.** Half via API, half via DB. → Pick one path per precondition.
+- **No FK / constraint awareness.** Inserting children before parents, or omitting NOT NULL columns. → Read the data model; insert in dependency order.

@@ -34,6 +34,7 @@ Does NOT own: writing or modifying production code (backend or frontend) to make
 
 - `operation-git`
 - `pattern-engineer-coding-standard`
+- `pattern-e2e-coding-standard`
 
 **Conditionally invoked — workflow**
 
