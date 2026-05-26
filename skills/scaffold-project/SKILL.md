@@ -172,18 +172,21 @@ Invoke the picked design skill via the `Skill` tool and let it drive the convers
 
 If the design skill does not produce a `docs/design-system/tokens.md` (or equivalent token source), surface that the design output is missing and jump to step 13 — do not invent tokens.
 
-### 12. Seed design tokens into the frontend → commit
+### 12. Seed design tokens into the frontend + record design taste in CLAUDE.md → commit
 
-Once `docs/design-system/tokens.md` exists, translate its tokens into CSS custom properties consumable by the frontend, then wire them into the entry:
+Once `docs/design-system/tokens.md` exists, do all three of:
 
 1. Write `frontend/src/styles/tokens.css` with one `:root { --<token-name>: <value>; ... }` block. Each property's name MUST match the token name in `tokens.md` (e.g. `color/brand/500` → `--color-brand-500`). Every color, font, spacing, radius, shadow, and motion token in `tokens.md` MUST appear here.
 2. Add `import './styles/tokens.css';` to `frontend/src/main.tsx` (or the entry file the chosen frontend stack uses) so the tokens are loaded at boot. Do not author components, pages, or further styling — the seam stops at "tokens are reachable from production code".
+3. Update `CLAUDE.md` at the repo root with a `## Design taste` section so future agents working on the frontend inherit the same visual intent without re-reading every artifact. Append the section if `CLAUDE.md` already exists; create the file with just this section if it does not. The section MUST contain:
+   - **A verbose, evocative description of the design taste** — multiple sentences (not bullets, not a single tagline) that name the style family (e.g. "minimalist with a hint of brutalism", "glassmorphism over a dark canvas", "warm editorial with generous whitespace"), the emotional register (calm / energetic / serious / playful), the color philosophy (dominant hues, accent role, contrast posture), the typography character (display vs. body voice, weight contrast, scale rhythm), the spatial rhythm (density, breathing room, alignment posture), the motion philosophy (snappy / soft / restrained / expressive), and the interaction principles (affordance style, focus treatment, feedback timing). Draw the wording verbatim where possible from `docs/design-system/overview.md`; do NOT summarize so tightly that the taste becomes generic. A reader who has never opened the design-system docs should be able to feel the product's voice from this section alone.
+   - **Reference paths** pointing to where the canonical design system lives so agents know where to deepen their understanding: `docs/design-system/overview.md` (taste + style rationale), `docs/design-system/tokens.md` (source-of-truth tokens), `docs/design-system/components.md` (component patterns) and `docs/design-system/accessibility.md` (a11y posture) if present, plus `frontend/src/styles/tokens.css` (the CSS custom properties the tokens compile to). Each reference MUST be a backticked relative path on its own line under a `### References` sub-heading so it's machine-greppable.
 
-Commit:
+Commit all three together:
 
 ```bash
-git add frontend/src/styles/tokens.css frontend/src/main.tsx
-git commit -m "chore(scaffold): seed design tokens into frontend"
+git add frontend/src/styles/tokens.css frontend/src/main.tsx CLAUDE.md
+git commit -m "chore(scaffold): seed design tokens into frontend and record design taste in CLAUDE.md"
 ```
 
 ### 13. Push branch and open the draft PR
@@ -192,7 +195,7 @@ git commit -m "chore(scaffold): seed design tokens into frontend"
 git push -u origin chore/scaffold-project
 ```
 
-Then open the PR as a **draft** with `gh pr create --draft`, so the CI workflow scaffolded at step 9 fires on draft open and the user gets first-commit signal before the PR flips to ready. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke, CI pipeline), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and — if step 12 ran — the design-system entry-point files (`docs/design-system/overview.md`, `frontend/src/styles/tokens.css`).
+Then open the PR as a **draft** with `gh pr create --draft`, so the CI workflow scaffolded at step 9 fires on draft open and the user gets first-commit signal before the PR flips to ready. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke, CI pipeline), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and — if step 12 ran — the design-system entry-point files (`docs/design-system/overview.md`, `frontend/src/styles/tokens.css`) plus the `## Design taste` section appended to `CLAUDE.md`.
 
 ```bash
 gh pr create \
@@ -205,7 +208,7 @@ gh pr create \
 - Compose services: <list>
 - E2E: Playwright smoke spec
 - CI: `.github/workflows/pr-validation.yml` (per-stack checks → docker build → e2e)
-- Design system: <yes — `docs/design-system/` + seeded `frontend/src/styles/tokens.css` | not included>
+- Design system: <yes — `docs/design-system/` + seeded `frontend/src/styles/tokens.css` + `## Design taste` section appended to `CLAUDE.md` | not included>
 
 ## Boot check
 Locally verified `docker compose up` reaches 200 on backend framework-metadata and frontend `/`.
@@ -230,5 +233,5 @@ Report the PR URL and stop.
 - **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens` (if any).** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.
 - **CI is scaffold-time validation only.** The pipeline produced at step 9 runs lint/type/format/test, builds images locally, and runs e2e against compose. It MUST NOT push images, assume an OIDC role, reference a registry, or deploy. Deploy pipelines, environment gates, and tag-driven promotion are the `sre` agent's lane — surface and STOP if the user asks scaffold to add any of those.
-- **The design-system step is opt-in.** Always ask; never default to "yes" or "no". If the user opts in, the dispatched teammate owns the interview and the design artifacts — this skill only seeds the resulting tokens into the frontend afterwards.
+- **The design-system step is opt-in.** Always ask; never default to "yes" or "no". If the user opts in, the dispatched teammate owns the interview and the design artifacts — this skill only seeds the resulting tokens into the frontend afterwards and records a verbose `## Design taste` section plus reference paths into `CLAUDE.md` so future agents inherit the visual intent. The taste section must be evocative, not a one-liner; the reference paths must be machine-greppable backticked relative paths.
 - **The skill ends with a draft PR.** Push the branch and open a draft PR via `gh pr create --draft` so the scaffold-time CI fires on first commit. Do not merge; do not flip the PR to ready; do not switch back to `main`; do not delete the branch.
