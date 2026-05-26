@@ -1,6 +1,6 @@
 ---
 name: create-issues
-description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues, each split into sequential typed task sub-issues (e2e → backend → frontend). Always invoked with a `<feature-name>` pointing at `docs/product-requirement-document/<feature-name>/`; no free-form mode. Verifies the merged `feature-lockin` PR on the milestone, reads the PRD pair, `docs/critical-path/` (drives E2E user flows), `docs/GLOSSARY.md`, and `docs/ADRs/`; quizzes the user on a slice + task breakdown; on approval opens each slice issue + `feature/<slice#>-<intent>` branch via `gh issue develop` plus typed task sub-issues with 1-up `Blocked by` chains, grouped under the feature milestone. Activate on 'create issues for <feature-name>', 'turn this PRD into issues', 'slice this feature', 'open issues for <feature-name>'; verbs (create, scaffold, slice, break down, decompose) + nouns (issue, ticket, slice, backlog). Do NOT activate without a `<feature-name>`, for one-off issues, or PRD authoring."
+description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues with typed task sub-issues (e2e → backend → frontend). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, and data models; quizzes user; on approval opens slice issues + `feature/<slice#>-<intent>` branches and task sub-issues with 1-up `Blocked by` chains. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
 ---
 
 # create-issues
@@ -68,7 +68,25 @@ Read every source listed below in full — partial reads will skew the slice bre
 
 - **Glossary (mandatory if present).** Read `docs/GLOSSARY.md` (and `knowledges/GLOSSARY.md` if it exists). Slice titles and issue bodies MUST use glossary vocabulary verbatim — no synonyms, no rephrasings.
 
-- **ADRs (when relevant).** Scan `docs/ADRs/` and read any ADR that touches the affected areas. Respect every ADR decision; if a slice would contradict one, halt and surface it before quizzing the user.
+- **ADRs (via the index).** Always read `docs/architecture-decision-record/README.md` first — it is the index of accepted decisions. Then open an individual ADR file (`docs/architecture-decision-record/ADR-NNNN.md`) only when its index entry tells you it constrains the surface this feature touches. Do not bulk-load every ADR — it pollutes context. Respect every ADR decision; if a slice would contradict one, halt and surface it before quizzing the user.
+
+- **Architecture diagrams (when present).** List `docs/architecture/` and read whichever C4-PlantUML diagrams (`c4-context.puml`, `c4-container.puml`, `c4-component-<container>.puml`) cover the containers / components this feature changes. They pin down which deployable units and which internal modules exist — slice and task boundaries must respect that shape.
+
+  ```bash
+  ls docs/architecture/ 2>/dev/null
+  ```
+
+- **API contracts (when present).** List `docs/api-contract/` and read every per-resource file (`docs/api-contract/<entity>.yaml`) and `_shared.yaml` whose resource is touched by this feature. These OpenAPI 3.1 contracts are the binding source of truth for path, verb, status codes, request / response shape, error envelope, idempotency, and rate-limit policy — each `backend` task delivers an endpoint that already exists in (or must be added to) one of these files. The contract is iron; if a slice would require contradicting a contract entry, halt and surface it.
+
+  ```bash
+  ls docs/api-contract/ 2>/dev/null
+  ```
+
+- **Data models (when present).** List `docs/data-model/` and read every per-entity file (`docs/data-model/<entity>.yaml`) whose entity is touched by this feature. These ODCS v3.1 contracts pin down table names, column types, constraints, defaults, FKs, and indexes — the data-model change that rides along with the first endpoint introducing an entity MUST match the contract verbatim. The contract is iron; if a slice would require contradicting an entity, halt and surface it.
+
+  ```bash
+  ls docs/data-model/ 2>/dev/null
+  ```
 
 ### 3. Draft the slice + task breakdown
 
