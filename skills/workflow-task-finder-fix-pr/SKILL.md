@@ -17,34 +17,51 @@ Invoked by the `task-finder` agent during Stage 8 discovery. Not user-invocable.
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. Run the prescribed command
 
-### 2. List broken draft PRs
+From the repo root, with `<feature-name>` substituted in:
 
-List draft PRs in milestone `<feature-name>` whose `--status broken` predicate matches (mergeability `CONFLICTING` OR any check rollup state of FAILURE / CANCELLED / TIMED_OUT), excluding any PR already carrying `status:fix-in-progress` or `status:need-attention`.
-
-### 3. Apply the defense-in-depth re-check
-
-For each candidate, re-pull live state and confirm both signals are terminal AND at least one is still a blocker:
-
-- `mergeable == "UNKNOWN"` OR `checks == "PENDING"` → drop (still moving; a later snapshot re-checks).
-- `mergeable == "MERGEABLE"` AND `checks == "SUCCESS"` → drop (clean now; close-pr discovery will pick it up).
-- Otherwise → blocker present, keep the candidate.
-
-### 4. Emit the eligible list
-
-```
-- PR #<pr-#> | "<pr-title>"
+```sh
+bash skills/operation-git/scripts/list-draft-prs.sh \
+    --status broken \
+    --missing-label status:fix-in-progress \
+    --missing-label status:need-attention \
+    --milestone "<feature-name>"
 ```
 
-Empty result → emit the single line `- (none)`.
+`list-draft-prs.sh --status broken` already enforces: `--draft` open PRs whose `mergeable == "CONFLICTING"` OR whose `checksStatus == "FAILED"` (any rollup of `FAILURE` / `CANCELLED` / `TIMED_OUT`). The `--missing-label` flags drop in-flight fixes and human-pending PRs. `--milestone` scopes to the feature.
+
+The `mergeable == "UNKNOWN"` / `checksStatus == "PENDING"` defense-in-depth re-check is implicit: those states are not `CONFLICTING` and not `FAILED`, so the `--status broken` filter drops them silently. A later snapshot picks them up once they settle.
+
+### 2. Format each row
+
+For each element of the returned JSON array, emit one line:
+
+```
+- PR #<number> | "<title>"
+```
+
+If the JSON array is empty, emit the single line `- (none)`.
+
+A one-liner that does both:
+
+```sh
+bash skills/operation-git/scripts/list-draft-prs.sh \
+    --status broken \
+    --missing-label status:fix-in-progress \
+    --missing-label status:need-attention \
+    --milestone "<feature-name>" \
+  | jq -r 'if length == 0 then "- (none)" else .[] | "- PR #\(.number) | \"\(.title)\"" end'
+```
 
 ## Iron rules
 
 - **Read-only.** No label flips, no `TaskCreate`, no `Agent`.
-- **Drafts only.** Ready-to-review PRs are out of scope.
+- **The script is the predicate.** No re-gating in the skill.
+- **Drafts only.** Ready-to-review PRs are out of scope (enforced by the script's `--draft` flag).
 - **Skip `status:need-attention` PRs.** A prior engineer fix bailed for human-in-the-loop work.
-- **Lock only when both signals are terminal AND at least one is a blocker.** Mid-flight signals (`UNKNOWN` / `PENDING`) → drop silently.
+- **Skip `status:fix-in-progress` PRs.** A fix is already in flight on that PR.
+- **Mid-flight signals (`UNKNOWN` / `PENDING`) drop silently.** `--status broken` is terminal-only.
 - **Drop silently on every gate.** No `SKIPPED:` block.
 - **Milestone-scoped.** `<feature-name>` is mandatory.
 - **Do not classify the fix scope.** The engineer dispatched by `/implement-feature` inspects the live PR itself.

@@ -66,7 +66,7 @@ Each script lists open issues / PRs matching a specific workflow stage. All retu
 |--------|---------|
 | `scripts/list-issues.sh --level <slice\|task> [--label <l>]... [--milestone <name>] [--missing-label <l>]...` | Generic candidate listing for any orchestrator. Returns open `kind:feature` issues at the requested level with the requested labels (and confirmed absent labels). |
 | `scripts/list-slices-all-subs-closed.sh [--milestone <name>]` | List open `level:slice`+`kind:feature`+`status:in-progress` slices whose sub-issues are ALL closed (used by prepare-slice). |
-| `scripts/list-draft-prs.sh [--label <l>]... [--missing-label <l>]... [--status <green\|red\|conflict>]` | List open draft PRs filtered by labels and check/conflict status. |
+| `scripts/list-draft-prs.sh [--label <l>]... [--missing-label <l>]... [--status <green\|broken>] [--milestone <name>]` | List open draft PRs filtered by labels, milestone, and check/conflict status. Output includes the PR body so close-pr can parse `Closes #<slice-#>`. |
 | `scripts/blocker-count.sh <issue-#>` | Print the count of OPEN `Blocked by` dependencies (GraphQL `issueDependenciesSummary.blockedBy`). |
 | `scripts/slice-in-flight.sh <task-#>` | Print the count of sibling tasks on the parent slice currently being EDITED (predicate: `status:in-progress` AND no `review:*`). |
 

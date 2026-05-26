@@ -17,54 +17,92 @@ Invoked by the `task-finder` agent during Stage 2 discovery. Not user-invocable.
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. List candidate task issues
 
-### 2. List candidate task issues
+From the repo root, with `<feature-name>` substituted in:
 
-List task issues filtered by `level:task` + `kind:feature` + `status:ready-to-implement` + milestone `<feature-name>`, excluding `status:need-attention`.
+```sh
+bash skills/operation-git/scripts/list-issues.sh \
+    --level task \
+    --label status:ready-to-implement \
+    --missing-label status:need-attention \
+    --milestone "<feature-name>"
+```
 
-Sort order is fixed: `type:e2e` (0) → `type:backend` (1) → `type:frontend` (2), then by issue number.
+`list-issues.sh` already enforces `level:task` + `kind:feature` + the supplied labels + milestone, AND sorts deterministically (`type:e2e` → `type:backend` → `type:frontend`, then by issue number).
 
-### 3. Apply the open-blocker gate
+### 2. Apply the per-row gates and format
 
-Drop when `issueDependenciesSummary.blockedBy > 0`. Closed blockers do not count.
+For each candidate row, apply three gates in order, then resolve the parent slice and format the line:
 
-### 4. Apply the slice-in-flight gate
+- **Open-blocker gate** — `bash skills/operation-git/scripts/blocker-count.sh <task-#>` must return `0`. Closed blockers do not count (the script queries `issueDependenciesSummary.blockedBy`).
+- **Slice-in-flight gate** — `bash skills/operation-git/scripts/slice-in-flight.sh <task-#>` must return `0`. Sibling tasks under the same parent slice share one `/tmp/git-worktree/<repo>/<slice-branch>` directory; a sibling with `status:in-progress` AND no `review:*` label is actively editing it.
+- **`type:*` gate** — the row must carry exactly one of `type:e2e` / `type:backend` / `type:frontend`. Zero or more than one drops the row silently.
+- **Parent-slice resolution** — fetch the parent's number via the GraphQL `issue.parent.number` field. Do NOT body-parse.
+- **Type → subagent mapping** —
 
-Sibling tasks under the same parent slice share one `/tmp/git-worktree/<repo>/<slice-branch>` directory. Count sibling tasks currently being EDITED (predicate: `status:in-progress` AND no `review:*` label). Drop when `in_flight > 0`. The dropped task remains eligible for a later snapshot once the in-flight agent finishes.
+  | `type:*` | `<subagent_type>` |
+  |----------|-------------------|
+  | `type:e2e`      | `e2e-author` |
+  | `type:backend`  | `engineer`   |
+  | `type:frontend` | `engineer`   |
 
-### 5. Apply the `type:*` gate
+A self-contained shell pipeline that does steps 1 + 2 in one pass:
 
-A task must carry exactly one of `type:e2e` / `type:backend` / `type:frontend`. Tasks with none — or with more than one — are dropped silently.
+```sh
+repo_slug="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+owner="${repo_slug%/*}"
+repo="${repo_slug#*/}"
 
-Map:
+out="$(bash skills/operation-git/scripts/list-issues.sh \
+    --level task \
+    --label status:ready-to-implement \
+    --missing-label status:need-attention \
+    --milestone "<feature-name>" \
+  | jq -c '.[]' \
+  | while read -r row; do
+      number="$(printf '%s' "$row" | jq -r .number)"
+      title="$(printf '%s' "$row" | jq -r .title)"
+      names="$(printf '%s' "$row" | jq -r '[.labels[].name]')"
 
-| `type:*` | `<subagent_type>` |
-|----------|-------------------|
-| `type:e2e`      | `e2e-author` |
-| `type:backend`  | `engineer`   |
-| `type:frontend` | `engineer`   |
+      types="$(printf '%s' "$names" | jq -r '[.[] | select(. == "type:e2e" or . == "type:backend" or . == "type:frontend")]')"
+      [[ "$(printf '%s' "$types" | jq 'length')" == "1" ]] || continue
+      type_label="$(printf '%s' "$types" | jq -r '.[0]')"
 
-### 6. Resolve the parent slice
+      [[ "$(bash skills/operation-git/scripts/blocker-count.sh "$number")" == "0" ]] || continue
+      [[ "$(bash skills/operation-git/scripts/slice-in-flight.sh "$number")" == "0" ]] || continue
 
-For each eligible candidate, resolve the parent slice issue number. Prefer the GraphQL sub-issue / parent relationship over body-text parsing.
+      slice="$(gh api graphql -F owner="$owner" -F repo="$repo" -F number="$number" \
+        -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){parent{number}}}}' \
+        --jq '.data.repository.issue.parent.number // empty')"
+      [[ -n "$slice" ]] || continue
 
-### 7. Emit the eligible list
+      case "$type_label" in
+        type:e2e) subagent="e2e-author" ;;
+        type:backend|type:frontend) subagent="engineer" ;;
+      esac
 
-One line per eligible candidate, in the sort order from step 2:
+      printf -- '- #%s | %s | %s | slice:%s | "%s"\n' "$number" "$subagent" "$type_label" "$slice" "$title"
+    done)"
+
+if [[ -z "$out" ]]; then printf -- '- (none)\n'; else printf '%s\n' "$out"; fi
+```
+
+Line format (positional, pipe-delimited):
 
 ```
 - #<task-#> | <subagent_type> | <type:label> | slice:<slice-#> | "<task-title>"
 ```
 
-Empty result → emit the single line `- (none)`.
+If no row survives, emit the single line `- (none)`.
 
 ## Iron rules
 
 - **Read-only.** No label flips, no `TaskCreate`, no `Agent`.
-- **`kind:feature` only.**
-- **One agent per slice worktree.** Step 4 enforces by dropping any candidate whose parent slice already has a sibling task in flight.
-- **`type:*` decides the agent type, never the body.**
-- **Malformed `type:*` (none, or more than one) is dropped silently.** Do not invent the routing.
+- **The script + the per-row gate scripts are the predicate.** No additional gating beyond what's prescribed above.
+- **`kind:feature` only** (enforced by `list-issues.sh`).
+- **One agent per slice worktree.** The slice-in-flight gate enforces.
+- **`type:*` decides the agent type, never the body.** Malformed `type:*` (none, or more than one) drops silently.
+- **Parent slice from GraphQL `issue.parent.number`** — never from body text.
 - **Drop silently on every gate.** No `SKIPPED:` block, no reason field.
 - **Milestone-scoped.** `<feature-name>` is mandatory.

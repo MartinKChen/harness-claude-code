@@ -19,33 +19,56 @@ Invoked by the `task-finder` agent during Stage 1 discovery. Not user-invocable 
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. List candidate slice issues
 
-`gh repo view --json nameWithOwner --jq .nameWithOwner`. If the working dir isn't a GitHub repo, surface and stop.
+From the repo root, with `<feature-name>` substituted in:
 
-### 2. List candidate slice issues
-
-List slice issues filtered by `level:slice` + `kind:feature` + `status:ready-to-implement` + milestone `<feature-name>`. Include `number`, `title`, `url`, `labels`, and `issueDependenciesSummary` in the response.
-
-### 3. Apply the open-blocker gate
-
-For each candidate, look up open-blocker count from `issueDependenciesSummary.blockedBy` (the authoritative GraphQL field — do NOT parse `Blocked by` text from issue bodies). Drop the candidate when `blocked_by > 0`. Closed blockers do not count.
-
-### 4. Emit the eligible list
-
-Emit one line per eligible candidate:
-
-```
-- #<slice-#> | "<slice-title>"
+```sh
+bash skills/operation-git/scripts/list-issues.sh \
+    --level slice \
+    --label status:ready-to-implement \
+    --milestone "<feature-name>"
 ```
 
-Empty result → emit the single line `- (none)`.
+`list-issues.sh` already enforces `level:slice` + `kind:feature` + `status:ready-to-implement` + milestone. Output is a JSON array of `{number, title, labels, url}`.
+
+### 2. Apply the open-blocker gate
+
+For each candidate row, call `blocker-count.sh` and drop the row when the count is greater than zero. Closed blockers do not count — `blocker-count.sh` queries `issueDependenciesSummary.blockedBy` directly, which is the authoritative GraphQL field. Never parse `Blocked by` text from issue bodies.
+
+A one-liner that does the listing + the gate in one shell pipeline:
+
+```sh
+bash skills/operation-git/scripts/list-issues.sh \
+    --level slice \
+    --label status:ready-to-implement \
+    --milestone "<feature-name>" \
+  | jq -c '.[]' \
+  | while read -r row; do
+      number="$(printf '%s' "$row" | jq -r .number)"
+      if [[ "$(bash skills/operation-git/scripts/blocker-count.sh "$number")" == "0" ]]; then
+        printf '%s\n' "$row"
+      fi
+    done \
+  | jq -s '.'
+```
+
+### 3. Format each row
+
+For each surviving JSON row, emit one line:
+
+```
+- #<number> | "<title>"
+```
+
+If the surviving set is empty, emit the single line `- (none)`.
 
 ## Iron rules
 
 - **Read-only.** No `gh issue edit`, no `gh issue close`, no label flips, no `TaskCreate`, no `Agent`.
-- **Open-blocker count comes from `issueDependenciesSummary.blockedBy`.** Never parse `Blocked by` from issue bodies.
-- **`kind:feature` only.** Bugs / enhancements out of scope.
+- **The script + `blocker-count.sh` are the predicate.** No additional gating in the skill.
+- **Open-blocker count comes from `issueDependenciesSummary.blockedBy`** via `blocker-count.sh`. Never parse `Blocked by` from issue bodies.
+- **`kind:feature` only** (enforced by the script). Bugs / enhancements out of scope.
 - **Milestone-scoped.** `<feature-name>` is mandatory.
 - **Drop silently on gate failure.** No `SKIPPED:` block, no reason field, no negative output.
-- **One snapshot.** Run the query once and report; do not re-query.
+- **One snapshot.** Run the queries once and report; do not re-query mid-emit.

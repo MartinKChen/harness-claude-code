@@ -17,24 +17,39 @@ Invoked by the `task-finder` agent during Stage 5 discovery. Not user-invocable.
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. Run the prescribed command
 
-### 2. List candidates
+From the repo root, with `<feature-name>` substituted in:
 
-List `level:slice` + `kind:feature` + `status:in-progress` slices in milestone `<feature-name>` whose sub-issues are ALL closed AND that carry no `review:*` AND no `e2e:*` label. The absence guards are the idempotence guard — a re-snapshot never re-reports a slice that's mid-validation or settled.
-
-### 3. Emit the eligible list
-
-```
-- #<slice-#> | "<slice-title>"
+```sh
+bash skills/operation-git/scripts/list-slices-all-subs-closed.sh \
+    --milestone "<feature-name>"
 ```
 
-Empty result → emit the single line `- (none)`.
+`list-slices-all-subs-closed.sh` already enforces every gate: `level:slice` + `kind:feature` + `status:in-progress` + every sub-issue closed + no `review:*` label + no `e2e:*` label. No additional gating in the skill — if the script returns a row, it is eligible. Output is a JSON array of `{number, title, labels, url}`.
+
+### 2. Format each row
+
+For each element of the returned JSON array, emit one line:
+
+```
+- #<number> | "<title>"
+```
+
+If the JSON array is empty, emit the single line `- (none)`.
+
+A one-liner that does both:
+
+```sh
+bash skills/operation-git/scripts/list-slices-all-subs-closed.sh \
+    --milestone "<feature-name>" \
+  | jq -r 'if length == 0 then "- (none)" else .[] | "- #\(.number) | \"\(.title)\"" end'
+```
 
 ## Iron rules
 
 - **Read-only.** No label flips, no `TaskCreate`, no `Agent`.
-- **Predicate: all sub-issues closed AND no `review:*` AND no `e2e:*` label present.** All three conditions matter — they are the idempotence guard.
-- **`kind:feature` slices only.**
-- **Drop silently on a gate miss.** No `SKIPPED:` block.
+- **The script is the predicate.** The skill does not re-apply gates that `list-slices-all-subs-closed.sh` already enforces — it just formats the rows the script returns.
+- **`kind:feature` slices only** (enforced by the script).
+- **Drop silently on a gate miss.** No `SKIPPED:` block — the script already drops them silently.
 - **Milestone-scoped.** `<feature-name>` is mandatory.

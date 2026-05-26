@@ -19,31 +19,59 @@ Invoked by the `task-finder` agent during Stage 9 discovery. Not user-invocable.
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. Run the prescribed command
 
-### 2. List candidate PRs
+From the repo root, with `<feature-name>` substituted in:
 
-List draft PRs in milestone `<feature-name>` filtered by `merge:auto` AND `--status green` (mergeable `MERGEABLE` AND every check rollup state SUCCESS / NEUTRAL / SKIPPED).
+```sh
+bash skills/operation-git/scripts/list-draft-prs.sh \
+    --status green \
+    --label merge:auto \
+    --milestone "<feature-name>"
+```
 
-`merge:manual` drafts are out of scope — those are left in draft for the user to promote and merge manually.
+`list-draft-prs.sh --status green` already enforces: `--draft` open PRs whose `mergeable == "MERGEABLE"` AND every check rollup state is `SUCCESS` / `NEUTRAL` / `SKIPPED`. `--label merge:auto` excludes `merge:manual` drafts. `--milestone` scopes to the feature.
 
-### 3. Resolve the linked slice for each candidate
+Output rows include `body`, which the next step parses for `Closes #<slice-#>`.
 
-For each candidate, parse the PR body's first `Closes #<slice-#>` line (added by `workflow-reviewer-review-slice` when the draft was created). Drop the candidate silently if no `Closes #<n>` line is found — that PR is malformed and the dispatcher cannot wire up slice closure.
+### 2. Resolve the linked slice and format
 
-### 4. Emit the eligible list
+For each row, parse the first `Closes #<slice-#>` (case-insensitive) line from `body` — the line added by `workflow-reviewer-review-slice` when the draft was created. Drop the row silently if no `Closes #<n>` line is found; that PR is malformed and the dispatcher cannot wire up slice closure.
+
+Line format:
 
 ```
 - PR #<pr-#> | slice:<slice-#> | "<pr-title>"
 ```
 
-Empty result → emit the single line `- (none)`.
+If no row survives, emit the single line `- (none)`.
+
+A self-contained shell pipeline:
+
+```sh
+out="$(bash skills/operation-git/scripts/list-draft-prs.sh \
+    --status green \
+    --label merge:auto \
+    --milestone "<feature-name>" \
+  | jq -c '.[]' \
+  | while read -r row; do
+      number="$(printf '%s' "$row" | jq -r .number)"
+      title="$(printf '%s' "$row" | jq -r .title)"
+      body="$(printf '%s' "$row" | jq -r .body)"
+      slice="$(printf '%s' "$body" | grep -oiE 'closes[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+')"
+      [[ -n "$slice" ]] || continue
+      printf -- '- PR #%s | slice:%s | "%s"\n' "$number" "$slice" "$title"
+    done)"
+
+if [[ -z "$out" ]]; then printf -- '- (none)\n'; else printf '%s\n' "$out"; fi
+```
 
 ## Iron rules
 
 - **Read-only.** No `gh pr ready`, no `gh pr merge`, no memory writes, no `TaskCreate`, no `Agent`.
+- **The script is the predicate** for the mergeability + checks + label + milestone filter. The skill only resolves the linked slice from the PR body.
 - **`merge:auto` only.** `merge:manual` PRs are out of scope.
-- **`SKIPPED` / `NEUTRAL` checks count as green.**
+- **`SKIPPED` / `NEUTRAL` checks count as green** (enforced by `--status green`).
 - **Defense-in-depth re-check at merge time is owned by `/implement-feature`** — not here.
 - **Drop silently on a malformed PR body (no `Closes #<slice-#>` line).** No `SKIPPED:` block, no reason field.
 - **Milestone-scoped.** `<feature-name>` is mandatory.

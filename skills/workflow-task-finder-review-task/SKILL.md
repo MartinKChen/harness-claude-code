@@ -17,26 +17,45 @@ Invoked by the `task-finder` agent during Stage 3 discovery. Not user-invocable.
 
 ## Workflow
 
-### 1. Resolve the repo
+### 1. Run the prescribed command
 
-### 2. List candidates
+From the repo root, with `<feature-name>` substituted in:
 
-List task issues filtered by `level:task` + `kind:feature` + `status:in-progress` + `review:pending` + milestone `<feature-name>`.
-
-### 3. Emit the eligible list
-
-One line per eligible candidate:
-
-```
-- #<task-#> | "<task-title>"
+```sh
+bash skills/operation-git/scripts/list-issues.sh \
+    --level task \
+    --label status:in-progress \
+    --label review:pending \
+    --milestone "<feature-name>"
 ```
 
-Empty result → emit the single line `- (none)`.
+`list-issues.sh` already enforces `level:task` + `kind:feature` + the supplied labels + milestone. Output is a JSON array sorted by `type:*` rank then issue number. No additional gating in the skill — if the script returns a row, it is eligible.
+
+### 2. Format each row
+
+For each element of the returned JSON array, emit one line:
+
+```
+- #<number> | "<title>"
+```
+
+If the JSON array is empty, emit the single line `- (none)`.
+
+A one-liner that does both:
+
+```sh
+bash skills/operation-git/scripts/list-issues.sh \
+    --level task \
+    --label status:in-progress \
+    --label review:pending \
+    --milestone "<feature-name>" \
+  | jq -r 'if length == 0 then "- (none)" else .[] | "- #\(.number) | \"\(.title)\"" end'
+```
 
 ## Iron rules
 
 - **Read-only.** No label flips, no comments, no closes, no `TaskCreate`, no `Agent`.
+- **The script is the predicate.** No re-gating in the skill.
 - **Reviews live on task issues.** `review:*` is on `level:task` / `level:slice` issues, never on PRs.
-- **`kind:feature` only.**
+- **`kind:feature` only** (enforced by the script).
 - **Milestone-scoped.** `<feature-name>` is mandatory.
-- **Drop silently on a gate miss.** No `SKIPPED:` block.
