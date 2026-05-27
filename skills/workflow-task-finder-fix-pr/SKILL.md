@@ -1,6 +1,6 @@
 ---
 name: workflow-task-finder-fix-pr
-description: "Discovery-only. List draft PRs in the milestone with a merge-blocking signal (failing CI and/or merge conflict), excluding those carrying `status:fix-in-progress` or `status:need-attention`. Read-only — never flips labels, never dispatches agents. Activate from inside the `task-finder` agent."
+description: "Discovery-only. List draft PRs in the milestone with a merge-blocking signal (failing CI and/or merge conflict), excluding those carrying `status:fix-in-progress` or `status:need-attention`, and resolve each one's linked slice number from the PR body's `Closes #<slice-#>` line. Read-only — never flips labels, never dispatches agents. Activate from inside the `task-finder` agent."
 ---
 
 # workflow-task-finder-fix-pr
@@ -33,12 +33,12 @@ bash skills/operation-git/scripts/list-draft-prs.sh \
 
 The `mergeable == "UNKNOWN"` / `checksStatus == "PENDING"` defense-in-depth re-check is implicit: those states are not `CONFLICTING` and not `FAILED`, so the `--status broken` filter drops them silently. A later snapshot picks them up once they settle.
 
-### 2. Format each row
+### 2. Resolve the linked slice and format each row
 
-For each element of the returned JSON array, emit one line:
+For each element of the returned JSON array, parse the first `Closes #<slice-#>` (case-insensitive) line from `body` — the line added by `workflow-reviewer-review-slice` when the draft was created. This is the same resolution `workflow-task-finder-close-pr` performs, and it lets `/implement-feature` enforce its per-slice implement budget (a `fix-pr` dispatch edits the slice worktree, so it counts against the one-implement-agent-per-slice limit). Drop the row silently if no `Closes #<n>` line is found; that PR is malformed and the dispatcher cannot map it to a slice.
 
 ```
-- PR #<number> | "<title>"
+- PR #<pr-#> | slice:<slice-#> | "<title>"
 ```
 
 If the JSON array is empty, emit the single line `- (none)`.
@@ -46,18 +46,29 @@ If the JSON array is empty, emit the single line `- (none)`.
 A one-liner that does both:
 
 ```sh
-bash skills/operation-git/scripts/list-draft-prs.sh \
+out="$(bash skills/operation-git/scripts/list-draft-prs.sh \
     --status broken \
     --missing-label status:fix-in-progress \
     --missing-label status:need-attention \
     --milestone "<feature-name>" \
-  | jq -r 'if length == 0 then "- (none)" else .[] | "- PR #\(.number) | \"\(.title)\"" end'
+  | jq -c '.[]' \
+  | while read -r row; do
+      number="$(printf '%s' "$row" | jq -r .number)"
+      title="$(printf '%s' "$row" | jq -r .title)"
+      body="$(printf '%s' "$row" | jq -r .body)"
+      slice="$(printf '%s' "$body" | grep -oiE 'closes[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+')"
+      [[ -n "$slice" ]] || continue
+      printf -- '- PR #%s | slice:%s | "%s"\n' "$number" "$slice" "$title"
+    done)"
+
+if [[ -z "$out" ]]; then printf -- '- (none)\n'; else printf '%s\n' "$out"; fi
 ```
 
 ## Iron rules
 
 - **Read-only.** No label flips, no `TaskCreate`, no `Agent`.
-- **The script is the predicate.** No re-gating in the skill.
+- **The script is the predicate.** No re-gating in the skill; the skill only resolves the linked slice from the PR body.
+- **Resolve the linked slice from the PR body's `Closes #<slice-#>` line.** Drop silently on a malformed body (no `Closes #<n>` line). The slice number lets the dispatcher enforce its per-slice implement budget.
 - **Drafts only.** Ready-to-review PRs are out of scope (enforced by the script's `--draft` flag).
 - **Skip `status:need-attention` PRs.** A prior engineer fix bailed for human-in-the-loop work.
 - **Skip `status:fix-in-progress` PRs.** A fix is already in flight on that PR.
