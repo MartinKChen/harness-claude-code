@@ -22,7 +22,7 @@ Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff 
 /tmp/claude-handoff/<repo>/<unit>.md
 ```
 
-- `<repo>` = `basename "$(git rev-parse --show-toplevel)"` (same convention as the worktree path under `/tmp/git-worktree/<repo>/<slice-branch>`).
+- `<repo>` = the first path component after `/tmp/git-worktree/` in the worktree's path — i.e. the `<repo>` in `/tmp/git-worktree/<repo>/<slice-branch>`. Derive it from the worktree cwd, e.g. `sed -E 's#^/tmp/git-worktree/([^/]+)/.*#\1#'`. Do NOT use `basename "$(git rev-parse --show-toplevel)"`: inside a linked worktree that resolves to the slice-branch leaf, not the repo, and the doc would land at a path the budget-gate / PreCompact hooks don't write to.
 - `<unit>` is derived from the dispatch verb:
 
   | Dispatch verb | `<unit>` |
