@@ -36,9 +36,11 @@ file_path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.
 [ -z "$file_path" ] && exit 0
 [ ! -f "$file_path" ] && exit 0
 
-# Only fire inside engineer worktrees.
+# Only fire inside engineer worktrees. Match the */git-worktree/* segment rather
+# than the leading /tmp prefix: on macOS /tmp is a symlink to private/tmp, so the
+# file_path the hook receives is the resolved /private/tmp/git-worktree/... path.
 case "$file_path" in
-  /tmp/git-worktree/*) ;;
+  */git-worktree/*) ;;
   *) exit 0 ;;
 esac
 

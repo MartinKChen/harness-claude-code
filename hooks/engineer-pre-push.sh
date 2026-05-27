@@ -103,9 +103,12 @@ case "$command" in
 esac
 
 # Only fire inside an engineer-managed worktree. Outside that path, this is a
-# user-driven push and we let it through untouched.
+# user-driven push and we let it through untouched. Match the */git-worktree/*
+# segment rather than the leading /tmp prefix: on macOS /tmp is a symlink to
+# private/tmp, so the cwd the hook receives is the resolved
+# /private/tmp/git-worktree/... path.
 case "$cwd" in
-  /tmp/git-worktree/*) ;;
+  */git-worktree/*) ;;
   *) exit 0 ;;
 esac
 

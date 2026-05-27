@@ -63,21 +63,27 @@ if [ -n "$agent_type" ] && [ "$agent_type" != "engineer" ]; then
   exit 0
 fi
 [ -n "$cwd" ] || exit 0
+# Match the worktree prefix symlink-agnostically: setup-worktree.sh creates the
+# tree at /tmp/git-worktree/..., but on macOS /tmp is a symlink to private/tmp,
+# so the cwd the hook receives is the resolved /private/tmp/git-worktree/...
+# Glob on the stable */git-worktree/* segment instead of the leading prefix.
 case "$cwd" in
-  /tmp/git-worktree/*) ;;
+  */git-worktree/*) ;;
   *) exit 0 ;;
 esac
 git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 slice_branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 [ -n "$slice_branch" ] && [ "$slice_branch" != "HEAD" ] || exit 0
-# <repo> is the first path component after the /tmp/git-worktree/ prefix — i.e.
+# <repo> is the first path component after the git-worktree/ segment — i.e.
 # the `<repo>` in the documented worktree layout /tmp/git-worktree/<repo>/<slice-branch>.
+# Match on the segment (not the leading /tmp prefix) so the /tmp -> /private/tmp
+# symlink on macOS doesn't defeat the extraction.
 # (Do NOT use `basename $(git rev-parse --show-toplevel)`: inside a linked
 # worktree that returns the slice-branch leaf, not the repo. The agent side must
 # derive <repo> the same way, else its handoff doc and this breadcrumb collide
 # on different paths — see note in operation-engineer-handoff/SKILL.md.)
-repo="$(printf '%s' "$cwd" | sed -E 's#^/tmp/git-worktree/([^/]+)/.*#\1#')"
+repo="$(printf '%s' "$cwd" | sed -E 's#^.*/git-worktree/([^/]+)/.*#\1#')"
 [ -n "$repo" ] && [ "$repo" != "$cwd" ] || exit 0
 
 # --- derive <unit> from the dispatch verb in the transcript ------------------

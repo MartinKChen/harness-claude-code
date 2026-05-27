@@ -69,8 +69,12 @@ if [ -n "$agent_type" ] && [ "$agent_type" != "engineer" ]; then
   exit 0
 fi
 [ -n "$cwd" ] || exit 0
+# Match the worktree prefix symlink-agnostically: setup-worktree.sh creates the
+# tree at /tmp/git-worktree/..., but on macOS /tmp is a symlink to private/tmp,
+# so the cwd the hook receives is the resolved /private/tmp/git-worktree/...
+# Glob on the stable */git-worktree/* segment instead of the leading prefix.
 case "$cwd" in
-  /tmp/git-worktree/*) ;;
+  */git-worktree/*) ;;
   *) exit 0 ;;
 esac
 [ -n "$transcript_path" ] && [ -f "$transcript_path" ] || exit 0
@@ -92,10 +96,10 @@ esac
 [ "$occ" -ge "$THRESHOLD" ] || exit 0
 
 # --- re-arm bookkeeping ------------------------------------------------------
-# <repo> is the first component after /tmp/git-worktree/ (robust to nested
-# slice branches), matching engineer-precompact-handoff.sh and the documented
-# worktree layout.
-repo="$(printf '%s' "$cwd" | sed -E 's#^/tmp/git-worktree/([^/]+)/.*#\1#')"
+# <repo> is the first component after the git-worktree/ segment (robust to
+# nested slice branches and to the /tmp -> /private/tmp symlink on macOS),
+# matching engineer-precompact-handoff.sh and the documented worktree layout.
+repo="$(printf '%s' "$cwd" | sed -E 's#^.*/git-worktree/([^/]+)/.*#\1#')"
 [ -n "$repo" ] && [ "$repo" != "$cwd" ] || exit 0
 state_dir="/tmp/claude-handoff/${repo}"
 marker="${state_dir}/.budget-gate-${agent_id}"

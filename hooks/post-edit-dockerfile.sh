@@ -36,8 +36,11 @@ case "$basename" in
   *) exit 0 ;;
 esac
 
+# Match the */git-worktree/* segment rather than the leading /tmp prefix: on
+# macOS /tmp is a symlink to private/tmp, so the file_path the hook receives is
+# the resolved /private/tmp/git-worktree/... path.
 case "$file_path" in
-  /tmp/git-worktree/*) ;;
+  */git-worktree/*) ;;
   *) exit 0 ;;
 esac
 
