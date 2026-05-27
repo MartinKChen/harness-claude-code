@@ -150,7 +150,7 @@ For each eligible slice (line format: `- #<slice-#> | "<title>"`):
    subject:     E2E-validate slice #<slice-#>: <slice-title>
    description: <slice-url>. Dispatching engineer to run the slice's E2E
                 specs against a real stack via testcontainers.
-                On pass: engineer removes e2e:running and adds review:pending.
+                On pass: engineer removes e2e:running and adds e2e:validated + review:pending.
                 On test-case constraint: engineer flips to status:need-attention.
    activeForm:  E2E-validating slice #<slice-#>
    ```

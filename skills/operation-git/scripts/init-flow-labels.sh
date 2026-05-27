@@ -59,6 +59,7 @@ create "review:need-fix"            D73A4A
 
 echo "e2e:"
 create "e2e:running"                1D76DB
+create "e2e:validated"              0E8A16
 
 echo "merge:"
 create "merge:auto"                 0E8A16

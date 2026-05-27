@@ -41,8 +41,9 @@ Validate E2E test cases on GitHub slice issue #<slice-#>.
 Find every E2E spec created or modified on the slice branch, run them
 against the slice's stack via testcontainers, and drive TDD on production
 code only (never modify the E2E specs) until they're all green. You own
-the lifecycle until you remove `e2e:running` and add `review:pending` to
-the slice issue — or, if a spec fails due to a test-case constraint that
+the lifecycle until you remove `e2e:running` and add both the sticky
+`e2e:validated` marker and `review:pending` to the slice issue — or, if a
+spec fails due to a test-case constraint that
 can't be addressed via production-code changes, flip to
 `status:need-attention` and exit.
 ```

@@ -1,6 +1,6 @@
 ---
 name: workflow-engineer-e2e
-description: "Run every E2E spec created or modified on a slice branch against the slice's stack via testcontainers; iterate to GREEN by driving TDD on production code only (NEVER modify the E2E specs themselves). On every spec green: remove `e2e:running` and add `review:pending` to the slice. On a test-case constraint that can't be addressed without modifying the spec: flip the slice to `status:need-attention` and exit. Activate when dispatched with `Validate E2E test cases on GitHub slice issue #<n>` or '/workflow-engineer-e2e'."
+description: "Run every E2E spec created or modified on a slice branch against the slice's stack via testcontainers; iterate to GREEN by driving TDD on production code only (NEVER modify the E2E specs themselves). On every spec green: remove `e2e:running` and add the sticky `e2e:validated` marker plus `review:pending` to the slice. On a test-case constraint that can't be addressed without modifying the spec: flip the slice to `status:need-attention` and exit. Activate when dispatched with `Validate E2E test cases on GitHub slice issue #<n>` or '/workflow-engineer-e2e'."
 ---
 
 # workflow-engineer-e2e
@@ -62,7 +62,9 @@ Single `Refs` trailer here (no task-level context — this is slice-level work).
 
 ### 6. Push and flip the labels
 
-Push the slice branch to `origin`, then flip the slice issue's labels: remove `e2e:running` and add `review:pending`.
+Push the slice branch to `origin`, then flip the slice issue's labels: remove `e2e:running` and add **both** `e2e:validated` and `review:pending`.
+
+`e2e:validated` is a **sticky** marker — it records that the slice has cleared full E2E validation once, and it must never be removed afterward. It is what keeps `prepare-slice` from re-adopting the slice during the slice-level review/fix loop (when the slice transiently carries no `review:*` label). `e2e:running` is the transient lock; `e2e:validated` is the permanent "has been validated" marker. Do not conflate them.
 
 Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`, do NOT open or promote a PR.
 

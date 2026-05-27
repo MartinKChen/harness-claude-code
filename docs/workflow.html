@@ -768,7 +768,7 @@
         <li>Picks slices whose task sub-issues have all closed and have no <code>review:*</code> / <code>e2e:*</code> yet</li>
         <li>Locks slice with <code>e2e:running</code></li>
         <li>Dispatches <code>engineer</code> (Mode D) to run the slice's E2E specs against a live stack</li>
-        <li>On green: adds <code>review:pending</code> on the slice. On test-case constraint: <code>status:need-attention</code></li>
+        <li>On green: removes <code>e2e:running</code>, adds sticky <code>e2e:validated</code> + <code>review:pending</code> on the slice. On test-case constraint: <code>status:need-attention</code></li>
       </ul>
     </div>
     <div class="step">
@@ -887,6 +887,7 @@
       <ul>
         <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior</li>
         <li><span class="pill status">e2e:running</span> — prepare-slice lock</li>
+        <li><span class="pill status">e2e:validated</span> — sticky; set on E2E pass, keeps prepare-slice from re-adopting</li>
         <li><span class="pill kind">feature-lockin</span> — the discovery PR</li>
       </ul>
     </div>
@@ -1008,9 +1009,9 @@
 
       <div class="flow-arrow">
         <span class="actor agent">engineer (Mode D)</span>
-        <span class="effect">strips <code>e2e:running</code>; adds <code>review:pending</code> on green</span>
+        <span class="effect">strips <code>e2e:running</code>; adds sticky <code>e2e:validated</code> + <code>review:pending</code> on green</span>
       </div>
-      <div class="flow-state">e2e:running → review:pending</div>
+      <div class="flow-state">e2e:running → e2e:validated + review:pending</div>
 
       <div class="flow-arrow">
         <span class="actor skill">workflow-task-finder-review-slice</span>

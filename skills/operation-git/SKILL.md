@@ -34,7 +34,7 @@ The Automated Engineer Flow drives off labels. Workflow skills key into the fami
 | `kind:*` | `feature`, `bug`, `enhancement` | issue creation only |
 | `type:*` | `e2e`, `backend`, `frontend` (tasks only) | issue creation only |
 | `review:*` | `pending`, `running`, `passed`, `need-fix` | reviewer-review-* flips `pending`→`running`→`passed`/`need-fix`; engineer/e2e fix flips back to `pending` |
-| `e2e:*` | `running` | prepare-slice adds `e2e:running` when the slice is ready for end-to-end validation; engineer-e2e removes it and adds `review:pending` on pass, or flips to `status:need-attention` on test-case constraints |
+| `e2e:*` | `running`, `validated` | prepare-slice adds `e2e:running` when the slice is ready for end-to-end validation; engineer-e2e removes `e2e:running` and adds both the sticky `e2e:validated` marker and `review:pending` on pass, or flips to `status:need-attention` on test-case constraints. `e2e:validated` is never removed once set — it records that the slice has cleared E2E once, so prepare-slice (which excludes any `e2e:*`) won't re-adopt it during the slice-level review/fix loop |
 | `merge:*` | `auto`, `manual` | reviewer-review-slice sets `manual` on draft PR creation; user opts into `auto` |
 | PR markers | `feature-lockin` | architect during deep-dive |
 
