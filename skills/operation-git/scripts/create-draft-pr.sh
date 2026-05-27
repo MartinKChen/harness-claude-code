@@ -4,20 +4,23 @@
 # instead (idempotent re-run).
 #
 # Body is read from a file (see templates/pr-body.md for the skeleton).
-# Labels can be added at creation time (--label).
+# Labels can be added at creation time (--label); a milestone can be
+# attached with --milestone (name or number).
 #
 # Usage:
-#   create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]...
+#   create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]... [--milestone <m>]
 set -euo pipefail
 
 slice_branch=""
 title=""
 body_file=""
 labels=()
+milestone=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --label) labels+=("$2"); shift 2 ;;
+    --milestone) milestone="$2"; shift 2 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *)
       if   [[ -z "$slice_branch" ]]; then slice_branch="$1"
@@ -31,7 +34,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$slice_branch" || -z "$title" || -z "$body_file" ]]; then
-  echo "usage: $0 <slice-branch> <title> <body-file> [--label <l>]..." >&2
+  echo "usage: $0 <slice-branch> <title> <body-file> [--label <l>]... [--milestone <m>]" >&2
   exit 1
 fi
 
@@ -49,6 +52,7 @@ fi
 
 args=(--base main --head "$slice_branch" --title "$title" --body-file "$body_file" --draft)
 for l in "${labels[@]}"; do args+=(--label "$l"); done
+[[ -n "$milestone" ]] && args+=(--milestone "$milestone")
 
 gh pr create "${args[@]}" >/dev/null
 

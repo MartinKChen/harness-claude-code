@@ -22,7 +22,7 @@ Do NOT activate for task-level review (use `workflow-reviewer-review-task`), or 
 
 ### 1. Fetch the slice issue and its closed task sub-issues
 
-Fetch the slice issue (number, title, body, labels, url) via `gh issue view`. Pull the slice's sub-issue list via GraphQL (`repository.issue.subIssues.nodes`) and filter to those in state `CLOSED`.
+Fetch the slice issue (number, title, body, labels, url, milestone) via `gh issue view` — include the `milestone` field so step 8 can carry it onto the draft PR. Pull the slice's sub-issue list via GraphQL (`repository.issue.subIssues.nodes`) and filter to those in state `CLOSED`.
 
 Verify the slice has `review:running`. If missing, halt and surface `no running review lock on this slice`.
 
@@ -101,7 +101,7 @@ Compose the PR body from the project's PR-body template:
 
 Title is the slice's title prefixed with the slice's conventional type/scope (e.g. `feat(auth): add SSO login`).
 
-Create the draft PR for the slice branch with the title, the body file, and `merge:manual` as a label. PR creation is idempotent — if a PR already exists for the branch (e.g. a previous run created it before failing later), use the existing PR number and do not attempt re-creation.
+Create the draft PR for the slice branch with the title, the body file, `merge:manual` as a label, and the slice's milestone (from step 1) via `--milestone` so the PR lands in the same milestone as the slice it closes. If the slice carries no milestone, omit the flag. PR creation is idempotent — if a PR already exists for the branch (e.g. a previous run created it before failing later), use the existing PR number and do not attempt re-creation.
 
 Terminal action. Exit. The user (or the `/implement-feature` command's close-pr stage if the user opts into `merge:auto` later) handles the merge.
 
@@ -119,6 +119,7 @@ If something prevents the review (worktree setup failed, slice branch missing, d
 - **GitHub is the single source of truth.** The verdict comment + terminal label + (on pass) draft PR are the only outputs.
 - **PR body's first line is `Closes #<slice-#>`.** GitHub auto-closes the slice when the PR merges; this skill never closes the slice directly.
 - **Draft PR gets `merge:manual` by default.** The user opts into `merge:auto` if they want the `/implement-feature` command's close-pr stage to handle the merge automatically.
+- **Draft PR inherits the slice's milestone.** Pass the slice's milestone to `--milestone` at creation so the PR is tracked in the same milestone; if the slice has none, omit it.
 - **PR creation is idempotent.** Re-running the skill after a partial failure doesn't create duplicate PRs.
 - **Refuse what the labels forbid.** Missing `review:running` → halt.
 - **On a blocked run, do NOT flip the label.** Leave `review:running` for human triage.

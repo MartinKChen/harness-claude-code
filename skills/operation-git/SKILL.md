@@ -83,7 +83,7 @@ Each script lists open issues / PRs matching a specific workflow stage. All retu
 |--------|---------|
 | `scripts/post-comment.sh <issue-or-pr-#> <body-file>` | Post a single comment from a file (avoids quoting issues). |
 | `scripts/post-and-flip.sh <issue-#> <body-file> [--remove <l>]... [--add <l>]...` | Atomic-ish: post the comment, then flip the labels. Terminal action for reviewer-review-task / reviewer-review-slice. |
-| `scripts/create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]...` | Create a draft PR from the slice branch against `main`. Prints the PR number. |
+| `scripts/create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]... [--milestone <m>]` | Create a draft PR from the slice branch against `main`. Prints the PR number. `--milestone` attaches a milestone (name or number) at creation. |
 | `scripts/check-pr.sh <pr-#>` | Print a JSON object: `{mergeable, checksStatus, isDraft, labels, headRefName, lastCommitSha, lastCommitDate}`. |
 
 ### Release / repo setup
