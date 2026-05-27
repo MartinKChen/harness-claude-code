@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "engineer|reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/bootstrap.sh"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -30,14 +41,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-edit-dockerfile.sh"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/post-tool-use.sh"
           }
         ]
       }

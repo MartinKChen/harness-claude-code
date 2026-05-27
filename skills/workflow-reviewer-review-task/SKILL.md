@@ -104,29 +104,7 @@ Write the comment body to `/tmp/review-task-<task-#>.md`.
 
 Atomically post the verdict comment on the task issue and flip the gate label — on APPROVE: remove `review:running`, add `review:passed`. On BLOCK: remove `review:running`, add `review:need-fix`.
 
-### 8. Capture signal to the consuming project's memory store
-
-Per `memory-convention`, if `$MAIN_ROOT/.claude/memory/` exists in the consuming project, append the review's signal rows. If it does not exist, skip silently (the project has not opted in). Never let this step block the terminal label flip or issue close — write failures are logged and swallowed.
-
-Resolve the memory root:
-
-```bash
-MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
-[ -d "$MEMORY_ROOT" ] || exit 0   # opt-in by directory presence
-```
-
-Write one JSON Lines row per finding to `$MEMORY_ROOT/signals/reviews/<task#>.jsonl` (append mode, create parent dir if missing). The schema retains the `severity` field for backward compatibility with existing consolidation, and adds `impact`, `effort`, and `fix_class` so the per-finding triage decision is captured:
-
-```json
-{"ts": "<iso8601>", "task": <n>, "slice": <parent#>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "severity": "<CRITICAL|HIGH|MEDIUM|LOW>", "impact": "<H|M|L>", "effort": "<L|M|H>", "fix_class": "<Fix|Defer|Nit>", "location": "<file:line>", "title": "<one-line>"}
-```
-
-`pattern_skill` and `category` come from the pattern that emitted the finding — every pattern skill tags its findings with both. If a finding has no clear category, use the rule's short kebab-case slug. `severity` is the raw pattern severity; `impact` is derived per the table in step 5; `effort` and `fix_class` are reviewer-assigned per step 5.
-
-On **APPROVE only**, also write `$MEMORY_ROOT/signals/cycles/<task#>.json` (overwrite). Compute `total_cycles` from `git log origin/<slice-branch> --grep="Refs #<task-#>" --oneline | wc -l`. Compute `by_pattern.<skill>.findings` and `cycles_to_resolve` by joining this review's findings with the per-cycle history in `$MEMORY_ROOT/signals/reviews/<task#>.jsonl` and `$MEMORY_ROOT/signals/fixes/<task#>.jsonl`.
-
-### 9. On APPROVE, strip `status:in-progress` and close the issue
+### 8. On APPROVE, strip `status:in-progress` and close the issue
 
 On APPROVE only: remove the `status:in-progress` label from the task, then close the issue.
 
@@ -146,4 +124,3 @@ If something prevents the review from being completed (worktree fetch failed, di
 - **GitHub is the single source of truth.** The verdict comment + the terminal label + (on pass) the issue closure are the only outputs.
 - **Refuse what the labels forbid.** Missing `review:running` → halt and surface. Closed issue → halt and surface.
 - **On a blocked run, do NOT flip the label.** Leave `review:running` in place for human triage.
-- **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a review must never be blocked by it.

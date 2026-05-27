@@ -8,7 +8,7 @@ argument-hint: <feature-name>
 Run one full sweep across the lifecycle stages, in order, for a single feature milestone.
 
 - **Discovery** is owned by the `task-finder` agent (read-only, single dispatch).
-- **Every state mutation** — label flips, `TaskCreate`, `Agent` dispatch, `TaskUpdate(owner)` assignment, draft → ready promotion, squash-merge, per-slice memory signal — is owned by this command.
+- **Every state mutation** — label flips, `TaskCreate`, `Agent` dispatch, `TaskUpdate(owner)` assignment, draft → ready promotion, squash-merge — is owned by this command.
 
 The nine `workflow-task-finder-*` skills are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
 
@@ -237,7 +237,7 @@ Roll back on dispatch failure by removing `status:fix-in-progress` and deleting 
 
 ---
 
-#### Stage 9 — `close-pr` (sequential, no agent dispatch; includes per-slice memory capture)
+#### Stage 9 — `close-pr` (sequential, no agent dispatch)
 
 Process PRs **sequentially** — concurrent `gh pr merge` calls race on the base branch.
 
@@ -245,30 +245,9 @@ For each eligible draft PR (line format: `- PR #<pr-#> | slice:<slice-#> | merge
 
 1. **Defense-in-depth re-check** against live state: `gh pr view <pr-#> --json mergeable,statusCheckRollup`. If `mergeable != "MERGEABLE"` OR any rollup state is not SUCCESS / NEUTRAL / SKIPPED → skip (`merge race / no longer eligible`).
 2. **Promote draft → ready — always**: `gh pr ready <pr-#>`. Every mergeable draft is opened, regardless of merge-mode.
-3. **Auto-close only when `merge:auto`.** If the line's merge-mode is `manual`, stop here: the PR is now open for the user to merge — do NOT merge, do NOT run the memory signal. If the merge-mode is `auto`, continue.
+3. **Auto-close only when `merge:auto`.** If the line's merge-mode is `manual`, stop here: the PR is now open for the user to merge — do NOT merge. If the merge-mode is `auto`, continue.
 4. **Squash-merge with branch deletion** (`merge:auto` only): `gh pr merge <pr-#> --squash --delete-branch`. Slice closure happens automatically via the PR body's `Closes #<slice-#>` line (filled in by `workflow-reviewer-review-slice` when the draft was created).
 5. **On merge race** (GitHub recomputed mergeability between step 1 and 4): undo the ready promotion with `gh pr ready <pr-#> --undo` and skip.
-6. **Per-slice memory signal (post-merge, fire-and-forget).** After a successful `merge:auto` merge, write the slice's lifetime churn summary if the consuming project has opted into memory by creating `.claude/memory/`:
-
-   ```bash
-   MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-   MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
-   if [ -d "$MEMORY_ROOT" ]; then
-     mkdir -p "$MEMORY_ROOT/signals/cycles"
-     # ... write the summary file (see below) ...
-   fi
-   ```
-
-   Read `slice:<slice-#>` from the `task-finder` line for this PR. Resolve the slice's task sub-issues via GraphQL. Compose `$MEMORY_ROOT/signals/cycles/slice-<slice-#>.json` per the `memory-convention` skill's "per-slice lifetime summary" schema:
-
-   - `ts`: ISO-8601 timestamp.
-   - `slice`: `<slice-#>`.
-   - `task_count`: number of closed task sub-issues of the slice.
-   - `task_review_cycles_sum`: sum of `total_cycles` read from each `$MEMORY_ROOT/signals/cycles/<task-#>.json`; skip tasks with missing cycle files.
-   - `slice_review_cycles`: `gh pr view <pr-#> --json commits --jq '[.commits[] | select((.messageHeadline + "\n" + .messageBody) | contains("Refs #<slice-#>"))] | length'`.
-   - `pr_review_cycles`: `gh pr view <pr-#> --json comments --jq '[.comments[] | select(.body | test("^# (Review|Code Review)"))] | length'`.
-
-   Errors in step 6 are swallowed — never let signal capture block PR processing or the next PR's merge. Skip the entire block if `$MEMORY_ROOT` does not exist (opt-in by directory presence).
 
 No `TaskCreate`, no `Agent`. Never `--force`; never push directly to `main`; never override branch protection.
 
@@ -296,5 +275,4 @@ Each count is the number of candidates *processed* in this fire (label flips for
 - **`kind:feature` only.**
 - **No code-changing work in this command itself.** Every code change, push, comment, and PR merge beyond `gh pr ready` / `gh pr merge` (Stage 9) is owned by the dispatched sub-agent.
 - **Stage 9 promotes every mergeable draft to ready; it auto-closes only `merge:auto`.** `gh pr ready` runs for all mergeable drafts regardless of merge-mode; `gh pr merge --squash --delete-branch` runs only when the candidate line's merge-mode is `auto`. `merge:manual` drafts are left open for the user. Never `--force`, never push to `main`, never override branch protection.
-- **Per-slice memory signal is fire-and-forget.** It runs only after a successful `merge:auto` merge. Errors in Stage 9 step 6 are swallowed; missing `$MEMORY_ROOT/.claude/memory/` skips the block entirely (opt-in by directory presence).
 - **Skip, don't fail, on benign outcomes** at every stage — `422` from a label flip race, `merge race` from a recomputed mergeability, `nothing to pick up` from a stage whose only line is `- (none)`.

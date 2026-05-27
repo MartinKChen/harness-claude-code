@@ -75,8 +75,8 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 | `principle-engineer-tdd` | Outside-in TDD loop — acceptance test → red/green/refactor module loop → adapter contract tests → wiring, with per-step commits. |
 | `operation-git` | GitHub Flow conventions for commits, branches, PRs, issues, releases, and `gh` usage. |
 | `create-issues` | Decomposes a PRD or requirement into thin vertical-slice GitHub issues with EARS + Gherkin acceptance criteria. |
-| `memory-convention` | Reference doc for the per-consuming-project agent memory system — where `.claude/memory/` lives, the schema of each signal file written by engineer/reviewer workflows, the shape of pattern-overlay markdown files loaded by pattern skills, and overlay precedence. |
-| `workflow-consolidate-memory` | Distills accumulated `.claude/memory/signals/*.jsonl` into curated rule additions under `.claude/memory/patterns/<skill>.md` for the project. User-invoked; every overlay edit is gated on explicit user approval. |
+| `memory-convention` | Reference doc for how agents **consume** per-project summarized memory — where the `.claude/memory/patterns/<skill>.md` overlays live, their file shape, and the precedence rules for applying them on top of a baseline pattern skill. (Runtime telemetry is hook-owned and out of scope.) |
+| `dream-summary-memory` | The "dreaming" pass: reads GitHub issues closed in the last 24h (review/fix comments, PRs, fix commits), distills the recurring pattern-wise mistakes, and writes additive rule overlays under `.claude/memory/patterns/<skill>.md`. Autonomous (schedulable); appends an audit entry to `.claude/memory/dream-log.md`. |
 
 ### Engineer patterns
 
@@ -124,22 +124,17 @@ Loaded by the `reviewer` agent. Each skill emits findings in its own shape; the 
 | `pattern-reviewer-observability` | OTel audit — no vendor SDKs in `src/`, no `print` / `console.log`, span naming low-cardinality, semantic-convention attributes, errors via `record_exception`, bounded metric labels, structured JSON logs with trace correlation, batch processors, single SDK bootstrap, sampling lives in the Collector. |
 | `pattern-reviewer-security` | Self-contained detailed security catalogue + iteration flow for `type:backend` / `type:frontend` task reviews (skipped for `type:e2e`). Fourteen patterns; cites `file:line` or `image:<tag>` with each pattern's exact `Required end state`. |
 
-## Memory (per-consuming-project, opt-in)
+## Memory (per-consuming-project, always-on)
 
-Engineer and reviewer dispatches are stateless by default — every review starts from the baseline pattern skills shipped here. Consuming projects can opt in to a per-project memory overlay that grows from their own review history without ever flowing back upstream into this plugin.
+Engineer and reviewer dispatches start from the baseline pattern skills shipped here, but each consuming project grows its own memory — auto-created on the first engineer/reviewer dispatch, never flowing back upstream into this plugin. Memory has two roots split by lifetime: **ephemeral runtime signals** under `/tmp/claude-memory/<repo-slug>/` and **durable pattern overlays** under `$MAIN_ROOT/.claude/memory/` (slug = `<basename>-<sha256[:8]>` of the main-worktree path). There are three concerns:
 
-**Opt-in:** `mkdir -p .claude/memory/{signals,patterns}` in the consuming project root.
+- **Writing (telemetry).** Every engineer / reviewer dispatch writes exactly one signal: `/tmp/claude-memory/<repo-slug>/signals/runtime/<agent-id>.meta.json` (keyed on `agent_id`, not the shared `session_id`, so parallel dispatches don't collide), recording session/agent id + initial prompt, start / end / duration, invoked skills, token usage (total **and** per-skill via active-window attribution), a `tool → count` histogram, and stop reason. Captured entirely by the bundled `hooks/runtime-telemetry/` scripts — seeded by a `SubagentStart` hook with a `matcher` of `engineer|reviewer`, so no other agent type produces telemetry.
+- **Dreaming.** `/dream-summary-memory` (on demand now, schedulable later) reads the project's GitHub issues **and PRs** closed in the last 24h — issue review/fix comment threads + fix commits, plus PR CI-failure and merge-conflict history — distills the **recurring, pattern-wise** mistakes, and writes them as additive rule overlays under `.claude/memory/patterns/<skill>.md`. It writes autonomously and logs every run to `.claude/memory/dream-log.md`. One-off bugs and lone merge conflicts are dropped; only generalizable patterns (including repeat CI failures and shared-file conflict hotspots) become memory.
+- **Consuming.** Every pattern skill (`pattern-engineer-*`, `pattern-reviewer-*`) checks `.claude/memory/patterns/<skill-name>.md` at load time and applies its rules additively (sharpened triggers, project-specific carve-outs, new rules, BAD/GOOD examples worth pinning).
 
-Once opted in:
+Runtime signals in `/tmp` are throwaway (the OS reclaims them). `.claude/memory/` is a working directory — add `/.claude/memory/` to the project's `.gitignore`. To clear memory: `rm -rf /tmp/claude-memory/<repo-slug>/ .claude/memory/` (both re-created on the next dispatch).
 
-- Engineer / reviewer workflow skills append signal rows (reviewer findings, engineer fix actions, missed catches caught downstream, per-task / per-slice cycle summaries) under `.claude/memory/signals/` at the end of each dispatch — fire-and-forget, never blocking the terminal label flip.
-- Every pattern skill (`pattern-engineer-*`, `pattern-reviewer-*`) checks `.claude/memory/patterns/<skill-name>.md` at load time and applies its rules additively (sharpened triggers, project-specific carve-outs, new rules, BAD/GOOD examples worth pinning).
-- `/workflow-consolidate-memory` (on demand, or via `/loop`) reads accumulated signal, proposes overlay edits diff-by-diff, and writes the approved overlays. Every edit is user-confirmed; baseline pattern skills are never auto-modified.
-- **Runtime telemetry** (engineer + reviewer only): every dispatch writes `signals/runtime/<session-id>.meta.json` (agent identity, dispatch prompt, started/ended timestamps, duration, token usage, stop reason, skills loaded) and a paired `<session-id>.jsonl` event stream (one row per tool call). Captured by the bundled `hooks/runtime-telemetry/` scripts; scope is limited to engineer / reviewer by their bootstrap step — other agents incur a no-op disk check and produce zero telemetry rows.
-
-**Opt-out:** `rm -rf .claude/memory/` — all signal capture and overlay loading silently no-op.
-
-See [`skills/memory-convention/SKILL.md`](skills/memory-convention/SKILL.md) for the full contract (file schemas, overlay shape, precedence rules, severity floor, conflict surfacing).
+See [`skills/memory-convention/SKILL.md`](skills/memory-convention/SKILL.md) for the overlay-reading contract (overlay shape, precedence rules, severity floor, conflict surfacing).
 
 ## Hooks
 
@@ -148,10 +143,9 @@ Hooks live in [`hooks/`](hooks/) and are wired up by `hooks/hooks.json`.
 | Hook | When it fires | What it does |
 | --- | --- | --- |
 | `engineer-pre-push.sh` | `PreToolUse` on every `Bash` call, but no-ops unless the command contains `git push` *and* the cwd is an engineer worktree under `/tmp/git-worktree/`. | Runs lint / type / security / test checks against the engineer's worktree before allowing the push. If no draft PR exists for the slice yet (first push of the slice), narrows checks to the active task's `type:backend` / `type:frontend` stack via the most recent `Refs #<n>` trailer; once a PR is open, runs both stacks. Backend = `ruff` / `mypy` / `bandit` / `pytest`; frontend = `biome` / `tsc --noEmit` / `npm audit` / `jest`. On failure, denies the `Bash` tool call so the engineer sees the failure summary, fixes it, and retries the push. |
-| `runtime-telemetry/bootstrap.sh` | Invoked explicitly by the engineer / reviewer agent as the first step of its Execution Flow. | Writes `<session-id>.meta.json` under the consuming project's `.claude/memory/signals/runtime/` with agent identity, dispatch prompt, started timestamp, cwd. Silent no-op if `.claude/memory/` is absent (opt-out) or `$CLAUDE_SESSION_ID` is empty. This marker file is the gate that limits all subsequent runtime-telemetry capture to engineer + reviewer dispatches only. |
-| `runtime-telemetry/pre-tool-use.sh` | `PreToolUse` on every tool call (no matcher). | If a `<session-id>.meta.json` exists for the firing session, appends a `tool_use` row to `<session-id>.jsonl` and, when the tool is `Read` on a `*/skills/*/SKILL.md` file or `Skill` with a `skill` parameter, merges the skill name into `meta.json#skills_invoked`. Always exits 0; never blocks a tool call. |
-| `runtime-telemetry/post-tool-use.sh` | `PostToolUse` on every tool call (no matcher). | If a `<session-id>.meta.json` exists for the firing session, appends a `tool_result` row to `<session-id>.jsonl` with `success` (heuristic from the tool response's `is_error` / `error` fields). Always exits 0. |
-| `runtime-telemetry/subagent-stop.sh` | `SubagentStop` once per subagent termination. | If a `<session-id>.meta.json` exists for the firing session, finalizes it with `ended_at`, `duration_ms`, `token_usage` (parsed from the last assistant turn in `transcript_path`), and `stop_reason`. |
+| `runtime-telemetry/bootstrap.sh` | `SubagentStart` with `matcher: "engineer\|reviewer"` — fires automatically when one of those subagents starts. | Reads `agent_id` / `agent_type` / `cwd` from the payload, derives the `<repo-slug>`, auto-creates `/tmp/claude-memory/<repo-slug>/signals/runtime/`, and seeds `<agent-id>.meta.json` with agent identity, started timestamp, cwd, session id, and empty `tool_calls` / `per_skill_tokens` / `skills_invoked` (`dispatch_prompt` backfilled at stop). Silent no-op if no `agent_id`. This marker file is the gate (with the matcher) that limits all runtime-telemetry capture to engineer + reviewer dispatches. |
+| `runtime-telemetry/pre-tool-use.sh` | `PreToolUse` on every tool call (no matcher). | If a `<agent-id>.meta.json` exists for the firing `agent_id`, increments `meta.json#tool_calls[<tool>]` and, when the tool is `Read` on a `*/skills/*/SKILL.md` file or `Skill` with a `skill` parameter, appends the skill name to `meta.json#skills_invoked` (first-seen order). No `agent_id` (main-thread call) → no-op. Always exits 0; never blocks a tool call. |
+| `runtime-telemetry/subagent-stop.sh` | `SubagentStop` once per subagent termination. | If a `<agent-id>.meta.json` exists for the firing `agent_id`, finalizes it with `ended_at`, `duration_ms`, total `token_usage` (summed across all assistant turns), `per_skill_tokens` (active-window attribution from the transcript), `stop_reason`, and `dispatch_prompt` (backfilled from the transcript's first user turn). |
 
 ## Layout
 

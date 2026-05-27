@@ -1,113 +1,95 @@
 #!/usr/bin/env bash
-# Runtime-telemetry bootstrap for engineer / reviewer agents.
+# Runtime-telemetry bootstrap — SubagentStart hook for engineer / reviewer agents.
 #
-# Invoked once by an engineer or reviewer agent at the top of its Execution
-# Flow. Writes the per-session metadata file that the PreToolUse / PostToolUse
-# / SubagentStop hooks key off of. Without this marker file, the hooks no-op —
-# which is how telemetry stays limited to engineer + reviewer dispatches.
+# Wired in hooks/hooks.json as a SubagentStart hook with matcher
+# "engineer|reviewer". Fires automatically inside the subagent's context when an
+# engineer or reviewer subagent starts, and seeds the per-dispatch metadata file
+# that the PreToolUse / SubagentStop hooks key off of. Without this marker file,
+# those hooks no-op — which is how telemetry stays limited to engineer + reviewer.
 #
-# Usage:
-#   bash bootstrap.sh <agent_type> "<verbatim dispatch prompt>"
+# Keyed on `agent_id`, NOT session_id: session_id is shared across the parent and
+# all parallel subagents, so two engineer/reviewer dispatches running at once
+# share a session_id but carry distinct agent_ids. Keying the file on agent_id is
+# what keeps concurrent dispatches from colliding on one meta file.
 #
-# Where <agent_type> is one of: engineer, reviewer.
+# Always-on: writes under /tmp/claude-memory/<repo-slug>/signals/runtime/,
+# creating the tree on first use. <repo-slug> is derived from the main worktree
+# path so every slice worktree of the same project resolves to the same dir.
 #
-# Opt-in: the consuming project must have created `.claude/memory/`. The
-# bootstrap resolves the consuming project's main worktree (never a slice
-# worktree) and writes under `<main-root>/.claude/memory/signals/runtime/`.
-# If `.claude/memory/` does not exist, the bootstrap exits silently (opt-out).
-#
-# Correlation: keyed on $CLAUDE_SESSION_ID so the hook scripts (which receive
-# session_id in their stdin payload) look up the same file. If
-# $CLAUDE_SESSION_ID is empty the bootstrap exits without writing — telemetry
-# requires a stable session id on both sides.
+# Always exits 0 so it never blocks the subagent from starting.
 
 set -uo pipefail
 
-note() { printf '[runtime-telemetry/bootstrap] %s\n' "$*" >&2; }
+input="$(cat)"
 
-agent_type="${1:-}"
-dispatch_prompt="${2:-}"
+command -v jq  >/dev/null 2>&1 || exit 0
+command -v git >/dev/null 2>&1 || exit 0
 
-case "$agent_type" in
-  engineer|reviewer) ;;
-  *)
-    note "agent_type must be 'engineer' or 'reviewer' (got '${agent_type}'); skipping"
-    exit 0
-    ;;
+agent_id="$(printf '%s' "$input" | jq -r '.agent_id // ""')"
+session_id="$(printf '%s' "$input" | jq -r '.session_id // ""')"
+raw_type="$(printf '%s' "$input" | jq -r '.agent_type // ""')"
+cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
+transcript_path="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
+
+[ -n "$agent_id" ] || exit 0
+[ -n "$cwd" ] || exit 0
+
+# Defensive type gate (in case the matcher is ever broadened): only engineer /
+# reviewer dispatches emit telemetry. Normalize the (possibly namespaced, e.g.
+# "harness-claude-code:engineer") agent type to a bare canonical value.
+case "$raw_type" in
+  *reviewer*) agent_type="reviewer" ;;
+  *engineer*) agent_type="engineer" ;;
+  *)          exit 0 ;;
 esac
 
-if [ -z "${CLAUDE_SESSION_ID:-}" ]; then
-  note "CLAUDE_SESSION_ID is empty; telemetry needs a stable session id — skipping"
-  exit 0
-fi
+# Resolve the consuming project's main worktree from cwd, then the repo-slug.
+main_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+[ -n "$main_root" ] || exit 0
+main_root="$(dirname "$main_root")"
+[ -d "$main_root" ] || exit 0
 
-if ! command -v git >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
-  note "git or jq not on PATH; skipping"
-  exit 0
-fi
+slug="$(basename "$main_root")-$(printf '%s' "$main_root" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)"
+runtime_dir="/tmp/claude-memory/$slug/signals/runtime"
+mkdir -p "$runtime_dir/.archive" 2>/dev/null || exit 0
 
-main_root="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" 2>/dev/null)"
-if [ -z "$main_root" ] || [ ! -d "$main_root" ]; then
-  note "could not resolve main worktree root; skipping"
-  exit 0
-fi
+meta_file="$runtime_dir/${agent_id}.meta.json"
 
-memory_root="$main_root/.claude/memory"
-if [ ! -d "$memory_root" ]; then
-  # Opt-out: consuming project has not created the memory directory.
-  exit 0
-fi
-
-runtime_dir="$memory_root/signals/runtime"
-mkdir -p "$runtime_dir/.archive" 2>/dev/null || {
-  note "could not create '$runtime_dir'; skipping"
-  exit 0
-}
-
-meta_file="$runtime_dir/${CLAUDE_SESSION_ID}.meta.json"
-events_file="$runtime_dir/${CLAUDE_SESSION_ID}.jsonl"
-
-# A meta file for the same session id already exists. Two cases:
-#   1. Re-invocation within the same session (shouldn't happen but defensive).
-#   2. A previous session reused the same id (effectively impossible). Archive
-#      it either way to keep the active file unambiguous.
+# Defensive: a file for this agent_id should not already exist (agent_id is
+# unique per dispatch). If it does (re-fire), archive it to keep things clean.
 if [ -f "$meta_file" ]; then
   prior_ts="$(jq -r '.started_at // "unknown"' "$meta_file" 2>/dev/null || echo unknown)"
-  mv "$meta_file"   "$runtime_dir/.archive/${CLAUDE_SESSION_ID}-${prior_ts}.meta.json" 2>/dev/null || true
-  [ -f "$events_file" ] && \
-    mv "$events_file" "$runtime_dir/.archive/${CLAUDE_SESSION_ID}-${prior_ts}.jsonl" 2>/dev/null || true
+  mv "$meta_file" "$runtime_dir/.archive/${agent_id}-${prior_ts}.meta.json" 2>/dev/null || true
 fi
 
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# dispatch_prompt is null here — SubagentStart's payload does not carry the
+# subagent's initial prompt. subagent-stop.sh backfills it from the transcript.
 jq -nc \
-  --arg session_id      "$CLAUDE_SESSION_ID" \
+  --arg agent_id        "$agent_id" \
+  --arg session_id      "$session_id" \
   --arg agent_type      "$agent_type" \
   --arg agent_name      "harness-claude-code:${agent_type}" \
-  --arg dispatch_prompt "$dispatch_prompt" \
   --arg started_at      "$started_at" \
-  --arg transcript_path "${CLAUDE_TRANSCRIPT_PATH:-}" \
-  --arg cwd             "$PWD" \
+  --arg transcript_path "$transcript_path" \
+  --arg cwd             "$cwd" \
   '{
-     session_id:      $session_id,
-     agent_type:      $agent_type,
-     agent_name:      $agent_name,
-     dispatch_prompt: $dispatch_prompt,
-     transcript_path: $transcript_path,
-     cwd:             $cwd,
-     started_at:      $started_at,
-     ended_at:        null,
-     duration_ms:     null,
-     token_usage:     null,
-     skills_invoked:  [],
-     stop_reason:     null
-   }' > "$meta_file" || {
-    note "failed to write meta file '$meta_file'"
-    exit 0
-  }
+     agent_id:          $agent_id,
+     session_id:        $session_id,
+     agent_type:        $agent_type,
+     agent_name:        $agent_name,
+     dispatch_prompt:   null,
+     transcript_path:   $transcript_path,
+     cwd:               $cwd,
+     started_at:        $started_at,
+     ended_at:          null,
+     duration_ms:       null,
+     token_usage:       null,
+     per_skill_tokens:  {},
+     skills_invoked:    [],
+     tool_calls:        {},
+     stop_reason:       null
+   }' > "$meta_file" 2>/dev/null || exit 0
 
-# Touch the events file so hooks can append unconditionally.
-: > "$events_file"
-
-note "started telemetry session ${CLAUDE_SESSION_ID} for agent_type=${agent_type}"
 exit 0

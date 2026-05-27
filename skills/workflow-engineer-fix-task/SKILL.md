@@ -93,42 +93,6 @@ Push the slice branch to `origin`, then add the `review:pending` label to the ta
 
 Pre-push hooks run lint/test/security; deny → drop back to step 5 (never force-push, never skip hooks).
 
-### 8. Capture fix-cycle signal to the consuming project's memory store
-
-Per `memory-convention`, if `$MAIN_ROOT/.claude/memory/` exists in the consuming project, append one signal row per finding addressed in this fix cycle. If it does not exist, skip silently. Never let this step block the terminal label flip — write failures are logged and swallowed.
-
-Resolve the memory root:
-
-```bash
-MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
-[ -d "$MEMORY_ROOT" ] || exit 0   # opt-in by directory presence
-```
-
-For each finding listed in the in-scope reviewer comment from step 3, classify your action:
-
-- `fixed` — you applied the suggested fix (or a semantically equivalent one). Expected for every `Fix now` finding.
-- `rejected` — you pushed back because the rule does not apply here / the finding is a false positive. The `note` must explain why; this row is the primary input that consolidation uses to propose project-specific carve-outs.
-- `modified` — you applied a different fix than suggested. The `note` must explain the difference.
-- `deferred` — the finding's class was `Defer` and you correctly skipped it. No `note` required (the reviewer's rationale lives in the comment itself; this row is purely for consolidation to track defer rates per pattern/category).
-- `skipped-nit` — the finding's class was `Nit` and you chose not to fix it. No `note` required.
-
-Compute the cycle number from the slice branch's git history:
-
-```bash
-CYCLE_NUMBER=$(git log "origin/<slice-branch>" --grep="Refs #<task-#>" --oneline | wc -l)
-```
-
-Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/<task#>.jsonl` (append mode, create parent dir if missing). Row shape per `memory-convention`, extended with `fix_class` so consolidation can compute per-class metrics (defer rate, nit rate):
-
-```json
-{"ts": "<iso8601>", "task": <n>, "slice": <parent#>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "fix_class": "<Fix|Defer|Nit>", "engineer_action": "<fixed|rejected|modified|deferred|skipped-nit>", "cycle_number": <n>, "note": "<empty for 'fixed'/'deferred'/'skipped-nit'; required for 'rejected'/'modified'>"}
-```
-
-`pattern_skill`, `category`, and `fix_class` are copied from the matching row in `signals/reviews/<task#>.jsonl` (join on `finding_handle`). If no review-side row exists for this finding (memory was opted-in after the review was posted), copy from the reviewer comment's `[<class> · I:<x>/E:<y>]` prefix, or fall back to `pattern_skill="unknown"`, a category derived from the title, and `fix_class="Fix"` for legacy CRITICAL/HIGH/MEDIUM rows.
-
-Repeated-fix detection is **derived by consolidation**, not emitted here — `workflow-consolidate-memory` scans all `signals/fixes/*.jsonl` to find `pattern_skill + category` combinations whose `engineer_action="fixed"` count crosses ≥ 3.
-
 Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`.
 
 ## Iron rules
@@ -141,5 +105,3 @@ Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`.
 - **Every commit carries BOTH `Refs` trailers.**
 - **Each Fix-now finding starts with a failing test.**
 - **Truth is in Git and on the task labels.**
-- **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a fix dispatch must never be blocked by it.
-- **A `rejected` action must carry a `note`.** Consolidation treats `rejected` rows as the primary signal that the baseline rule does not apply in this project — an empty note makes that signal useless.

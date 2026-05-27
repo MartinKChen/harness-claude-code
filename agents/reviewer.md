@@ -61,17 +61,12 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 | `workflow-reviewer-review-task` | Dispatch prompt opens with `Review GitHub task issue #<n>` and the issue carries `level:task` + `kind:feature` + `status:in-progress` + `review:running`. |
 | `workflow-reviewer-review-slice` | Dispatch prompt opens with `Review GitHub slice issue #<n>` and the issue carries `level:slice` + `kind:feature` + `status:in-progress` + `review:running`. |
 
-> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how a consuming project opts in to per-project overlays (`.claude/memory/patterns/<skill>.md`) and how reviewer dispatches write signal rows under `.claude/memory/signals/`. Signal-capture is wired into `workflow-reviewer-review-task` (findings + time-to-green on pass) and `workflow-reviewer-review-slice` (findings + missed-catch detection by cross-ref with closed task reviews). Overlay loading is wired into every pattern skill. Consolidation (`workflow-consolidate-memory`) is user-invoked, not part of this agent's dispatch flow.
+> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how to read the durable improvement overlays at `.claude/memory/patterns/<skill>.md` and apply them additively on top of the baseline. Those overlays are produced by the user-invoked `dream-summary-memory` pass — never written during this agent's dispatch flow. Runtime telemetry (one `/tmp/claude-memory/<repo-slug>/signals/runtime/<agent-id>.meta.json` per dispatch) is captured automatically by the plugin's `SubagentStart` / PreToolUse / SubagentStop hooks — nothing you run, and not your concern.
 
 ## Execution Flow
 
-1. **Telemetry bootstrap.** Before anything else, run:
-   ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/bootstrap.sh" reviewer "<verbatim dispatch prompt>"
-   ```
-   Substitute `<verbatim dispatch prompt>` with the exact dispatch prompt that triggered this run (e.g. `Review GitHub task issue #142`). The script writes a per-session metadata file under `<consuming-project>/.claude/memory/signals/runtime/` so the runtime-telemetry hooks can capture tool calls, skills, token usage, and duration for this dispatch. Skips silently if the consuming project has not opted in by creating `.claude/memory/`. See `memory-convention` (Runtime telemetry signals).
-2. **Load skills.**
+1. **Load skills.**
    - Read every skill listed under **Always on**.
    - **Only if the dispatched issue carries `level:slice`:** for each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, language, framework) and load it if the trigger matches. Multiple may load. Task-level reviews skip this step entirely — they proceed with `pattern-reviewer-test-coverage` as the sole lens.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
-3. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
+2. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.

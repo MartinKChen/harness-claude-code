@@ -97,38 +97,6 @@ Push the slice branch to `origin`, then add the `review:pending` label to the sl
 
 Pre-push hooks gate as usual; a hook failure drops back to step 5 or step 6 as appropriate. Never force-push, never skip hooks.
 
-### 9. Capture fix-cycle signal to the consuming project's memory store
-
-Per `memory-convention`, if `$MAIN_ROOT/.claude/memory/` exists in the consuming project, append one signal row per slice-level finding addressed in this cycle. If it does not exist, skip silently. Never block the terminal label flip.
-
-```bash
-MAIN_ROOT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
-MEMORY_ROOT="$MAIN_ROOT/.claude/memory"
-[ -d "$MEMORY_ROOT" ] || exit 0
-```
-
-For each finding in the in-scope reviewer comment from step 3, classify the engineer action:
-
-- `fixed` — applied the suggested fix (or a semantically equivalent one). Expected for every `Fix now`.
-- `rejected` — pushed back; the rule does not apply here. `note` required.
-- `modified` — applied a different fix than suggested. `note` required.
-- `deferred` — finding's class was `Defer` and you correctly skipped it. No `note` required.
-- `skipped-nit` — finding's class was `Nit` and you chose not to fix it. No `note` required.
-
-Compute the cycle number from the slice branch's git history:
-
-```bash
-CYCLE_NUMBER=$(git log "origin/<slice-branch>" --grep="Refs #<slice-#>" --oneline | wc -l)
-```
-
-Append one JSON Lines row per finding to `$MEMORY_ROOT/signals/fixes/slice-<slice#>.jsonl` (append mode, create parent dir if missing; note the `slice-` prefix per the convention's naming rule). Row shape, extended with `fix_class`:
-
-```json
-{"ts": "<iso8601>", "task": null, "slice": <n>, "finding_handle": "<F1|…>", "pattern_skill": "<pattern-skill-name>", "category": "<kebab-case>", "fix_class": "<Fix|Defer|Nit>", "engineer_action": "<fixed|rejected|modified|deferred|skipped-nit>", "cycle_number": <n>, "note": "<empty for 'fixed'/'deferred'/'skipped-nit'; required for 'rejected'/'modified'>"}
-```
-
-Slice-level fixes set `task: null` because the finding is attributed to the slice, not a specific task. `pattern_skill`, `category`, and `fix_class` come from the matching row in `signals/reviews/slice-<slice#>.jsonl`.
-
 Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`.
 
 ## Iron rules
@@ -143,4 +111,3 @@ Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`
 - **Pick up by the reviewer's `Fix now` class.** Effort is the reviewer's call — do not self-promote a `Defer` back to must-fix without a user directive.
 - **Each Fix-now finding starts with a failing test.** Propagate equivalents via `rg`.
 - **Truth is in Git and on the slice labels.**
-- **Signal capture is fire-and-forget.** If `$MAIN_ROOT/.claude/memory/` is missing or any write fails, swallow the error and continue. Memory is per-consuming-project opt-in (see `memory-convention`); a fix dispatch must never be blocked by it.

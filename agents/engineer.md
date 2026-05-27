@@ -64,19 +64,14 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 | `workflow-engineer-fix-slice` | Dispatch prompt opens with `Fix the review feedback on GitHub slice issue #<n>` (no review label — locked by the orchestrator). |
 | `workflow-engineer-fix-pr` | Dispatch prompt opens with `Fix PR #<n>` and the PR carries `status:fix-in-progress`. |
 
-> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how a consuming project opts in to per-project overlays (`.claude/memory/patterns/<skill>.md`) and how engineer/reviewer dispatches write signal rows under `.claude/memory/signals/`. Signal-capture is wired into `workflow-engineer-fix-task` and `workflow-engineer-fix-slice` as their terminal steps. Overlay loading is wired into every pattern skill. Consolidation (`workflow-consolidate-memory`) is user-invoked, not part of this agent's dispatch flow.
+> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how to read the durable improvement overlays at `.claude/memory/patterns/<skill>.md` and apply them additively on top of the baseline. Those overlays are produced by the user-invoked `dream-summary-memory` pass — never written during this agent's dispatch flow. Runtime telemetry (one `/tmp/claude-memory/<repo-slug>/signals/runtime/<agent-id>.meta.json` per dispatch) is captured automatically by the plugin's `SubagentStart` / PreToolUse / SubagentStop hooks — nothing you run, and not your concern.
 
 ## Execution Flow
 
-1. **Telemetry bootstrap.** Before anything else, run:
-   ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/hooks/runtime-telemetry/bootstrap.sh" engineer "<verbatim dispatch prompt>"
-   ```
-   Substitute `<verbatim dispatch prompt>` with the exact dispatch prompt that triggered this run (e.g. `Implement GitHub task issue #142`). The script writes a per-session metadata file under `<consuming-project>/.claude/memory/signals/runtime/` so the runtime-telemetry hooks can capture tool calls, skills, token usage, and duration for this dispatch. Skips silently if the consuming project has not opted in by creating `.claude/memory/`. See `memory-convention` (Runtime telemetry signals).
-2. **Load skills.**
+1. **Load skills.**
    - Read every skill listed under **Always on**.
    - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
-3. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
+2. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
    - **After the workflow's worktree-setup step, before any implementation step**, invoke `operation-engineer-handoff`'s **Incoming pickup** procedure. If a handoff doc exists, the skill defines how to read it, verify the WIP commits, and resume from its **Where to pick up next**; if not, proceed normally.
    - **Throughout the workflow**, monitor the conversation budget. When approaching ~100K tokens, invoke `operation-engineer-handoff`'s **Outgoing handoff** procedure (finish the current TDD step, commit + push, write the handoff doc, exit) instead of pressing on.

@@ -5,13 +5,14 @@
 # session's meta.json by writing:
 #   - ended_at (ISO-8601 UTC)
 #   - duration_ms (ended_at - started_at)
-#   - token_usage (parsed from the tail of the subagent's transcript)
-#   - stop_reason (parsed from the tail of the subagent's transcript)
+#   - token_usage (TOTAL: each usage field summed across all assistant turns)
+#   - per_skill_tokens (active-window attribution: each turn's tokens credited
+#     to the most-recently-loaded skill at that point in the transcript)
+#   - stop_reason (from the last assistant turn that carries one)
 #
-# The marker file is intentionally NOT deleted — the meta + jsonl pair remain
-# in `signals/runtime/` as the post-mortem record. Operators can rotate
-# completed sessions into `.archive/` on their own schedule (see
-# memory-convention).
+# The marker file is intentionally NOT deleted — it remains in
+# `signals/runtime/` as the post-mortem record. Operators can rotate completed
+# sessions into `.archive/` on their own schedule.
 #
 # Always exits 0.
 
@@ -23,11 +24,11 @@ if ! command -v jq >/dev/null 2>&1 || ! command -v git >/dev/null 2>&1; then
   exit 0
 fi
 
-session_id="$(printf '%s' "$input" | jq -r '.session_id // ""')"
+agent_id="$(printf '%s' "$input" | jq -r '.agent_id // ""')"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 transcript_path="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
 
-[ -n "$session_id" ] || exit 0
+[ -n "$agent_id" ] || exit 0
 [ -n "$cwd" ] || exit 0
 
 main_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
@@ -35,11 +36,9 @@ main_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/
 main_root="$(dirname "$main_root")"
 [ -d "$main_root" ] || exit 0
 
-memory_root="$main_root/.claude/memory"
-[ -d "$memory_root" ] || exit 0
-
-runtime_dir="$memory_root/signals/runtime"
-meta_file="$runtime_dir/${session_id}.meta.json"
+slug="$(basename "$main_root")-$(printf '%s' "$main_root" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)"
+runtime_dir="/tmp/claude-memory/$slug/signals/runtime"
+meta_file="$runtime_dir/${agent_id}.meta.json"
 
 [ -f "$meta_file" ] || exit 0
 
@@ -59,46 +58,92 @@ if [ -n "$started_at" ]; then
   fi
 fi
 
-# --- Token usage + stop reason from the transcript ---------------------------
-# The transcript is JSON Lines, one message per row. The final assistant turn
-# carries the cumulative `usage` block from the Anthropic API response, and a
-# `stop_reason` field. We tail the file and pull the last assistant row that
-# has a `usage` object.
+# --- Token usage, per-skill attribution, stop reason from the transcript -----
+# The transcript is JSON Lines, one message per row. Each assistant turn
+# carries a `usage` block and (on the final turn) a `stop_reason`. We slurp the
+# whole file and, in one pass:
+#   - sum each usage field across all turns           -> token_usage (total)
+#   - walk turns in order, crediting each turn's tokens to the most-recently
+#     loaded skill (a `Read` of `*/skills/<name>/SKILL.md` or a `Skill` call),
+#     turns before the first load going to "__unattributed__"
+#                                                      -> per_skill_tokens
+#   - take the last non-null stop_reason              -> stop_reason
+#   - take the first user turn's text                 -> dispatch_prompt
+#     (SubagentStart's payload had no prompt, so we backfill it here)
 token_usage="null"
+per_skill_tokens="{}"
 stop_reason="null"
+dispatch_prompt="null"
 
 if [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
-  last_with_usage="$(tac "$transcript_path" 2>/dev/null \
-                  | jq -c 'select((.message.usage // .usage) != null)' 2>/dev/null \
-                  | head -1)"
+  agg="$(jq -s '
+    def msgof: (.message // .);
+    def skill_of_block:
+      if .name == "Skill" then (.input.skill // "")
+      elif .name == "Read" then
+        ((.input.file_path // "")
+         | if test("/skills/[^/]+/SKILL\\.md$")
+           then capture("/skills/(?<n>[^/]+)/SKILL\\.md$").n
+           else "" end)
+      else "" end;
 
-  if [ -z "$last_with_usage" ]; then
-    # `tac` may not be on macOS without coreutils; fall back to awk reverse.
-    last_with_usage="$(awk '{a[NR]=$0} END{for(i=NR;i>0;i--) print a[i]}' "$transcript_path" 2>/dev/null \
-                    | jq -c 'select((.message.usage // .usage) != null)' 2>/dev/null \
-                    | head -1)"
-  fi
+    (reduce (.[] | msgof | .usage // empty) as $u (
+        {input_tokens:0, output_tokens:0, cache_creation_input_tokens:0, cache_read_input_tokens:0};
+        .input_tokens                 += ($u.input_tokens // 0)
+        | .output_tokens              += ($u.output_tokens // 0)
+        | .cache_creation_input_tokens += ($u.cache_creation_input_tokens // 0)
+        | .cache_read_input_tokens    += ($u.cache_read_input_tokens // 0)
+     )) as $totals
+    | (reduce .[] as $row (
+        {current:"__unattributed__", acc:{}};
+        .current as $cur
+        | ($row | msgof) as $m
+        | (if $m.usage then
+            .acc[$cur] = {
+              input_tokens:  ((.acc[$cur].input_tokens  // 0) + ($m.usage.input_tokens  // 0)),
+              output_tokens: ((.acc[$cur].output_tokens // 0) + ($m.usage.output_tokens // 0))
+            }
+           else . end)
+        | (($m.content) as $c | (if ($c | type) == "array" then $c else [] end)
+            | map(select(.type=="tool_use") | skill_of_block) | map(select(. != ""))) as $skills
+        | (if ($skills | length) > 0 then .current = ($skills | last) else . end)
+     )) as $walk
+    | {
+        token_usage:      $totals,
+        per_skill_tokens: $walk.acc,
+        stop_reason:      ([.[] | msgof | (.stop_reason // empty)] | last // null),
+        dispatch_prompt:  ([ .[] | msgof | select(.role == "user")
+                             | (.content
+                                | if type == "string" then .
+                                  elif type == "array" then ([.[] | select(.type == "text") | .text] | join("\n"))
+                                  else "" end)
+                             | select(. != "") ] | .[0] // null)
+      }
+  ' "$transcript_path" 2>/dev/null)"
 
-  if [ -n "$last_with_usage" ]; then
-    token_usage="$(printf '%s' "$last_with_usage" | jq -c '.message.usage // .usage // null' 2>/dev/null || echo null)"
-    stop_reason_raw="$(printf '%s' "$last_with_usage" | jq -r '.message.stop_reason // .stop_reason // ""' 2>/dev/null)"
-    if [ -n "$stop_reason_raw" ]; then
-      stop_reason="$(printf '%s' "$stop_reason_raw" | jq -Rc .)"
-    fi
+  if [ -n "$agg" ]; then
+    token_usage="$(printf '%s' "$agg" | jq -c '.token_usage // null' 2>/dev/null || echo null)"
+    per_skill_tokens="$(printf '%s' "$agg" | jq -c '.per_skill_tokens // {}' 2>/dev/null || echo '{}')"
+    stop_reason="$(printf '%s' "$agg" | jq -c '.stop_reason // null' 2>/dev/null || echo null)"
+    dispatch_prompt="$(printf '%s' "$agg" | jq -c '.dispatch_prompt // null' 2>/dev/null || echo null)"
   fi
 fi
 
 # Stitch the finalized fields into the meta file.
 tmp="$(mktemp 2>/dev/null)" || tmp="${meta_file}.tmp.$$"
 jq \
-  --arg ended_at        "$ended_at" \
-  --argjson duration_ms "$duration_ms" \
-  --argjson token_usage "$token_usage" \
-  --argjson stop_reason "$stop_reason" \
-  '.ended_at    = $ended_at
- | .duration_ms = $duration_ms
- | .token_usage = $token_usage
- | .stop_reason = $stop_reason' \
+  --arg ended_at             "$ended_at" \
+  --argjson duration_ms      "$duration_ms" \
+  --argjson token_usage      "$token_usage" \
+  --argjson per_skill_tokens "$per_skill_tokens" \
+  --argjson stop_reason      "$stop_reason" \
+  --argjson dispatch_prompt  "$dispatch_prompt" \
+  '.ended_at         = $ended_at
+ | .duration_ms      = $duration_ms
+ | .token_usage      = $token_usage
+ | .per_skill_tokens = $per_skill_tokens
+ | .stop_reason      = $stop_reason
+ | .dispatch_prompt  = (if $dispatch_prompt == null then .dispatch_prompt else $dispatch_prompt end)' \
   "$meta_file" > "$tmp" 2>/dev/null \
   && mv "$tmp" "$meta_file" 2>/dev/null \
   || rm -f "$tmp" 2>/dev/null
