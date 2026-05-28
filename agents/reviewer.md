@@ -38,13 +38,24 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 **Conditionally invoked — pattern / principle**
 
 > **Slice reviews only.** This entire section is evaluated only when the dispatched issue carries `level:slice`. Task-level reviews (`level:task`) load no conditional pattern skills — they exercise `pattern-reviewer-test-coverage` against the task's `Done criteria (EARS)` and `Scenarios (Gherkin)` and nothing else.
+>
+> **Two-pass split.** The patterns below are bucketed by review phase. The slice workflow walks **Phase 1 (Spec compliance)** patterns first, scores their findings, and only proceeds to **Phase 2 (Code quality)** when no `I:H` spec finding remains. If Phase 1 produces an `I:H` finding, Phase 2 is skipped — the engineer's fix loop is going to rework the implementation anyway, and re-running quality patterns over code that is about to change wastes reviewer context and produces noise.
+
+**Phase 1 — Spec compliance (walk first)**
+
+| Skill | When to invoke |
+|-------|----------------|
+| `pattern-reviewer-contract` | When the slice touches backend or frontend code and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
+
+(`pattern-reviewer-test-coverage` always loads as part of Phase 1 — it lives in the always-on list above and walks every slice review's done criteria against the diff.)
+
+**Phase 2 — Code quality (walk only if Phase 1 has no `I:H` finding)**
 
 | Skill | When to invoke |
 |-------|----------------|
 | `pattern-reviewer-coding-standard` | When the slice touches backend or frontend code. |
 | `pattern-reviewer-observability` | When the slice touches backend or frontend code. |
 | `pattern-reviewer-security` | When the slice touches backend or frontend code. |
-| `pattern-reviewer-contract` | When the slice touches backend or frontend code and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
 | `pattern-reviewer-backend-standard` | When the slice touches backend code. |
 | `pattern-reviewer-database` | When the slice touches backend code that includes ORM models or migrations. |
 | `pattern-reviewer-frontend-standard` | When the slice touches frontend code. |

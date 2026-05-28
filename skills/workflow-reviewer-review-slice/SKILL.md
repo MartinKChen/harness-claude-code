@@ -30,9 +30,25 @@ Verify the slice has `review:running`. If missing, halt and surface `no running 
 
 Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree on that branch (read-only), then `cd` into the worktree path.
 
-### 3. Walk the loaded slice-level reviewer pattern set
+### 3. Walk the loaded slice-level reviewer pattern set — two-pass
 
-The reviewer agent's patterns for the slice level cover cross-task integration, end-to-end contract conformance, seams (do the e2e specs cover all the task-level features?), and slice-wide coherence. Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records.
+Slice reviews walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
+
+- **Phase 1 — Spec compliance**: `pattern-reviewer-test-coverage` (always loaded; walks done criteria + Gherkin scenarios against the diff) and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These patterns answer *"did this slice build what was asked?"* — they catch missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model.
+- **Phase 2 — Code quality**: every other loaded pattern (coding standard, observability, security, language- and framework-specific patterns, container, database). These patterns answer *"is what was built well-built?"* — they catch quality, security, and maintainability issues regardless of whether the spec was met.
+
+Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records. Tag every Phase 1 finding with `phase: spec` and every Phase 2 finding with `phase: quality`.
+
+#### 3a. Walk Phase 1 patterns, score, and decide
+
+Walk Phase 1 patterns to completion. Collect their findings. Score each on Impact × Effort/Risk per step 4 below. Then:
+
+- **If any Phase 1 finding scores `I:H` (spec-broken)**: SKIP Phase 2 entirely. Compose the verdict comment with the Phase 1 findings only and a Phase-2-skipped note (see step 5). The engineer's fix loop will rework the implementation; re-running quality patterns over code that's about to change wastes reviewer context and produces noise that gets churned away anyway.
+- **If no Phase 1 finding scores `I:H`**: proceed to step 3b.
+
+#### 3b. Walk Phase 2 patterns
+
+Walk every loaded Phase 2 pattern to completion. Collect their findings. Score per step 4. Carry the Phase 1 findings forward — they still appear in the verdict, just no longer block.
 
 ### 4. Score each finding on Impact × Effort/Risk and derive its fix-now class
 
@@ -52,13 +68,14 @@ Compose, in order:
 
 1. **Summary matrix** — a 3×3 count of `(Impact, Effort)` cells over all reported findings (Drop excluded).
 2. **Disposition line** — `Fix now: <n>  •  Deferred: <n>  •  Nits: <n>`.
-3. **Findings** — each printed with the bracketed prefix `### [<class> · I:<x>/E:<y>] <title>` followed by `**Impact (<x>):**`, `**Effort/Risk (<y>):**`, `**Fix:**`, and the BAD / GOOD snippets per the pattern's template.
-4. **Verdict** line.
+3. **Phase 1 — Spec compliance findings** (subhead). Print every Phase 1 finding with the bracketed prefix `### [<class> · I:<x>/E:<y>] <title>` followed by `**Impact (<x>):**`, `**Effort/Risk (<y>):**`, `**Fix:**`, and the BAD / GOOD snippets per the pattern's template. If there are none, write `_No spec-compliance findings._`
+4. **Phase 2 — Code quality findings** (subhead). Same format as section 3, for the Phase 2 findings. If Phase 2 was skipped per step 3a, replace this section with: `_Phase 2 (code quality) skipped: Phase 1 produced at least one `I:H` finding. Re-review will run both phases after the engineer fix._` If Phase 2 ran but produced no findings, write `_No code-quality findings._`
+5. **Verdict** line.
 
 Verdict is computed from Impact alone — Effort never blocks:
 
-- **APPROVE** — no `I:H` finding remains. Terminal label: `review:passed`.
-- **BLOCK** — at least one `I:H` finding. Terminal label: `review:need-fix`.
+- **APPROVE** — no `I:H` finding remains across both phases. Terminal label: `review:passed`.
+- **BLOCK** — at least one `I:H` finding in either phase. Terminal label: `review:need-fix`. (A Phase-1 `I:H` survivor that triggered the Phase-2 skip is still the BLOCK reason.)
 
 The downstream engineer pickup uses the per-finding `Fix` / `Defer` / `Nit` class, not the verdict — see `workflow-engineer-fix-slice` step 3.
 

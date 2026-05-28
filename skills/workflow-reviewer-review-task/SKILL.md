@@ -41,7 +41,9 @@ Every subsequent read happens inside the worktree — never the orchestrator's c
 
 ### 4. Walk the loaded reviewer pattern set
 
-The reviewer agent's loaded pattern set chooses which patterns apply based on the task's `type:*` label and the touched paths. Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records — `severity` is the pattern's per-rule judgement (CRITICAL / HIGH / MEDIUM / LOW). Collect all of them; do not post per-pattern.
+Task reviews load only `pattern-reviewer-test-coverage` — the **Phase 1 (spec compliance)** pattern. Phase 2 (code quality) does not apply at the task level; quality patterns are layered in at the slice level instead, where the diff is broader and the cross-task seams are visible. See `workflow-reviewer-review-slice` step 3 for the two-pass split that drives slice reviews.
+
+`pattern-reviewer-test-coverage` emits raw findings as `{title, severity, location, evidence, fix}` records — `severity` is the pattern's per-rule judgement (CRITICAL / HIGH / MEDIUM / LOW). Collect all of them; do not post per-pattern.
 
 ### 5. Score each finding on Impact × Effort/Risk and derive its fix-now class
 
