@@ -1,20 +1,24 @@
 ---
 name: operation-engineer-handoff
-description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/claude-handoff/<repo>/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Invoke at engineer kickoff to check for an inbound handoff, and invoke mid-workflow when the conversation budget approaches ~100K tokens."
+description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/claude-handoff/<repo>/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Loaded conditionally: at engineer kickoff when a handoff doc already exists at the computed path, and on-demand when the `engineer-budget-gate.sh` hook denies a mutation with a handoff instruction (default threshold 150K)."
 ---
 
 # operation-engineer-handoff
 
-Long-running TDD loops can outgrow a single agent's context window. This skill keeps the engineer agent's sessions **bounded**: pick up where the previous agent stopped (if there's a handoff doc), and hand off cleanly when the conversation approaches ~100K tokens so the next dispatch can keep going without losing state.
+Long-running TDD loops can outgrow a single agent's context window. This skill keeps the engineer agent's sessions **bounded**: pick up where the previous agent stopped (if there's a handoff doc), and hand off cleanly when the harness-side budget-gate hook denies a mutation telling the agent to wrap up, so the next dispatch can keep going without losing state.
 
-The engineer agent loads this skill on every dispatch. The procedures below are only executed when their trigger fires.
+## Trigger ownership — the hook is the signal, not the agent
+
+The agent CANNOT reliably measure its own window occupancy from inside the conversation. Only the harness can — and it does, via `hooks/engineer-budget-gate.sh` on `PreToolUse(Edit|Write|MultiEdit|NotebookEdit|Bash)`. That hook reads the live transcript's most-recent assistant turn usage, fires a `deny` with a handoff instruction once occupancy crosses `ENGINEER_HANDOFF_THRESHOLD` (default 150000), then steps aside so the handoff's own commit / push / doc-write are not blocked. It re-arms after another `ENGINEER_HANDOFF_REARM` (default 20000) of growth in case the agent ignored the first deny.
+
+Do not author "I think I'm running out of context, let me hand off" prose. Wait for the hook deny — it's keyed to the real signal, fires before the safety margin runs out, and tells you the exact unit, doc path, and threshold value in its reason text.
 
 ## When to activate
 
-- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: a handoff doc exists at the computed path for this unit of work.
-- **Outgoing handoff** — Mid-workflow, when the conversation budget is approaching ~100K tokens. Signals: long bash output, many file reads, repeated RED→GREEN cycles, extended diagnostics. Cut over while there's still budget to write a clean doc — don't wait until the next edit fails.
+- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: a handoff doc exists at the computed path for this unit of work. The engineer agent checks `[ -f /tmp/claude-handoff/<repo>/<unit>.md ]` at kickoff and loads this skill only if the file exists.
+- **Outgoing handoff** — When the `engineer-budget-gate.sh` PreToolUse hook denies a mutating tool call with a handoff instruction in its `permissionDecisionReason`. The agent loads this skill in response to the deny and runs the procedure below.
 
-Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff is only wired into the engineer agent. Do NOT activate to "checkpoint" progress mid-task when the context budget is fine; commit + push as normal.
+Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff is only wired into the engineer agent. Do NOT activate to "checkpoint" progress mid-task when no hook has fired; commit + push as normal.
 
 ## Handoff doc path
 
@@ -54,7 +58,7 @@ Run after the workflow's worktree-setup step and BEFORE any implementation step.
 
 ## Outgoing handoff
 
-Trigger when the conversation context is approaching ~100K tokens.
+Trigger: `engineer-budget-gate.sh` returned a `deny` whose `permissionDecisionReason` instructs you to run Outgoing handoff. The reason text names the exact occupancy, threshold, and doc path. Do not pre-emptively run this procedure without that deny.
 
 1. **Finish the current TDD step.** Never hand off mid-RED or mid-GREEN — either complete the cycle or `git restore` the half-edit so the working tree is clean. A partial edit on disk that's not in a commit is invisible to the next agent.
 2. **Commit + push every completed step** on the slice branch using the project's Conventional Commits format with both `Refs` trailers (or `Refs #<pr-#>` + `Refs #<slice-#>` for the fix-pr flavor). The next agent must not re-do work that's already on the branch. Push to `origin` before writing the doc — the doc references SHAs that must be fetchable.
