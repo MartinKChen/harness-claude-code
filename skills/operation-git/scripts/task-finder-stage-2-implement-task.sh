@@ -57,10 +57,11 @@ out="$(bash "$script_dir/list-issues.sh" \
         --jq '.data.repository.issue.parent.number // empty')"
       [[ -n "$slice" ]] || continue
 
-      case "$type_label" in
-        type:e2e) subagent="e2e-author" ;;
-        type:backend|type:frontend) subagent="engineer" ;;
-      esac
+      if [[ "$type_label" == "type:e2e" ]]; then
+        subagent="e2e-author"
+      else
+        subagent="engineer"
+      fi
 
       printf -- '- #%s | %s | %s | slice:%s | "%s"\n' "$number" "$subagent" "$type_label" "$slice" "$title"
     done)"
