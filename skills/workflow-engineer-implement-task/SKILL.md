@@ -5,7 +5,7 @@ description: "Implement one `type:backend`/`type:frontend` task on the parent sl
 
 # workflow-engineer-implement-task
 
-Take one assigned `type:backend` / `type:frontend` GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
+Take one assigned `type:backend` / `type:frontend` GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
 
 The agent loads its own pattern set (TDD discipline, language-specific patterns, container conventions, security baseline, ADR/architecture context) at kickoff. This skill owns only the workflow primitives.
 
@@ -28,7 +28,7 @@ Input from the orchestrator: just the task issue ID. Discover everything else.
 
 ### 1. Read the issue body
 
-Fetch the task issue (number, title, body, labels, milestone, state, url) via `gh issue view`. Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
+Fetch the task issue (number, title, body, labels, milestone, state, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — the helper wraps `gh issue view --json` to skip auto-rendered comments and reactions (3–8K of chrome on any chatty issue). Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
 
 ### 2. Read project context
 

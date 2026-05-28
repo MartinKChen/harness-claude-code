@@ -70,11 +70,13 @@ if [ -n "$agent_type" ] && [ "$agent_type" != "engineer" ]; then
 fi
 [ -n "$cwd" ] || exit 0
 # Match the worktree prefix symlink-agnostically: setup-worktree.sh creates the
-# tree at /tmp/git-worktree/..., but on macOS /tmp is a symlink to private/tmp,
-# so the cwd the hook receives is the resolved /private/tmp/git-worktree/...
-# Glob on the stable */git-worktree/* segment instead of the leading prefix.
+# tree at /tmp/harness-claude-code/<repo>/worktrees/<branch>/..., but on macOS
+# /tmp is a symlink to private/tmp, so the cwd the hook receives is the
+# resolved /private/tmp/harness-claude-code/.../worktrees/... path. Glob on
+# the stable */harness-claude-code/*/worktrees/* segment instead of the
+# leading prefix.
 case "$cwd" in
-  */git-worktree/*) ;;
+  */harness-claude-code/*/worktrees/*) ;;
   *) exit 0 ;;
 esac
 [ -n "$transcript_path" ] && [ -f "$transcript_path" ] || exit 0
@@ -96,14 +98,16 @@ esac
 [ "$occ" -ge "$THRESHOLD" ] || exit 0
 
 # --- re-arm bookkeeping ------------------------------------------------------
-# <repo> is the first component after the git-worktree/ segment (robust to
-# nested slice branches and to the /tmp -> /private/tmp symlink on macOS),
-# matching engineer-precompact-handoff.sh and the documented worktree layout.
-repo="$(printf '%s' "$cwd" | sed -E 's#^.*/git-worktree/([^/]+)/.*#\1#')"
+# <repo> is the consuming project's basename — the component after
+# harness-claude-code/ and before worktrees/. Robust to nested slice branches
+# (e.g. feature/123-foo) and to the /tmp -> /private/tmp symlink on macOS.
+# Matches engineer-precompact-handoff.sh and the documented worktree layout.
+repo="$(printf '%s' "$cwd" | sed -E 's#^.*/harness-claude-code/([^/]+)/worktrees/.*#\1#')"
 [ -n "$repo" ] && [ "$repo" != "$cwd" ] || exit 0
-state_dir="/tmp/claude-handoff/${repo}"
-marker="${state_dir}/.budget-gate-${agent_id}"
-mkdir -p "$state_dir" 2>/dev/null || true
+state_dir="/tmp/harness-claude-code/${repo}/handoffs"
+marker_dir="/tmp/harness-claude-code/${repo}/state"
+marker="${marker_dir}/.budget-gate-${agent_id}"
+mkdir -p "$state_dir" "$marker_dir" 2>/dev/null || true
 
 last_fired=0
 if [ -f "$marker" ]; then
@@ -134,7 +138,7 @@ if [ -z "$unit" ]; then
     *)         unit="$(printf '%s' "${slice_branch:-unknown}" | tr '/' '-')" ;;
   esac
 fi
-doc_path="${state_dir}/${unit}.md"
+doc_path="/tmp/harness-claude-code/${repo}/handoffs/${unit}.md"
 
 # --- fire: record occupancy, emit the deny + handoff instruction -------------
 printf '%s' "$occ" > "$marker" 2>/dev/null || true

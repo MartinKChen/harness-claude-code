@@ -24,7 +24,7 @@ Input from the orchestrator: just the slice issue ID. Everything else discovered
 
 ### 1. Read the slice body + verify the lock
 
-Fetch the slice issue (number, title, body, labels, url) via `gh issue view`. Confirm `level:slice` + `kind:feature` + `status:in-progress` + `e2e:running`. Missing `e2e:running` → halt and surface `no e2e:running lock on this slice — refusing to invent a result`.
+Fetch the slice issue (number, title, body, labels, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — skips comment chrome. Confirm `level:slice` + `kind:feature` + `status:in-progress` + `e2e:running`. Missing `e2e:running` → halt and surface `no e2e:running lock on this slice — refusing to invent a result`.
 
 ### 2. Set up the slice worktree
 

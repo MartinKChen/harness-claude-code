@@ -5,10 +5,10 @@
 # the current `agent_id` (i.e. the SubagentStart bootstrap seeded a meta file for
 # this engineer / reviewer dispatch). Active dispatches are detected by the
 # presence of `<agent_id>.meta.json` under
-# `/tmp/claude-memory/<repo-slug>/signals/runtime/`. Keying on agent_id (not the
+# `/tmp/harness-claude-code/<repo>/signals/`. Keying on agent_id (not the
 # shared session_id) keeps parallel subagents from clobbering each other.
 #
-# When active, it updates the session's meta.json in place (a single
+# When active, it updates the dispatch's meta.json in place (a single
 # read-modify-write; a subagent's tool calls are serial, so this is safe):
 #   - Increments `tool_calls[<tool>]` so the final meta carries a tool -> count
 #     histogram for the dispatch.
@@ -37,17 +37,17 @@ tool_name="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
 [ -n "$cwd" ] || exit 0
 
 # Resolve consuming project's main worktree root from cwd. Engineer / reviewer
-# work in slice worktrees under /tmp/git-worktree/, so we go via
-# `--git-common-dir` to get back to the main worktree, then derive the same
-# repo-slug the bootstrap used to locate the /tmp signal store.
+# work in slice worktrees under /tmp/harness-claude-code/<repo>/worktrees/...,
+# so we go via `--git-common-dir` to get back to the main worktree, then derive
+# the same <repo> the bootstrap used to locate the /tmp signal store.
 main_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
 [ -n "$main_root" ] || exit 0
 main_root="$(dirname "$main_root")"
 [ -d "$main_root" ] || exit 0
 
-slug="$(basename "$main_root")-$(printf '%s' "$main_root" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)"
-runtime_dir="/tmp/claude-memory/$slug/signals/runtime"
-meta_file="$runtime_dir/${agent_id}.meta.json"
+repo="$(basename "$main_root")"
+runtime_dir="/tmp/harness-claude-code/${repo}/signals"
+meta_file="${runtime_dir}/${agent_id}.meta.json"
 
 # Only log when a telemetry dispatch is active for this agent_id (i.e. the
 # SubagentStart bootstrap fired). This is what limits capture to engineer +

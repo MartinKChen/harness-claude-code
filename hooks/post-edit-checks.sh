@@ -19,8 +19,8 @@
 # strips the import between the two Edit calls, and the agent loops or gives
 # up. Lint auto-fixes belong on the pre-push gate, not the per-edit hook.
 #
-# Only fires inside engineer worktrees (`/tmp/git-worktree/...`); silent
-# everywhere else.
+# Only fires inside engineer worktrees (`/tmp/harness-claude-code/<repo>/worktrees/...`);
+# silent everywhere else.
 
 set -uo pipefail
 
@@ -36,11 +36,13 @@ file_path="$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.
 [ -z "$file_path" ] && exit 0
 [ ! -f "$file_path" ] && exit 0
 
-# Only fire inside engineer worktrees. Match the */git-worktree/* segment rather
-# than the leading /tmp prefix: on macOS /tmp is a symlink to private/tmp, so the
-# file_path the hook receives is the resolved /private/tmp/git-worktree/... path.
+# Only fire inside engineer worktrees. Match the
+# */harness-claude-code/*/worktrees/* segment rather than the leading /tmp
+# prefix: on macOS /tmp is a symlink to private/tmp, so the file_path the hook
+# receives is the resolved /private/tmp/harness-claude-code/.../worktrees/...
+# path.
 case "$file_path" in
-  */git-worktree/*) ;;
+  */harness-claude-code/*/worktrees/*) ;;
   *) exit 0 ;;
 esac
 

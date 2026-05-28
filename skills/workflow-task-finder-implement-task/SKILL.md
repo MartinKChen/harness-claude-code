@@ -36,7 +36,7 @@ bash skills/operation-git/scripts/list-issues.sh \
 For each candidate row, apply three gates in order, then resolve the parent slice and format the line:
 
 - **Open-blocker gate** — `bash skills/operation-git/scripts/blocker-count.sh <task-#>` must return `0`. Closed blockers do not count (the script queries `issueDependenciesSummary.blockedBy`).
-- **Slice-in-flight gate** — `bash skills/operation-git/scripts/slice-in-flight.sh <task-#>` must return `0`. Sibling tasks under the same parent slice share one `/tmp/git-worktree/<repo>/<slice-branch>` directory; a sibling with `status:in-progress` AND no `review:*` label is actively editing it.
+- **Slice-in-flight gate** — `bash skills/operation-git/scripts/slice-in-flight.sh <task-#>` must return `0`. Sibling tasks under the same parent slice share one `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>` directory; a sibling with `status:in-progress` AND no `review:*` label is actively editing it.
 - **`type:*` gate** — the row must carry exactly one of `type:e2e` / `type:backend` / `type:frontend`. Zero or more than one drops the row silently.
 - **Parent-slice resolution** — fetch the parent's number via the GraphQL `issue.parent.number` field. Do NOT body-parse.
 - **Type → subagent mapping** —
