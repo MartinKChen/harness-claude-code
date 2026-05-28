@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # List open draft PRs filtered by labels, missing-labels, and check/conflict
-# status. Used by workflow-task-finder-fix-pr and workflow-task-finder-close-pr.
+# status. Used by task-finder-stage-8-fix-pr.sh and task-finder-stage-9-close-pr.sh.
 #
 # --status options:
 #   green     mergeable=MERGEABLE AND every check SUCCESS (default = no filter)

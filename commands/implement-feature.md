@@ -1,5 +1,5 @@
 ---
-description: Drive one end-to-end pass through the slice → task → review → fix → close → PR → merge lifecycle for a single feature milestone. Dispatch the `task-finder` agent once to identify every eligible candidate across the nine lifecycle stages, then perform the per-stage label flips + `TaskCreate` + `Agent` dispatch (or merge + memory capture) directly. Within a stage, candidates fan out in parallel — but at most one implement-type agent (implement / fix / E2E) runs per slice at a time, while review tasks have no per-slice limit; across stages, processing is sequential. Each pass is a snapshot — wrap with `/loop /implement-feature <feature-name>` to keep advancing the milestone end-to-end as backgrounded agents finish.
+description: Drive one end-to-end pass through the slice → task → review → fix → close → PR → merge lifecycle for a single feature milestone. Run the `task-finder.sh` script once (read-only, no LLM in the loop) to identify every eligible candidate across the nine lifecycle stages, then perform the per-stage label flips + `TaskCreate` + `Agent` dispatch (or merge + memory capture) directly. Within a stage, candidates fan out in parallel — but at most one implement-type agent (implement / fix / E2E) runs per slice at a time, while review tasks have no per-slice limit; across stages, processing is sequential. Each pass is a snapshot — wrap with `/loop /implement-feature <feature-name>` to keep advancing the milestone end-to-end as backgrounded agents finish.
 argument-hint: <feature-name>
 ---
 
@@ -7,10 +7,10 @@ argument-hint: <feature-name>
 
 Run one full sweep across the lifecycle stages, in order, for a single feature milestone.
 
-- **Discovery** is owned by the `task-finder` agent (read-only, single dispatch).
+- **Discovery** is owned by the `task-finder.sh` script (read-only, single run, no LLM).
 - **Every state mutation** — label flips, `TaskCreate`, `Agent` dispatch, `TaskUpdate(owner)` assignment, draft → ready promotion, squash-merge — is owned by this command.
 
-The nine `workflow-task-finder-*` skills are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
+The nine `task-finder-stage-<n>-<name>.sh` scripts under `skills/operation-git/scripts/` are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
 
 This command does **not** wait for backgrounded sub-agents to finish. Once an agent is dispatched, the command moves on. Wrap with `/loop /implement-feature <feature-name>` to keep advancing.
 
@@ -26,31 +26,29 @@ If `<feature-name>` is missing or empty, stop and ask the user for it before dis
 
 `gh repo view --json nameWithOwner --jq .nameWithOwner`. If the working dir isn't a GitHub repo, surface and stop.
 
-### Step 1 — Dispatch `task-finder` (foreground, single shot)
+### Step 1 — Run `task-finder.sh` (single shot, no LLM)
 
-Dispatch `task-finder` **once**, foreground, with `<feature-name>` so its report is available before any mutation:
+Run the discovery script **once** with `<feature-name>` so its report is available before any mutation. The script is pure shell — no agent dispatch, no `Skill` invocations, no LLM round-trips. Each per-stage script (`task-finder-stage-<n>-<name>.sh`) under `skills/operation-git/scripts/` runs the prescribed `gh` queries + gates and emits its candidate lines; the umbrella driver concatenates them into the canonical report:
 
 ```
-Agent({
-  subagent_type: "task-finder",
-  mode: "auto",
-  name: "task-finder-<feature-name>",
-  prompt: "Find lifecycle candidates for GitHub milestone \"<feature-name>\". Invoke every workflow-task-finder-* skill in order against a single snapshot of current GitHub state. Read-only — do not flip labels, do not create tasks, do not dispatch agents. Emit your report in the canonical shape so the dispatcher can parse it positionally."
+Bash({
+  command: "bash skills/operation-git/scripts/task-finder.sh '<feature-name>'",
+  description: "Discover lifecycle candidates for the <feature-name> milestone"
 })
 ```
 
-The agent returns ONE markdown report covering all nine stages. Parse positionally:
+The script returns ONE markdown report covering all nine stages on stdout. Parse positionally:
 
 - Each stage section is `## Stage <N>: <stage-name>` followed by one or more `- ...` lines.
-- Every listed candidate is ELIGIBLE — `task-finder` and its delegated skills drop ineligible candidates silently.
-- Pipe-delimited fields per candidate are positional (see `agents/task-finder.md` § Report shape and the corresponding `workflow-task-finder-*` skill for field order).
+- Every listed candidate is ELIGIBLE — `task-finder.sh` and its delegated per-stage scripts drop ineligible candidates silently.
+- Pipe-delimited fields per candidate are positional (see the corresponding `task-finder-stage-<n>-<name>.sh` header comment for field order).
 - A stage whose only line is `- (none)` has no work this pass.
 
-If `task-finder` surfaces a diagnostic (`milestone not found`, `skill failure`, etc.) instead of a report, surface that verbatim and stop. Do not improvise.
+If the script exits non-zero, stderr carries a diagnostic (`task-finder: not a GitHub repo`, `task-finder: milestone "<n>" not found`, `task-finder: stage <n> (<name>) failed: …`). Surface that verbatim and stop. Do not improvise.
 
 ### Step 2 — Process the report, stage by stage
 
-Process the nine stages **in order** (cross-stage cascade *within* a pass is not preserved — the snapshot is frozen at `task-finder` time; the `/loop` wrapper carries it across passes). Within each stage, eligible candidates **fan out in parallel** — emit all per-candidate `Agent` + `TaskUpdate(owner)` calls together in one batched response — **except where the per-slice implement budget below collapses same-slice implement-type candidates**.
+Process the nine stages **in order** (cross-stage cascade *within* a pass is not preserved — the snapshot is frozen at `task-finder.sh` time; the `/loop` wrapper carries it across passes). Within each stage, eligible candidates **fan out in parallel** — emit all per-candidate `Agent` + `TaskUpdate(owner)` calls together in one batched response — **except where the per-slice implement budget below collapses same-slice implement-type candidates**.
 
 If a stage's candidate list is `- (none)`, log `Stage <N> (<stage-name>): nothing to pick up` and move on.
 
@@ -300,10 +298,10 @@ Each count is the number of candidates *processed* in this fire (label flips for
 
 ## Iron rules
 
-- **One milestone per invocation.** Run `/implement-feature <feature-name>` once per feature; `<feature-name>` flows into the `task-finder` dispatch and into every per-stage mutation.
-- **One `task-finder` dispatch per pass.** Foreground, single shot. Do NOT call it once per stage; do NOT call it again mid-pass.
-- **The `task-finder` report is the SOLE source of truth for what to process.** Do not re-query GitHub for candidate lists — the report is the snapshot. Per-stage defense-in-depth re-checks (Stage 9 step 1) remain in scope.
-- **Stages run in order; candidates within a stage fan out in parallel — except implement-type candidates sharing a slice.** Cross-stage cascade *within* a pass is not preserved (the snapshot is frozen at `task-finder` time); the `/loop` wrapper carries it across passes.
+- **One milestone per invocation.** Run `/implement-feature <feature-name>` once per feature; `<feature-name>` flows into the `task-finder.sh` invocation and into every per-stage mutation.
+- **One `task-finder.sh` run per pass.** Single shot, no LLM. Do NOT call it once per stage; do NOT call it again mid-pass; do NOT dispatch an agent to wrap the call.
+- **The `task-finder.sh` report is the SOLE source of truth for what to process.** Do not re-query GitHub for candidate lists — the report is the snapshot. Per-stage defense-in-depth re-checks (Stage 9 step 1) remain in scope.
+- **Stages run in order; candidates within a stage fan out in parallel — except implement-type candidates sharing a slice.** Cross-stage cascade *within* a pass is not preserved (the snapshot is frozen at `task-finder.sh` time); the `/loop` wrapper carries it across passes.
 - **At most one implement-type agent in flight per slice, across the whole pass.** Implement-type stages (2 `implement-task`, 4 `fix-task`, 5 `prepare-slice`, 7 `fix-slice`, 8 `fix-pr`) all edit the slice's shared worktree; track dispatched slices in the per-pass `claimed_slices` set and skip any later implement-type candidate whose slice is already claimed (it is re-discovered next `/loop` pass). Review-type stages (3 `review-task`, 6 `review-slice`) are read-only and carry **no** per-slice limit — fan them out without restriction.
 - **Lock before dispatch, every stage.** The label flip (or `--add-label "status:fix-in-progress"` / `e2e:running`) is the lock. On synchronous `Agent` failure, roll back BOTH the lock AND the tracking task. Do NOT roll back on internal agent failure — once backgrounded, the agent owns the lifecycle.
 - **One tracking task per dispatched sub-agent.** Never reuse a `taskId`; never spawn an `Agent` without a paired `TaskCreate` + `TaskUpdate(owner)` in the same batched response.
