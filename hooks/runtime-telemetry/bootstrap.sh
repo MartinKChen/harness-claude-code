@@ -2,10 +2,17 @@
 # Runtime-telemetry bootstrap — SubagentStart hook for engineer / reviewer agents.
 #
 # Wired in hooks/hooks.json as a SubagentStart hook with matcher
-# "engineer|reviewer". Fires automatically inside the subagent's context when an
-# engineer or reviewer subagent starts, and seeds the per-dispatch metadata file
-# that the PreToolUse / SubagentStop hooks key off of. Without this marker file,
-# those hooks no-op — which is how telemetry stays limited to engineer + reviewer.
+# "^(.+:)?(engineer|reviewer)$" — a regex anchored so it accepts both the bare
+# `engineer` / `reviewer` form and the plugin-namespaced
+# `harness-claude-code:engineer` / `:reviewer` form the harness actually emits.
+# The regex form is load-bearing: Claude Code only treats a matcher as a regex
+# when it contains characters outside `[A-Za-z0-9_|]`; a bare `engineer|reviewer`
+# would be parsed as exact-string alternation and silently never match the
+# namespaced agent_type. Fires automatically inside the subagent's context when
+# an engineer or reviewer subagent starts, and seeds the per-dispatch metadata
+# file that the PreToolUse / SubagentStop hooks key off of. Without this marker
+# file, those hooks no-op — which is how telemetry stays limited to engineer +
+# reviewer.
 #
 # Keyed on `agent_id`, NOT session_id: session_id is shared across the parent and
 # all parallel subagents, so two engineer/reviewer dispatches running at once
