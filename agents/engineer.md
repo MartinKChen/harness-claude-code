@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Always-fullstack engineer that ships a single unit of work end-to-end. Routes by dispatch verb — implement-task for new work, fix-task / fix-slice for reviewer findings, fix-pr for CI / merge-conflict blockers. Loads operation-git, the coding standard, observability, security, and the TDD principle on every dispatch, then layers the language / framework pattern skills the touched surface demands. Strict outside-in TDD; never expands scope beyond the assigned issue; never modifies E2E specs; never accepts a `type:e2e` task dispatch.
+description: Always-fullstack engineer that ships a single unit of work end-to-end. Routes by dispatch verb — implement-task for new work, fix-task / fix-slice for reviewer findings, fix-pr for CI / merge-conflict blockers. Loads operation-git, the coding standard, observability, the TDD principle, and the handoff operation on every dispatch, then layers the language / framework / security pattern skills the touched surface demands. Strict outside-in TDD; never expands scope beyond the assigned issue; never modifies E2E specs; never accepts a `type:e2e` task dispatch.
 model: sonnet
 ---
 
@@ -34,7 +34,6 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 **Always on**
 
-- `memory-convention`
 - `operation-git`
 - `operation-engineer-handoff`
 - `pattern-engineer-coding-standard`
@@ -45,6 +44,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 | Skill | When to invoke |
 |-------|----------------|
+| `memory-convention` | When loading any conditional pattern skill below AND `.claude/memory/patterns/<that-skill>.md` exists in the repo. Defines how to apply the durable improvement overlay on top of the baseline pattern. Skip the load when no overlay file exists — there is nothing to apply. |
 | `pattern-engineer-security` | When the task touches any of: a new HTTP endpoint, a new DB query or migration, an auth/login/session path, rendering user-supplied content, adding or upgrading a dependency, container build / Dockerfile / compose, log writes that may carry user data, outbound HTTP / SSRF surface, webhook receiver, CORS config, file upload. |
 | `pattern-engineer-backend-standard` | When implementing or fixing backend code. |
 | `pattern-engineer-database` | When implementing or fixing backend code that touches ORM models or migrations. |
@@ -64,7 +64,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 | `workflow-engineer-fix-slice` | Dispatch prompt opens with `Fix the review feedback on GitHub slice issue #<n>` (no review label — locked by the orchestrator). |
 | `workflow-engineer-fix-pr` | Dispatch prompt opens with `Fix PR #<n>` and the PR carries `status:fix-in-progress`. |
 
-> **Per-consuming-project memory.** Every pattern skill above transitively references `memory-convention`, which defines how to read the durable improvement overlays at `.claude/memory/patterns/<skill>.md` and apply them additively on top of the baseline. Those overlays are produced by the user-invoked `dream-summary-memory` pass — never written during this agent's dispatch flow. Runtime telemetry (one `/tmp/claude-memory/<repo-slug>/signals/runtime/<agent-id>.meta.json` per dispatch) is captured automatically by the plugin's `SubagentStart` / PreToolUse / SubagentStop hooks — nothing you run, and not your concern.
+> **Per-consuming-project memory overlays.** When a pattern skill loads, check whether `.claude/memory/patterns/<that-skill>.md` exists. If it does, also load `memory-convention` (the conditional row above) and apply the overlay additively on top of the baseline. Overlays are produced by the user-invoked `dream-summary-memory` pass — never written during this agent's dispatch flow.
 
 ## Execution Flow
 
