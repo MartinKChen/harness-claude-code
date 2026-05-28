@@ -58,7 +58,7 @@ Use the `operation-git` skill's `gh-commands` reference and `dispatch-prompt` te
 
 #### Per-slice implement budget (cross-stage, whole pass)
 
-Stages divide into two kinds by what the dispatched agent does to the slice's shared `/tmp/git-worktree/<repo>/<slice-branch>` worktree:
+Stages divide into two kinds by what the dispatched agent does to the slice's shared `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>` worktree:
 
 - **Implement-type** — Stage 2 `implement-task`, Stage 4 `fix-task`, Stage 5 `prepare-slice`, Stage 7 `fix-slice`, Stage 8 `fix-pr`. The dispatched engineer / e2e-author **checks out and edits** the slice worktree. **At most one implement-type agent may be in flight per slice** — a second one races on the same working tree, no matter whether it is authoring E2E specs, implementing a task, fixing a task, fixing the slice, or fixing the PR.
 - **Review-type** — Stage 3 `review-task`, Stage 6 `review-slice`. The reviewer checks out the worktree **read-only** and never writes. **No per-slice limit** — multiple reviews run concurrently, including several on the same slice.

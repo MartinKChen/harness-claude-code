@@ -102,13 +102,13 @@ Set only the title — leave description, due_on, and state at their defaults. T
 
 **4. Create the feature branch as a worktree off latest `origin/main`.**
 
-The worktree always lives at `/tmp/git-worktree/<repo-name>/<feature-name>` — predictable, outside the repo, and easy to clean up.
+The worktree always lives at `/tmp/harness-claude-code/<repo-name>/worktrees/docs/<feature-name>` — predictable, outside the repo, easy to clean up, and aligned with the path layout the engineer / reviewer agents and `setup-worktree.sh` use.
 
 ```
 repo_root="$(git rev-parse --show-toplevel)"
 repo_name="$(basename "$repo_root")"
-worktree_path="/tmp/git-worktree/${repo_name}/{feature-name}"
-mkdir -p "/tmp/git-worktree/${repo_name}"
+worktree_path="/tmp/harness-claude-code/${repo_name}/worktrees/docs/{feature-name}"
+mkdir -p "$(dirname "$worktree_path")"
 git -C "$repo_root" worktree add "$worktree_path" -b "docs/{feature-name}" origin/main
 ```
 
