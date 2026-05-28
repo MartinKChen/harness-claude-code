@@ -5,7 +5,7 @@
 - Issue / PR: #<n> — <title>
 - Slice issue: #<slice-#>
 - Slice branch: <branch>
-- Worktree: /tmp/git-worktree/<repo>/<slice-branch>
+- Worktree: /tmp/harness-claude-code/<repo>/worktrees/<slice-branch>
 
 ## What's been done
 - <sha-short> <commit subject>

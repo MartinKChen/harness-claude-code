@@ -5,7 +5,7 @@ description: "Implement one `type:backend`/`type:frontend` task on the parent sl
 
 # workflow-engineer-implement-task
 
-Take one assigned `type:backend` / `type:frontend` GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/git-worktree/<repo>/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
+Take one assigned `type:backend` / `type:frontend` GitHub task issue and ship it through strict outside-in TDD on the parent slice's branch, inside a slice-scoped worktree at `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>`. Stop the moment the issue's `Done criteria` are green; never bundle unrequested improvements.
 
 The agent loads its own pattern set (TDD discipline, language-specific patterns, container conventions, security baseline, ADR/architecture context) at kickoff. This skill owns only the workflow primitives.
 

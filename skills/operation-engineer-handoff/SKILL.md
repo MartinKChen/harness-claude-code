@@ -1,6 +1,6 @@
 ---
 name: operation-engineer-handoff
-description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/claude-handoff/<repo>/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Loaded conditionally: at engineer kickoff when a handoff doc already exists at the computed path, and on-demand when the `engineer-budget-gate.sh` hook denies a mutation with a handoff instruction (default threshold 150K)."
+description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/harness-claude-code/<repo>/handoffs/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Loaded conditionally: at engineer kickoff when a handoff doc already exists at the computed path, and on-demand when the `engineer-budget-gate.sh` hook denies a mutation with a handoff instruction (default threshold 150K)."
 ---
 
 # operation-engineer-handoff
@@ -15,7 +15,7 @@ Do not author "I think I'm running out of context, let me hand off" prose. Wait 
 
 ## When to activate
 
-- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: a handoff doc exists at the computed path for this unit of work. The engineer agent checks `[ -f /tmp/claude-handoff/<repo>/<unit>.md ]` at kickoff and loads this skill only if the file exists.
+- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: a handoff doc exists at the computed path for this unit of work. The engineer agent checks `[ -f /tmp/harness-claude-code/<repo>/handoffs/<unit>.md ]` at kickoff and loads this skill only if the file exists.
 - **Outgoing handoff** — When the `engineer-budget-gate.sh` PreToolUse hook denies a mutating tool call with a handoff instruction in its `permissionDecisionReason`. The agent loads this skill in response to the deny and runs the procedure below.
 
 Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff is only wired into the engineer agent. Do NOT activate to "checkpoint" progress mid-task when no hook has fired; commit + push as normal.
@@ -23,10 +23,10 @@ Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff 
 ## Handoff doc path
 
 ```
-/tmp/claude-handoff/<repo>/<unit>.md
+/tmp/harness-claude-code/<repo>/handoffs/<unit>.md
 ```
 
-- `<repo>` = the first path component after `/tmp/git-worktree/` in the worktree's path — i.e. the `<repo>` in `/tmp/git-worktree/<repo>/<slice-branch>`. Derive it from the worktree cwd, e.g. `sed -E 's#^/tmp/git-worktree/([^/]+)/.*#\1#'`. Do NOT use `basename "$(git rev-parse --show-toplevel)"`: inside a linked worktree that resolves to the slice-branch leaf, not the repo, and the doc would land at a path the budget-gate / PreCompact hooks don't write to.
+- `<repo>` = the consuming project's basename — the path component between `harness-claude-code/` and `worktrees/` in the worktree's path, i.e. the `<repo>` in `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>`. Derive it from the worktree cwd, e.g. `sed -E 's#^.*/harness-claude-code/([^/]+)/worktrees/.*#\1#'`. Do NOT use `basename "$(git rev-parse --show-toplevel)"`: inside a linked worktree that resolves to the slice-branch leaf, not the repo, and the doc would land at a path the budget-gate / PreCompact hooks don't write to.
 - `<unit>` is derived from the dispatch verb:
 
   | Dispatch verb | `<unit>` |
@@ -36,7 +36,7 @@ Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff 
   | `Fix the review feedback on GitHub slice issue #<n>` | `slice-<n>` |
   | `Fix PR #<n>` | `pr-<n>` |
 
-One unit of work, one handoff doc. The doc is overwritten on every outgoing handoff so it always reflects the most recent stop point. Ensure the parent directory exists before writing (`mkdir -p /tmp/claude-handoff/<repo>`).
+One unit of work, one handoff doc. The doc is overwritten on every outgoing handoff so it always reflects the most recent stop point. Ensure the parent directory exists before writing (`mkdir -p /tmp/harness-claude-code/<repo>/handoffs`).
 
 ## Incoming pickup
 
@@ -53,7 +53,7 @@ Run after the workflow's worktree-setup step and BEFORE any implementation step.
 5. Resume from the doc's **Where to pick up next** section. Do NOT redo committed steps. Do NOT second-guess decisions already recorded under **Surprises / decisions** — they exist precisely so the next agent doesn't re-litigate them.
 6. Leave the handoff doc on disk while you work. Delete it only after the workflow's terminal action (push + `review:pending` flip, or equivalent for fix-pr) has succeeded — at that point this unit of work is complete and the doc is no longer relevant. Cleanup:
    ```bash
-   rm -f /tmp/claude-handoff/<repo>/<unit>.md
+   rm -f /tmp/harness-claude-code/<repo>/handoffs/<unit>.md
    ```
 
 ## Outgoing handoff
@@ -62,7 +62,7 @@ Trigger: `engineer-budget-gate.sh` returned a `deny` whose `permissionDecisionRe
 
 1. **Finish the current TDD step.** Never hand off mid-RED or mid-GREEN — either complete the cycle or `git restore` the half-edit so the working tree is clean. A partial edit on disk that's not in a commit is invisible to the next agent.
 2. **Commit + push every completed step** on the slice branch using the project's Conventional Commits format with both `Refs` trailers (or `Refs #<pr-#>` + `Refs #<slice-#>` for the fix-pr flavor). The next agent must not re-do work that's already on the branch. Push to `origin` before writing the doc — the doc references SHAs that must be fetchable.
-3. **Write the handoff doc** at `/tmp/claude-handoff/<repo>/<unit>.md` using the template at `templates/handoff-doc.md`. Fill every section that has content; omit sections that don't (but keep the headers stable so the pickup agent can `grep` for them).
+3. **Write the handoff doc** at `/tmp/harness-claude-code/<repo>/handoffs/<unit>.md` using the template at `templates/handoff-doc.md`. Fill every section that has content; omit sections that don't (but keep the headers stable so the pickup agent can `grep` for them).
 4. **Exit cleanly.** Do NOT flip `review:pending` (the work isn't done). Do NOT touch `status:in-progress` (the unit is still the same dispatch's lock). Do NOT close the issue or open a PR. Surface a short diagnostic to the caller naming the handoff doc path so whoever re-dispatches knows to re-trigger.
 
 ## Iron rules

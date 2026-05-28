@@ -3,7 +3,7 @@
 # currently being EDITED by a dispatched sub-agent (status:in-progress AND
 # no review:* label of any kind). When that count is > 0, the slice's
 # worktree is in active use — dispatching another agent into the same slice
-# would race on the same /tmp/git-worktree/.../<slice-branch> directory.
+# would race on the same /tmp/harness-claude-code/<repo>/worktrees/<slice-branch> directory.
 #
 # Self is excluded — the caller is asking "are any of my siblings active?",
 # not "am I active?".

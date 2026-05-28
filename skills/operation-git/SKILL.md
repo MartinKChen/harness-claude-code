@@ -56,7 +56,7 @@ When this skill is active, route to the asset that matches the task. Read refere
 | Script | Purpose |
 |--------|---------|
 | `scripts/resolve-slice-branch.sh <issue-#>` | Given a task issue, resolve the parent slice issue and print the slice branch attached to that parent. Given a slice issue directly, print its own attached branch. Non-zero on missing parent or missing branch. |
-| `scripts/setup-worktree.sh <slice-branch> [--rebase-onto-main]` | Create-or-reuse the worktree at `/tmp/git-worktree/<repo>/<slice-branch>`, fetch+hard-reset to `origin/<slice-branch>`, optionally rebase onto `origin/main`. Prints the worktree path. |
+| `scripts/setup-worktree.sh <slice-branch> [--rebase-onto-main]` | Create-or-reuse the worktree at `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>`, fetch + hard-reset to `origin/<slice-branch>` (always — agents always enter on the latest remote tip), optionally rebase onto `origin/main`. Prints the worktree path. |
 | `scripts/issue-body.sh <issue-#> [fields-csv]` | Wrap `gh issue view --json` to fetch the issue spec (default: `number,title,body,labels,milestone,url,state`) WITHOUT the auto-rendered comments / reactions / cross-references chrome that bare `gh issue view` injects (3–8K of noise on any issue with discussion). Use this for first-fetch in `workflow-engineer-implement-task`, `-e2e`, `workflow-e2e-author`, `workflow-reviewer-review-task`, `workflow-reviewer-review-slice`. Do NOT use in `-fix-task` / `-fix-slice` / `-fix-pr` / `-e2e-fix` workflows where the reviewer comments ARE the spec — those still call `gh issue view <n> --comments` directly. |
 
 ### Candidate listing (workflow orchestrators)
