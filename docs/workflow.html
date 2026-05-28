@@ -460,10 +460,12 @@
   <p>
     The harness has <strong>three top-level commands</strong> and <strong>seven role-based agents</strong>. Commands
     are <em>orchestrators</em>: they don't write code themselves; they bring agents
-    onto a team, brief them, route messages, and chain idempotent workflow
-    skills. Every meaningful state transition is recorded as a GitHub issue
-    label flip — which means the loop can be stopped, resumed, or re-run
-    without losing track of where work is.
+    onto a team, brief them, route messages, and dispatch one-shot sub-agents
+    against GitHub-issue state — backed by pure-shell discovery scripts
+    (<code>task-finder.sh</code> + nine per-stage helpers) that decide what's
+    eligible each pass. Every meaningful state transition is recorded as a
+    GitHub issue label flip, which means the loop can be stopped, resumed, or
+    re-run without losing track of where work is.
   </p>
   <div class="ascii">
 <pre>
@@ -474,9 +476,9 @@
                    ▼                    ▼                              ▼
             ┌────────────┐         ┌────────────┐                ┌──────────────┐
             │ product-   │         │ scaffold-  │                │ orchestrator │
-            │  owner →   │         │  project   │                │ (chains 9    │
-            │ architect  │         │ (templates │                │  workflow-*  │
-            │ + writers  │         │ + design)  │                │  skills)     │
+            │  owner →   │         │  project   │                │ (task-finder │
+            │ architect  │         │ (templates │                │  .sh + agent │
+            │ + writers  │         │ + design)  │                │  dispatch)   │
             └─────┬──────┘         └─────┬──────┘                └──────┬───────┘
                   │                      │                              │
                   ▼                      ▼                              ▼
@@ -514,10 +516,12 @@
       <h3>Execution <span class="tag">code</span></h3>
       <p>
         Run repeatedly per feature, idempotently, against GitHub-issue state.
-        The orchestrator chains nine workflow skills in order; each is
-        self-skipping and label-scoped, so a single pass safely advances
-        whatever is ready. Wrap with <code>/loop</code> for unattended
-        end-to-end shipping.
+        The orchestrator runs <code>task-finder.sh</code> once per pass — pure
+        shell, no LLM — to find every eligible candidate across nine stages,
+        then processes the report top-to-bottom, dispatching one-shot
+        sub-agents per stage. Each stage is self-skipping and label-scoped, so
+        a single pass safely advances whatever is ready. Wrap with
+        <code>/loop</code> for unattended end-to-end shipping.
       </p>
       <ul>
         <li><code>/implement-feature &lt;feature-name&gt;</code> drives task → slice → PR lanes</li>
@@ -695,19 +699,22 @@
 <section id="exec-flow">
   <h2>Execution — <code>/implement-feature &lt;feature-name&gt;</code></h2>
   <p>
-    One sweep through nine workflow skills, in order. Each skill is
-    <strong>milestone-scoped</strong> (filtered by the feature name on every
-    <code>gh</code> query), <strong>label-driven</strong> (picks up whatever
-    has the right labels right now), and <strong>self-skipping</strong>
-    (reports "nothing to pick up" and returns instantly when empty). One
+    One sweep through nine lifecycle stages, in order. The orchestrator runs
+    <code>skills/operation-git/scripts/task-finder.sh &lt;feature-name&gt;</code>
+    once — pure shell, no LLM — to discover every eligible candidate across
+    all nine stages against ONE GitHub-state snapshot, then walks the report
+    top-to-bottom. Each stage is <strong>milestone-scoped</strong> (the script
+    filters by feature name on every <code>gh</code> query),
+    <strong>label-driven</strong> (picks up whatever has the right labels
+    right now), and <strong>self-skipping</strong> (the stage's report
+    section reads <code>- (none)</code> when there's nothing to do). One
     invocation = one pass — wrap with <code>/loop</code> to keep advancing
     until the feature ships.
   </p>
   <p>
     The orchestrator <em>does not</em> wait for backgrounded agents. Once a
-    workflow skill dispatches its agents, the orchestrator moves on; the
-    agents push commits and flip labels asynchronously, and the next pass
-    picks them up.
+    stage dispatches its agents, the orchestrator moves on; the agents push
+    commits and flip labels asynchronously, and the next pass picks them up.
   </p>
 
   <h3>Task lane</h3>
@@ -903,7 +910,7 @@
     orchestrator skill, a sub-agent, the human, or GitHub itself.
   </p>
   <div class="actor-legend">
-    <span><span class="actor skill">skill</span> orchestrator workflow-* skill</span>
+    <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-issues</code>)</span>
     <span><span class="actor agent">agent</span> dispatched sub-agent</span>
     <span><span class="actor human">human</span> the user</span>
     <span><span class="actor github">github</span> GitHub automation (PR merge auto-closes linked issues)</span>
@@ -923,13 +930,13 @@
       <div class="flow-state">level:task &middot; kind:feature &middot; type:{e2e|backend|frontend}</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-kickoff-slice</span>
+        <span class="actor skill">/implement-feature (stage 1)</span>
         <span class="effect">parent slice promoted → cascades label to every task sub-issue</span>
       </div>
       <div class="flow-state">+ status:ready-to-implement</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-implement-task</span>
+        <span class="actor skill">/implement-feature (stage 2)</span>
         <span class="effect">picks unblocked task; dispatches <code>engineer</code> Mode A or <code>e2e-author</code></span>
       </div>
       <div class="flow-state">status:ready-to-implement → status:in-progress</div>
@@ -941,7 +948,7 @@
       <div class="flow-state">+ review:pending</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-review-task</span>
+        <span class="actor skill">/implement-feature (stage 3)</span>
         <span class="effect">dispatches <code>reviewer</code></span>
       </div>
       <div class="flow-state">review:pending → review:running</div>
@@ -964,7 +971,7 @@
 
       <div class="flow-loop">
         <strong>need-fix loop:</strong>
-        <span class="actor skill">workflow-task-finder-fix-task</span>
+        <span class="actor skill">/implement-feature (stage 4)</span>
         strips <code>review:need-fix</code> and dispatches
         <span class="actor agent">engineer Mode C / e2e-author</span>
         to fix. After push the agent re-adds <code>review:pending</code>, looping back to
@@ -990,7 +997,7 @@
       <div class="flow-state">status:ready-to-review → status:ready-to-implement</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-kickoff-slice</span>
+        <span class="actor skill">/implement-feature (stage 1)</span>
         <span class="effect">skips if any open <code>Blocked by</code>; otherwise locks</span>
       </div>
       <div class="flow-state">status:ready-to-implement → status:in-progress</div>
@@ -1002,7 +1009,7 @@
       <div class="flow-state">(all task sub-issues closed)</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-prepare-slice</span>
+        <span class="actor skill">/implement-feature (stage 5)</span>
         <span class="effect">dispatches <code>engineer</code> Mode D to run touched E2E specs</span>
       </div>
       <div class="flow-state">+ e2e:running</div>
@@ -1014,7 +1021,7 @@
       <div class="flow-state">e2e:running → e2e:validated + review:pending</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-review-slice</span>
+        <span class="actor skill">/implement-feature (stage 6)</span>
         <span class="effect">dispatches <code>reviewer</code></span>
       </div>
       <div class="flow-state">review:pending → review:running</div>
@@ -1043,7 +1050,7 @@
 
       <div class="flow-loop">
         <strong>need-fix loop:</strong>
-        <span class="actor skill">workflow-task-finder-fix-slice</span>
+        <span class="actor skill">/implement-feature (stage 7)</span>
         dispatches <span class="actor agent">engineer</span> to fix findings + re-validate the E2E suite.
         On green the engineer re-adds <code>review:pending</code>; on test-case constraints it bails to
         <code>status:need-attention</code> for the human to edit the spec.
@@ -1084,7 +1091,7 @@
       </div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-fix-pr</span>
+        <span class="actor skill">/implement-feature (stage 8)</span>
         <span class="effect">locks the red PR and dispatches <code>engineer</code> Mode B</span>
       </div>
       <div class="flow-state">+ status:fix-in-progress</div>
@@ -1096,7 +1103,7 @@
       <div class="flow-state">status:fix-in-progress → (removed)</div>
 
       <div class="flow-arrow">
-        <span class="actor skill">workflow-task-finder-close-pr</span>
+        <span class="actor skill">/implement-feature (stage 9)</span>
         <span class="effect">scope: <code>merge:auto</code> + green + MERGEABLE</span>
       </div>
       <div class="flow-state terminal">draft → ready → squash-merged + branch deleted</div>
@@ -1152,12 +1159,13 @@
     </div>
     <div class="lane">
       <h4>Dispatch mode</h4>
-      <div class="when">execution (workflow-task-finder-* skills)</div>
+      <div class="when">execution (<code>/implement-feature</code> stages 1–9)</div>
       <p>
-        Each workflow skill issues one <code>Agent</code> call per eligible
-        unit of work. The agent runs to completion in the background, makes
-        its commits, pushes, and flips its terminal label. No shared memory;
-        no back-and-forth conversation.
+        <code>/implement-feature</code> runs <code>task-finder.sh</code> once
+        per pass to discover candidates, then issues one <code>Agent</code>
+        call per eligible unit of work. The agent runs to completion in the
+        background, makes its commits, pushes, and flips its terminal label.
+        No shared memory; no back-and-forth conversation.
       </p>
       <ul>
         <li>Skill → <code>engineer</code> (one-shot, per task / slice / PR)</li>

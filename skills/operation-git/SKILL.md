@@ -5,7 +5,7 @@ description: "Single source of truth for every git / GitHub operation the workfl
 
 # operation-git
 
-Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-task-finder-*`, `workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory.
+Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory. (Lifecycle candidate discovery for `/implement-feature` lives entirely as scripts here too — `task-finder.sh` + nine `task-finder-stage-<n>-<name>.sh` — with no agent or skill layer in between.)
 
 ## When to activate
 
@@ -70,6 +70,23 @@ Each script lists open issues / PRs matching a specific workflow stage. All retu
 | `scripts/list-draft-prs.sh [--label <l>]... [--missing-label <l>]... [--status <green\|broken>] [--milestone <name>]` | List open draft PRs filtered by labels, milestone, and check/conflict status. Output includes the PR body so close-pr can parse `Closes #<slice-#>`. |
 | `scripts/blocker-count.sh <issue-#>` | Print the count of OPEN `Blocked by` dependencies (GraphQL `issueDependenciesSummary.blockedBy`). |
 | `scripts/slice-in-flight.sh <task-#>` | Print the count of sibling tasks on the parent slice currently being EDITED (predicate: `status:in-progress` AND no `review:*`). |
+
+### Lifecycle discovery (driven by `/implement-feature`)
+
+Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the nine per-stage scripts against ONE GitHub-state snapshot and emits the canonical markdown report `/implement-feature` parses positionally. Each per-stage script's header comment documents its line format and gate set.
+
+| Script | Stage | Purpose |
+|--------|-------|---------|
+| `scripts/task-finder.sh <feature-name>` | — | Umbrella driver. Prechecks repo + milestone, runs the nine per-stage scripts in order, emits the canonical `# task-finder report` markdown + a summary line. Exits non-zero with a diagnostic on stderr on precheck failure or any per-stage failure. |
+| `scripts/task-finder-stage-1-kickoff-slice.sh` | 1 | `level:slice`+`kind:feature`+`status:ready-to-implement` slices with zero open blockers. |
+| `scripts/task-finder-stage-2-implement-task.sh` | 2 | `level:task`+`kind:feature`+`status:ready-to-implement` tasks, zero open blockers, slice not in flight, single `type:*`, parent slice resolved. |
+| `scripts/task-finder-stage-3-review-task.sh` | 3 | `level:task`+`kind:feature`+`status:in-progress` tasks carrying `review:pending`. |
+| `scripts/task-finder-stage-4-fix-task.sh` | 4 | `level:task`+`kind:feature`+`status:in-progress` tasks carrying `review:need-fix`, slice not in flight, single `type:*`, parent slice resolved. |
+| `scripts/task-finder-stage-5-prepare-slice.sh` | 5 | `level:slice`+`kind:feature`+`status:in-progress` slices with every sub-issue closed and no `review:*` / `e2e:*` label yet. |
+| `scripts/task-finder-stage-6-review-slice.sh` | 6 | `level:slice`+`kind:feature`+`status:in-progress` slices carrying `review:pending`. |
+| `scripts/task-finder-stage-7-fix-slice.sh` | 7 | `level:slice`+`kind:feature`+`status:in-progress` slices carrying `review:need-fix`. |
+| `scripts/task-finder-stage-8-fix-pr.sh` | 8 | Draft PRs with a merge-blocking signal (CI failure or merge conflict), no `status:fix-in-progress` / `status:need-attention`, slice resolved from `Closes #<n>`. |
+| `scripts/task-finder-stage-9-close-pr.sh` | 9 | Draft PRs MERGEABLE with every check rollup SUCCESS / NEUTRAL / SKIPPED, tagged `merge:<auto\|manual>`, slice resolved from `Closes #<n>`. |
 
 ### Label flipping (atomic)
 
