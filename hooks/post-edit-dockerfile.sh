@@ -5,8 +5,8 @@
 # success or the tail of the failure as additionalContext so the agent learns
 # about a broken Dockerfile at edit time rather than at pre-push or worse.
 #
-# Only fires inside engineer worktrees (`/tmp/git-worktree/...`); silent
-# everywhere else. Gracefully no-ops when `docker` is not on PATH.
+# Only fires inside engineer worktrees (`/tmp/harness-claude-code/<repo>/worktrees/...`);
+# silent everywhere else. Gracefully no-ops when `docker` is not on PATH.
 
 set -uo pipefail
 
@@ -36,11 +36,12 @@ case "$basename" in
   *) exit 0 ;;
 esac
 
-# Match the */git-worktree/* segment rather than the leading /tmp prefix: on
-# macOS /tmp is a symlink to private/tmp, so the file_path the hook receives is
-# the resolved /private/tmp/git-worktree/... path.
+# Match the */harness-claude-code/*/worktrees/* segment rather than the leading
+# /tmp prefix: on macOS /tmp is a symlink to private/tmp, so the file_path the
+# hook receives is the resolved /private/tmp/harness-claude-code/.../worktrees/...
+# path.
 case "$file_path" in
-  */git-worktree/*) ;;
+  */harness-claude-code/*/worktrees/*) ;;
   *) exit 0 ;;
 esac
 

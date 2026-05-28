@@ -4,7 +4,7 @@
 # Wired as a PreToolUse / Bash hook (see hooks/hooks.json). Fires on every Bash
 # call but no-ops unless:
 #   1. the command contains `git push`, AND
-#   2. the cwd is an engineer worktree under `/tmp/git-worktree/`.
+#   2. the cwd is an engineer worktree under `/tmp/harness-claude-code/<repo>/worktrees/`.
 #
 # When it fires, it runs the **fullstack** check set — backend AND frontend —
 # regardless of which mode (A/B/C) the engineer is in. The engineer is
@@ -103,12 +103,13 @@ case "$command" in
 esac
 
 # Only fire inside an engineer-managed worktree. Outside that path, this is a
-# user-driven push and we let it through untouched. Match the */git-worktree/*
-# segment rather than the leading /tmp prefix: on macOS /tmp is a symlink to
-# private/tmp, so the cwd the hook receives is the resolved
-# /private/tmp/git-worktree/... path.
+# user-driven push and we let it through untouched. Match the
+# */harness-claude-code/*/worktrees/* segment rather than the leading /tmp
+# prefix: on macOS /tmp is a symlink to private/tmp, so the cwd the hook
+# receives is the resolved /private/tmp/harness-claude-code/.../worktrees/...
+# path.
 case "$cwd" in
-  */git-worktree/*) ;;
+  */harness-claude-code/*/worktrees/*) ;;
   *) exit 0 ;;
 esac
 

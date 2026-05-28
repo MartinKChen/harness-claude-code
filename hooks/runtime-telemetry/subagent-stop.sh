@@ -36,9 +36,9 @@ main_root="$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/
 main_root="$(dirname "$main_root")"
 [ -d "$main_root" ] || exit 0
 
-slug="$(basename "$main_root")-$(printf '%s' "$main_root" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-8)"
-runtime_dir="/tmp/claude-memory/$slug/signals/runtime"
-meta_file="$runtime_dir/${agent_id}.meta.json"
+repo="$(basename "$main_root")"
+runtime_dir="/tmp/harness-claude-code/${repo}/signals"
+meta_file="${runtime_dir}/${agent_id}.meta.json"
 
 [ -f "$meta_file" ] || exit 0
 
