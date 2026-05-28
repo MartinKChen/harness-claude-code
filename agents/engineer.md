@@ -39,13 +39,13 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 - `operation-engineer-handoff`
 - `pattern-engineer-coding-standard`
 - `pattern-engineer-observability`
-- `pattern-engineer-security`
 - `principle-engineer-tdd`
 
 **Conditionally invoked — pattern / principle**
 
 | Skill | When to invoke |
 |-------|----------------|
+| `pattern-engineer-security` | When the task touches any of: a new HTTP endpoint, a new DB query or migration, an auth/login/session path, rendering user-supplied content, adding or upgrading a dependency, container build / Dockerfile / compose, log writes that may carry user data, outbound HTTP / SSRF surface, webhook receiver, CORS config, file upload. |
 | `pattern-engineer-backend-standard` | When implementing or fixing backend code. |
 | `pattern-engineer-database` | When implementing or fixing backend code that touches ORM models or migrations. |
 | `pattern-engineer-frontend-standard` | When implementing or fixing frontend code. |
