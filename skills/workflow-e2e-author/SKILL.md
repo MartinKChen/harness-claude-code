@@ -24,7 +24,7 @@ Input from the orchestrator: just the task issue ID. Discover everything else.
 
 ### 1. Read the issue body
 
-Fetch the task issue (number, title, body, labels, url) via `gh issue view`. Confirm `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`. Wrong type → halt and surface (routing bug).
+Fetch the task issue (number, title, body, labels, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — skips comment chrome. Confirm `level:task` + `kind:feature` + `type:e2e` + `status:in-progress`. Wrong type → halt and surface (routing bug).
 
 ### 2. Resolve the slice branch and set up the worktree
 

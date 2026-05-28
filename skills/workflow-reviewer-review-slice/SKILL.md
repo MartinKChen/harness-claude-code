@@ -22,7 +22,7 @@ Do NOT activate for task-level review (use `workflow-reviewer-review-task`), or 
 
 ### 1. Fetch the slice issue and its closed task sub-issues
 
-Fetch the slice issue (number, title, body, labels, url, milestone) via `gh issue view` — include the `milestone` field so step 8 can carry it onto the draft PR. Pull the slice's sub-issue list via GraphQL (`repository.issue.subIssues.nodes`) and filter to those in state `CLOSED`.
+Fetch the slice issue (number, title, body, labels, url, milestone) via `bash skills/operation-git/scripts/issue-body.sh <n> number,title,body,labels,url,milestone` — the helper wraps `gh issue view --json` (skipping comment chrome); pass the field list explicitly so `milestone` lands on the draft PR in step 8. Pull the slice's sub-issue list via GraphQL (`repository.issue.subIssues.nodes`) and filter to those in state `CLOSED`.
 
 Verify the slice has `review:running`. If missing, halt and surface `no running review lock on this slice`.
 

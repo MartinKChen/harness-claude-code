@@ -28,7 +28,7 @@ Input from the orchestrator: just the task issue ID. Discover everything else.
 
 ### 1. Read the issue body
 
-Fetch the task issue (number, title, body, labels, milestone, state, url) via `gh issue view`. Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
+Fetch the task issue (number, title, body, labels, milestone, state, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — the helper wraps `gh issue view --json` to skip auto-rendered comments and reactions (3–8K of chrome on any chatty issue). Halt if: closed, missing `Delivery` / `Done criteria`, no `type:*` label, or `type:e2e` (routing bug).
 
 ### 2. Read project context
 

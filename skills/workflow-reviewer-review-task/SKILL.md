@@ -22,7 +22,7 @@ Do NOT activate when the unit of work is a slice (use `workflow-reviewer-review-
 
 ### 1. Fetch the task issue
 
-Fetch the task issue (number, title, body, labels, url) via `gh issue view`.
+Fetch the task issue (number, title, body, labels, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — skips comment chrome.
 
 Verify the labels: `level:task` + `kind:feature` + exactly one `type:*` + `status:in-progress` + `review:running`. If `review:running` is missing, halt and surface `no running review lock on this task — refusing to invent a verdict`. If the issue is closed, halt and surface.
 
