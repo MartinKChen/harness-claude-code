@@ -65,9 +65,16 @@ esac
 
 # --- gate: only the engineer subagent inside a slice worktree ----------------
 [ -n "$agent_id" ] || exit 0
-if [ -n "$agent_type" ] && [ "$agent_type" != "engineer" ]; then
-  exit 0
-fi
+# Normalize the (possibly plugin-namespaced) agent_type before gating. Plugin
+# subagents arrive as "harness-claude-code:engineer", NOT bare "engineer", so a
+# strict `!= "engineer"` compare would exit here on every real dispatch and the
+# handoff deny would never fire. Glob on *engineer* (mirrors bootstrap.sh); an
+# empty agent_type means the harness omitted it — trust the cwd-worktree check
+# below. (This was the v0.39.14 SubagentStart-matcher bug, uncaught here.)
+case "$agent_type" in
+  "" | *engineer*) ;;
+  *) exit 0 ;;
+esac
 [ -n "$cwd" ] || exit 0
 # Match the worktree prefix symlink-agnostically: setup-worktree.sh creates the
 # tree at /tmp/harness-claude-code/<repo>/worktrees/<branch>/..., but on macOS

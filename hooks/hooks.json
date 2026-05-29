@@ -41,7 +41,7 @@
     ],
     "PreCompact": [
       {
-        "matcher": "engineer",
+        "matcher": "^(.+:)?engineer$",
         "hooks": [
           {
             "type": "command",

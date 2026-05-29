@@ -58,10 +58,15 @@ trigger="$(printf '%s' "$input" | jq -r '.compaction_trigger // .trigger // ""')
 # No agent_id => main-thread compaction; not ours.
 [ -n "$agent_id" ] || exit 0
 # agent_type is the most precise gate; fall back to the worktree-path check if
-# the running version doesn't populate it for PreCompact.
-if [ -n "$agent_type" ] && [ "$agent_type" != "engineer" ]; then
-  exit 0
-fi
+# the running version doesn't populate it for PreCompact. Normalize the
+# (possibly plugin-namespaced) value: plugin subagents arrive as
+# "harness-claude-code:engineer", NOT bare "engineer", so a strict
+# `!= "engineer"` compare would exit on every real dispatch. Glob on *engineer*
+# (mirrors bootstrap.sh); empty => trust the worktree-path check below.
+case "$agent_type" in
+  "" | *engineer*) ;;
+  *) exit 0 ;;
+esac
 [ -n "$cwd" ] || exit 0
 # Match the worktree prefix symlink-agnostically: setup-worktree.sh creates the
 # tree at /tmp/harness-claude-code/<repo>/worktrees/<branch>/..., but on macOS
