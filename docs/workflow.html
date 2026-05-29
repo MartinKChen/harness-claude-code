@@ -831,7 +831,7 @@
       <ul>
         <li><code>/loop /implement-feature &lt;feature-name&gt;</code></li>
         <li>Each pass picks up whatever moved since the last pass</li>
-        <li>Backgrounded agents finish on their own schedule</li>
+        <li>Backgrounded agents finish on their own schedule; a finished agent re-invokes the orchestrator, which closes that agent's tracking task by <code>owner</code> at pass entry</li>
         <li>Resumable: the loop survives interrupts because labels are the state</li>
       </ul>
     </div>

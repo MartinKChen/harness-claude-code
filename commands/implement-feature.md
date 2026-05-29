@@ -26,6 +26,15 @@ If `<feature-name>` is missing or empty, stop and ask the user for it before dis
 
 `gh repo view --json nameWithOwner --jq .nameWithOwner`. If the working dir isn't a GitHub repo, surface and stop.
 
+### Step 0.5 — Close finished agents' tracking tasks
+
+If this pass was re-invoked by one or more `<task-notification>` messages, each
+names an agent dispatched in a prior pass that has now finished. Before Step 1,
+call `TaskList`; for each notification, find the open tracking task whose `owner`
+matches the finished agent's name (both encode the same issue/PR number) and
+`TaskUpdate({ taskId, status: "completed" })`. A notification with no matching
+open task is benign; skip silently.
+
 ### Step 1 — Run `task-finder.sh` (single shot, no LLM)
 
 Run the discovery script **once** with `<feature-name>` so its report is available before any mutation. The script is pure shell — no agent dispatch, no `Skill` invocations, no LLM round-trips. Each per-stage script (`task-finder-stage-<n>-<name>.sh`) under `skills/operation-git/scripts/` runs the prescribed `gh` queries + gates and emits its candidate lines; the umbrella driver concatenates them into the canonical report:
@@ -358,6 +367,10 @@ Never stop the loop while any tracking task is still open — a quiet GitHub is 
 - **At most one implement-type agent in flight per slice, across the whole pass.** Implement-type stages (2 `implement-task`, 4 `fix-task`, 5 `prepare-slice`, 7 `fix-slice`, 8 `fix-pr`) all edit the slice's shared worktree; track dispatched slices in the per-pass `claimed_slices` set and skip any later implement-type candidate whose slice is already claimed (it is re-discovered next `/loop` pass). Review-type stages (3 `review-task`, 6 `review-slice`) are read-only and carry **no** per-slice limit — fan them out without restriction.
 - **Lock before dispatch, every stage.** The label flip (or `--add-label "status:fix-in-progress"` / `e2e:running`) is the lock. On synchronous `Agent` failure, roll back BOTH the lock AND the tracking task. Do NOT roll back on internal agent failure — once backgrounded, the agent owns the lifecycle.
 - **One tracking task per dispatched sub-agent.** Never reuse a `taskId`; never spawn an `Agent` without a paired `TaskCreate` + `TaskUpdate(owner)` in the same batched response.
+- **Close a tracking task the moment its agent finishes.** A `<task-notification>`
+  is the close signal: at pass entry match it to the open tracking task by `owner`
+  and mark it `completed`. Stage 0 reconcile only `deleted`s tasks for agents that
+  *died*; this covers agents that *completed normally*.
 - **`type:*` decides the agent type, never the body.** Malformed `type:*` is dropped silently by the discovery skill; do not invent a routing.
 - **`kind:feature` only.**
 - **No code-changing work in this command itself.** Every code change, push, comment, and PR merge beyond `gh pr ready` / `gh pr merge` (Stage 9) is owned by the dispatched sub-agent.
