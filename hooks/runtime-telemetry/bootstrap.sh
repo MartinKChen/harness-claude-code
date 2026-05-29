@@ -14,6 +14,14 @@
 # file, those hooks no-op — which is how telemetry stays limited to engineer +
 # reviewer.
 #
+# Two fields exist for the Stage-0 reconcile reaper (task-finder-stage-0-reconcile.sh):
+#   - issue_number: null here; PreToolUse backfills it (once) from the dispatch
+#     prompt so the reaper can map a meta file back to the issue it owns.
+#   - last_seen: seeded to started_at; PreToolUse bumps it on every tool call as
+#     a liveness heartbeat. A meta with ended_at==null whose last_seen has gone
+#     stale is a killed/hung agent (a still-running agent keeps bumping it),
+#     which is how the reaper tells "dead" from "alive but quiet".
+#
 # Keyed on `agent_id`, NOT session_id: session_id is shared across the parent and
 # all parallel subagents, so two engineer/reviewer dispatches running at once
 # share a session_id but carry distinct agent_ids. Keying the file on agent_id is
@@ -125,9 +133,11 @@ if jq -nc \
        agent_type:        $agent_type,
        agent_name:        $agent_name,
        dispatch_prompt:   null,
+       issue_number:      null,
        transcript_path:   $transcript_path,
        cwd:               $cwd,
        started_at:        $started_at,
+       last_seen:         $started_at,
        ended_at:          null,
        duration_ms:       null,
        token_usage:       null,

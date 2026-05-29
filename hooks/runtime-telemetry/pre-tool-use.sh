@@ -10,6 +10,14 @@
 #
 # When active, it updates the dispatch's meta.json in place (a single
 # read-modify-write; a subagent's tool calls are serial, so this is safe):
+#   - Bumps `last_seen` to now on every fire — the liveness heartbeat the
+#     Stage-0 reconcile reaper uses to tell a killed/hung agent (last_seen gone
+#     stale, ended_at still null) from one that is alive but quiet (last_seen
+#     keeps advancing). This is what makes the reaper's death signal precise.
+#   - Backfills `issue_number` ONCE from the dispatch prompt (the transcript's
+#     first user turn, e.g. "Implement GitHub task issue #42") so the reaper can
+#     map this meta file back to the issue it owns. Cheap: parsed only while
+#     issue_number is still null.
 #   - Increments `tool_calls[<tool>]` so the final meta carries a tool -> count
 #     histogram for the dispatch.
 #   - When the tool is `Read` against a `*/skills/*/SKILL.md` path, OR `Skill`
@@ -31,6 +39,7 @@ fi
 agent_id="$(printf '%s' "$input" | jq -r '.agent_id // ""')"
 cwd="$(printf '%s' "$input" | jq -r '.cwd // ""')"
 tool_name="$(printf '%s' "$input" | jq -r '.tool_name // ""')"
+transcript_path="$(printf '%s' "$input" | jq -r '.transcript_path // ""')"
 
 # No agent_id => main-thread call (not inside a subagent); nothing to capture.
 [ -n "$agent_id" ] || exit 0
@@ -70,13 +79,38 @@ elif [ "$tool_name" = "Skill" ]; then
   skill_name="$(printf '%s' "$input" | jq -r '.tool_input.skill // ""')"
 fi
 
+# --- liveness heartbeat timestamp --------------------------------------------
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# --- one-time issue_number backfill ------------------------------------------
+# Parse the unit number from the dispatch prompt (transcript's first user turn,
+# e.g. "Implement GitHub task issue #42", "Fix PR #17"). Only attempted while
+# issue_number is still null, so the transcript read happens at most a handful
+# of times early in the dispatch, not on every tool call.
+issue_number=""
+current_issue="$(jq -r '.issue_number // ""' "$meta_file" 2>/dev/null || echo "")"
+if [ -z "$current_issue" ] && [ -n "$transcript_path" ] && [ -f "$transcript_path" ]; then
+  first_user="$(jq -rs '
+    [ .[] | (.message // .) | select(.role == "user")
+      | (.content
+         | if type == "string" then .
+           elif type == "array" then ([ .[] | select(.type == "text") | .text ] | join("\n"))
+           else "" end) ]
+    | map(select(. != "")) | .[0] // ""' "$transcript_path" 2>/dev/null || echo "")"
+  issue_number="$(printf '%s' "$first_user" | grep -oE '#[0-9]+' | head -n1 | tr -d '#')"
+fi
+
 # --- single read-modify-write of meta.json -----------------------------------
-# Increment the tool histogram, and append the skill name (first-seen order
+# Bump last_seen (heartbeat), increment the tool histogram, backfill
+# issue_number if just parsed, and append the skill name (first-seen order
 # preserved, deduped) when this call loaded one. Serial tool calls make the
 # read-modify-write race-free.
 tmp="$(mktemp 2>/dev/null)" || tmp="${meta_file}.tmp.$$"
-jq --arg tool "$tool_name" --arg skill "$skill_name" '
-  .tool_calls[$tool] = ((.tool_calls[$tool] // 0) + 1)
+jq --arg tool "$tool_name" --arg skill "$skill_name" --arg now "$now" --arg issue "$issue_number" '
+  .last_seen = $now
+  | .tool_calls[$tool] = ((.tool_calls[$tool] // 0) + 1)
+  | (if ($issue != "" and ((.issue_number // null) == null))
+     then .issue_number = ($issue | tonumber) else . end)
   | if ($skill != "" and ((.skills_invoked // []) | index($skill) | not))
     then .skills_invoked = ((.skills_invoked // []) + [$skill])
     else . end
