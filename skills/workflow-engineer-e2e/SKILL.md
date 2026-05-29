@@ -26,13 +26,24 @@ Input from the orchestrator: just the slice issue ID. Everything else discovered
 
 Fetch the slice issue (number, title, body, labels, url) via `bash skills/operation-git/scripts/issue-body.sh <n>` — skips comment chrome. Confirm `level:slice` + `kind:feature` + `status:in-progress` + `e2e:running`. Missing `e2e:running` → halt and surface `no e2e:running lock on this slice — refusing to invent a result`.
 
-### 2. Set up the slice worktree
+### 2. Set up the slice worktree and integrate `origin/main` (push-safe merge)
 
-Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree on that branch (no rebase — the slice branch already carries the closed-task work and the latest E2E specs), then `cd` into the worktree path.
+Resolve the slice's attached branch, then create-or-reuse the slice-scoped worktree on that branch **and integrate the latest `origin/main` into it before any validation runs**:
+
+```bash
+bash skills/operation-git/scripts/setup-worktree.sh "$slice_branch" --merge-main
+```
+
+`--merge-main` merges `origin/main` INTO the slice branch with an explicit merge commit (it does **not** rebase — merge keeps history append-only and push-safe, honoring the never-force-push iron rule). This is the integration point: every other slice that has merged to `main` since this branch was cut now lands here, so cross-slice contract breaks (e.g. a sibling slice that changed `create_app` / `main.py` composition) surface during E2E validation with full context — not as a PR-time scramble at Stage 8.
+
+- **Clean merge (default):** the helper prints the worktree path and exits 0. `cd` into it and continue to step 3.
+- **Merge conflict (exit 3):** the helper leaves the conflicted worktree in place and prints its path. `cd` in, resolve the conflicts now (resolve by intent — a slice at E2E-validation time has full context for what each side meant), `git commit` the merge with a `Refs #<slice-#>` trailer, and proceed. Do **not** abort or force-push. If a conflict cannot be resolved without expanding scope beyond this slice, bail loud: post a diagnostic comment on the slice naming the conflicting files + sibling slice, flip `e2e:running` + `status:in-progress` → `status:need-attention`, and exit.
+
+Push the merge commit before running the specs so the integrated state is on `origin` (the same push cadence as step 6 applies — pre-push hooks gate it). Then run E2E against the integrated state.
 
 ### 3. Find the E2E specs created or modified on the slice branch
 
-- Fetch `origin/main`.
+- The merge in step 2 already fetched and integrated `origin/main`.
 - Collect specs: `git diff --name-only origin/main..HEAD -- 'e2e/**/*.spec.*' '**/e2e/**/*.spec.*' | sort -u`.
 
 If the list is empty, halt and surface `slice has no E2E specs to validate` (an upstream issue-creation bug — every `kind:feature` slice should ship E2E coverage).
@@ -72,6 +83,7 @@ Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`
 
 ## Iron rules
 
+- **Integrate `origin/main` before the first spec — by merge, never rebase.** Run `setup-worktree.sh <branch> --merge-main` so the slice is current with main before E2E validation, slice review (Stage 6), and the PR (Stage 8). Merge keeps history append-only and push-safe; never rebase + force-push a slice branch. Cross-slice contract breaks must surface here, with full context, not at PR time. A merge conflict that needs scope expansion beyond this slice is a `status:need-attention` bail.
 - **Never modify the E2E specs.** Production-only fixes here. A failing E2E that requires spec changes is a `status:need-attention` bail, not a fix.
 - **Boot gate before the first spec.** Bring the whole stack — including a double for every external dependency the flow touches — to healthy before running any spec. A stack that can't reach healthy is a wiring bug (missing service double, wrong connection scheme, bad proxy block), not a spec failure; fix the wiring first.
 - **Every commit carries `Refs #<slice-#>`** (single trailer — slice-level work, no task context).

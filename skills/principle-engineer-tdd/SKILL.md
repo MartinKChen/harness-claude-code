@@ -54,6 +54,8 @@ Commit-message format is owned by the **dispatched caller**, not this skill. Eac
 
 5. **Final cleanup commit.** Lint, type-check, and any final hygiene. Commit: `chore: lint/type fixes`.
 
+6. **Definition of done — run the full CI-parity gate, not just the task's own tests.** "Done" is **not** "the test I just wrote passes" or "I ran `pytest tests/unit/test_signup_router.py`". Before the unit of work is handed off — before any workflow flips `review:pending` or clears `status:fix-in-progress` — run the shared `scripts/ci-checks.sh` for **every touched stack** (`backend/scripts/ci-checks.sh`, `frontend/scripts/ci-checks.sh`) and proceed only when it is green. That script is the same gate the local pre-push hook and CI run; it includes lint, format, type-check, and the **full test suite incl. DB-backed/integration tests** — exactly the coverage a single-file run skips. Running one test file is sufficient *during* the RED→GREEN loop (see *Test scoping during the loop*); it is never sufficient as the definition of done.
+
 ### Green units ≠ integrated — the seams first execute at E2E
 
 Unit and module tests verify each module against its own contract with every external service faked, so the **seams between components — connection config, emitted-artifact shape, async delivery timing, proxy routing — have no test surface until E2E.** Mocked-away seams first execute when the real stack boots. Therefore the acceptance test that proves wiring (step 3) must, for any slice that crosses an external-service seam, run against the **real booted stack with real (or emulated) external services** — not in-process fakes. A suite of green units is not an integrated system.
@@ -163,6 +165,7 @@ These are non-negotiable. They are what makes the discipline a discipline.
 - **Refactor only under green.** If a refactor step turns the suite red, revert and try smaller. Never "fix forward" with another behavior change masquerading as a cleanup.
 - **The acceptance test is the goalpost, not the proof of all behavior.** A green acceptance test proves *wiring*. Module tests and contract tests carry the coverage weight; the acceptance test only proves the pieces compose.
 - **Green units ≠ integrated.** Mocked-away seams (connection config, emitted-artifact shape, async delivery timing, proxy routing) first execute at E2E. The acceptance / integration test that proves wiring runs against the real booted stack with real or emulated external services, never in-process fakes.
+- **Done ≠ the task's own tests pass.** Before flipping `review:pending` or clearing `status:fix-in-progress`, run the shared `scripts/ci-checks.sh` for every touched stack — including DB-backed tests — and proceed only when green. Running a single test file (e.g. `pytest tests/unit/test_signup_router.py`) proves the one behavior under the loop; it does not prove the unit of work is done.
 
 ## Template
 

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Committed pre-push hook materialized by scaffold-project and wired via
+#   git config core.hooksPath .githooks
+#
+# It runs the SAME ci-checks.sh that GitHub Actions runs (<stack>/scripts/ci-checks.sh),
+# for every stack the push touches — so a push that would fail CI is denied
+# locally, in one run, instead of being peeled apart one PR-cycle at a time.
+#
+# "Touched" is computed against what the remote already has: for each ref being
+# pushed we diff the local tip against the remote tip (or against origin/main for
+# a brand-new branch). A stack is checked iff the push introduces changes under
+# its directory.
+#
+# Bypass (use sparingly, e.g. a docs-only emergency): `git push --no-verify`.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+zero="0000000000000000000000000000000000000000"
+
+# Accumulate every path the push would change across all refs on stdin.
+changed=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # Branch deletion — nothing to validate.
+  [ "$local_sha" = "$zero" ] && continue
+
+  if [ "$remote_sha" = "$zero" ]; then
+    # New branch on the remote: compare against origin/main when we have it,
+    # otherwise fall back to the full tree of the pushed tip.
+    if base="$(git rev-parse --verify --quiet origin/main)"; then
+      range_diff="$(git diff --name-only "$base" "$local_sha")"
+    else
+      range_diff="$(git ls-tree -r --name-only "$local_sha")"
+    fi
+  else
+    range_diff="$(git diff --name-only "$remote_sha" "$local_sha")"
+  fi
+  changed="${changed}"$'\n'"${range_diff}"
+done
+
+run_stack() {
+  dir="$1"
+  if [ -f "${repo_root}/${dir}/scripts/ci-checks.sh" ]; then
+    echo "pre-push: ${dir}/ changed — running CI-parity checks (${dir}/scripts/ci-checks.sh)"
+    ( cd "${repo_root}/${dir}" && bash scripts/ci-checks.sh )
+  fi
+}
+
+touched_any=false
+if printf '%s\n' "$changed" | grep -q '^backend/'; then
+  run_stack backend
+  touched_any=true
+fi
+if printf '%s\n' "$changed" | grep -q '^frontend/'; then
+  run_stack frontend
+  touched_any=true
+fi
+
+if [ "$touched_any" = true ]; then
+  echo "pre-push: CI-parity checks passed."
+fi

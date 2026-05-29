@@ -5,6 +5,11 @@
 # per-stack lint/type/format/test, per-stack docker image build, then a full
 # stack-up E2E run.
 #
+# CI parity: each per-stack check job runs `bash scripts/ci-checks.sh` — the
+# SAME script the committed local pre-push hook (.githooks/pre-push) runs. The
+# commands live in <stack>/scripts/ci-checks.sh, never inline here, so local
+# and CI cannot drift. A push that would fail CI is denied locally first.
+#
 # Job blocks for backend and frontend are present only if the scaffold landed
 # that surface. The skill removes blocks that do not apply when it renders this
 # file.
@@ -40,15 +45,13 @@ jobs:
           version: "0.5.11"
       - name: Install dependencies
         run: uv sync --all-extras --dev || uv sync --dev
-      - name: Lint (ruff check)
-        run: uv run ruff check .
-      - name: Format check (ruff format --check)
-        run: uv run ruff format --check .
-      - name: Type check (mypy)
-        run: uv run mypy app
-      - name: Tests (pytest)
-        # Tolerate exit 5 (no tests collected) — scaffold ships no feature tests.
-        run: uv run pytest || [ $? -eq 5 ]
+      - name: CI checks (lint + format + type + tests, single-sourced)
+        # Byte-identical to what the local pre-push hook runs. The script owns
+        # ruff + ruff format --check + mypy + the full pytest suite, and spins
+        # up an ephemeral Postgres so DB/integration tests actually run. Keeping
+        # the commands in scripts/ci-checks.sh (not inline here) is what stops
+        # "what CI runs" and "what the hook runs" from ever drifting apart.
+        run: bash scripts/ci-checks.sh
 
   backend-build:
     name: backend · docker build
@@ -84,15 +87,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci || npm install
-      - name: Lint/format (biome)
-        # biome ci runs the linter, formatter (check mode, no writes), and
-        # import organization in one pass; non-zero exit on any violation.
-        run: npx biome ci .
-      - name: Type check (tsc)
-        run: npm run typecheck
-      - name: Tests (vitest)
-        # --passWithNoTests so an empty test set is not a failure at scaffold time.
-        run: npx vitest run --passWithNoTests
+      - name: CI checks (lint + format + type + tests, single-sourced)
+        # Byte-identical to what the local pre-push hook runs. The script owns
+        # biome ci + tsc --noEmit + vitest run. Keeping the commands in
+        # scripts/ci-checks.sh (not inline here) is what stops "what CI runs"
+        # and "what the hook runs" from ever drifting apart.
+        run: bash scripts/ci-checks.sh
 
   frontend-build:
     name: frontend · docker build

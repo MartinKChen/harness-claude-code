@@ -31,11 +31,12 @@ Each `templates/<variant>/` directory holds a working example that copies as-is 
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/python-fastapi/` | Backend variant: minimal `app/main.py` (`app = FastAPI()`), `pyproject.toml`, multi-stage `Dockerfile`. The booted container responds 200 on `GET /openapi.json`. |
-| `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json` (with `lint` / `format` scripts), `biome.json` (lint + format + import-organize config), multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path). The booted container responds 200 on `GET /`. |
+| `templates/python-fastapi/` | Backend variant: minimal `app/main.py` (`app = FastAPI()`), `pyproject.toml`, multi-stage `Dockerfile`, and `scripts/ci-checks.sh` (the single-sourced backend gate: ruff + ruff format --check + mypy + full pytest against an ephemeral Postgres). The booted container responds 200 on `GET /openapi.json`. |
+| `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json` (with `lint` / `format` scripts), `biome.json` (lint + format + import-organize config), multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path), and `scripts/ci-checks.sh` (the single-sourced frontend gate: `biome ci` + `tsc --noEmit` + `vitest run`). The booted container responds 200 on `GET /`. |
+| `templates/githooks/pre-push` | Committed pre-push hook wired via `git config core.hooksPath .githooks`. Runs the touched stack's `scripts/ci-checks.sh` — the **same** script CI runs — so a push that would fail CI is denied locally in one run. Bypassable with `git push --no-verify`. |
 | `templates/compose.yaml` | Topology skeleton: backend + frontend + db services, `${VAR:-default}` port indirection, named volumes. The skill fills in service names / image targets per the ADR. No `migrate` service — that comes when the first migration lands. |
 | `templates/e2e/` | E2E variant: `package.json` (`@playwright/test` + `npm test`), `playwright.config.ts` (env-overridable `baseURL`, `retries: 1` on CI, `workers: 1`), `tests/smoke.spec.ts` (`goto('/')` + one visibility assertion), `.gitignore`. |
-| `templates/ci/pr-validation.yml` | Minimal PR-validation pipeline. Triggers on `pull_request` (incl. draft open / `ready_for_review`). Jobs: per-stack lint/type/format/test (`backend-checks` via ruff + mypy; `frontend-checks` via `biome ci` + tsc), per-stack docker image build (`backend-build`, `frontend-build`), then `e2e` against `docker compose up --build`. Backend / frontend job blocks are delimited by `# ---- BEGIN <surface> ----` / `# ---- END <surface> ----` so the skill can remove a block when the ADR omits that surface. |
+| `templates/ci/pr-validation.yml` | Minimal PR-validation pipeline. Triggers on `pull_request` (incl. draft open / `ready_for_review`). Jobs: per-stack checks (`backend-checks` / `frontend-checks`, each a single `bash scripts/ci-checks.sh` step — the **same** script the pre-push hook runs, so CI and local never drift), per-stack docker image build (`backend-build`, `frontend-build`), then `e2e` against `docker compose up --build`. Backend / frontend job blocks are delimited by `# ---- BEGIN <surface> ----` / `# ---- END <surface> ----` so the skill can remove a block when the ADR omits that surface. |
 | `templates/commit-messages.md` | Conventional Commits format. Scaffold-produced commits use `chore(scaffold): <surface>` or `build: <surface>`. |
 
 ## Scripts
@@ -81,20 +82,20 @@ If the branch already exists locally, STOP — a prior scaffold run is in flight
 
 ### 4. Scaffold backend → commit
 
-Copy `templates/<backend-stack>/` into `backend/` (per the ADR's layout). Do not edit the framework entry to add routes, middleware, or settings logic — the template ships a bare `app = FastAPI()` (or equivalent) intentionally.
+Copy `templates/<backend-stack>/` into `backend/` (per the ADR's layout). Do not edit the framework entry to add routes, middleware, or settings logic — the template ships a bare `app = FastAPI()` (or equivalent) intentionally. The copy includes `backend/scripts/ci-checks.sh` (the single-sourced check gate); ensure its executable bit survives the copy (`chmod +x backend/scripts/ci-checks.sh`) so the pre-push hook wired at step 9 can invoke it.
 
 ```bash
 git add backend/
-git commit -m "chore(scaffold): backend (<stack>) — framework entry, manifests, Dockerfile"
+git commit -m "chore(scaffold): backend (<stack>) — framework entry, manifests, Dockerfile, ci-checks"
 ```
 
 ### 5. Scaffold frontend → commit
 
-Copy `templates/<frontend-stack>/` into `frontend/`. Do not add router wiring, components, or pages beyond the template's placeholder.
+Copy `templates/<frontend-stack>/` into `frontend/`. Do not add router wiring, components, or pages beyond the template's placeholder. The copy includes `frontend/scripts/ci-checks.sh` (the single-sourced check gate); ensure its executable bit survives the copy (`chmod +x frontend/scripts/ci-checks.sh`) so the pre-push hook wired at step 9 can invoke it.
 
 ```bash
 git add frontend/
-git commit -m "chore(scaffold): frontend (<stack>) — entry, manifests, Dockerfile"
+git commit -m "chore(scaffold): frontend (<stack>) — entry, manifests, Dockerfile, ci-checks"
 ```
 
 ### 6. Scaffold compose → commit
@@ -138,9 +139,22 @@ git add e2e/
 git commit -m "chore(scaffold): e2e (playwright + smoke spec)"
 ```
 
-### 9. Scaffold CI pipeline → commit
+### 9. Scaffold CI pipeline + CI-parity pre-push hook → commit
 
 Materialize a minimal PR-validation pipeline so the draft PR opened at step 13 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run.
+
+**Materialize and wire the CI-parity pre-push hook (mandatory).** The workflow's per-stack check jobs run `bash scripts/ci-checks.sh`; the committed pre-push hook runs the *same* script for every touched stack, so a push that would fail CI is denied locally in one run — no peeling failures apart one PR-cycle at a time. Wire it:
+
+```bash
+mkdir -p .githooks
+cp skills/scaffold-project/templates/githooks/pre-push .githooks/pre-push
+chmod +x .githooks/pre-push
+git config core.hooksPath .githooks
+```
+
+`core.hooksPath` is a **local** git setting (not committed), so the hook file alone isn't enough — every clone must run `git config core.hooksPath .githooks` once. Record that one-liner in the repo's `README.md` (or `CONTRIBUTING.md`) setup section so contributors enable it; the hook itself is committed under `.githooks/` so it travels with the repo. (The per-stack `scripts/ci-checks.sh` the hook invokes already landed with the backend/frontend surfaces at steps 4–5.)
+
+Commit the workflow and the hook together as the `ci` surface:
 
 Shape the rendered file to the surfaces that landed:
 
@@ -152,8 +166,8 @@ Shape the rendered file to the surfaces that landed:
 Do not add deploy jobs, registry pushes, OIDC role assumptions, or environment gates — those belong to the `sre` agent's lane, not to a scaffold-time validation pipeline. Do not add `paths:` filters that skip e2e — the e2e job is the only signal that the system composes correctly.
 
 ```bash
-git add .github/workflows/pr-validation.yml
-git commit -m "chore(scaffold): ci (pr-validation pipeline)"
+git add .github/workflows/pr-validation.yml .githooks/pre-push
+git commit -m "chore(scaffold): ci (pr-validation pipeline + ci-parity pre-push hook)"
 ```
 
 ### 10. Offer the design-system step
@@ -233,5 +247,6 @@ Report the PR URL and stop.
 - **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens` (if any).** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.
 - **CI is scaffold-time validation only.** The pipeline produced at step 9 runs lint/type/format/test, builds images locally, and runs e2e against compose. It MUST NOT push images, assume an OIDC role, reference a registry, or deploy. Deploy pipelines, environment gates, and tag-driven promotion are the `sre` agent's lane — surface and STOP if the user asks scaffold to add any of those.
+- **CI checks are single-sourced; the pre-push hook is mandatory.** Each per-stack check job runs `bash scripts/ci-checks.sh`, and the committed `.githooks/pre-push` (wired with `git config core.hooksPath .githooks`) runs that *same* script for every touched stack. Never inline the check commands into the workflow — that reintroduces the drift this exists to kill. The hook must be materialized and wired at step 9; record the one-time `git config core.hooksPath .githooks` in the README so every clone enables it.
 - **The design-system step is opt-in.** Always ask; never default to "yes" or "no". If the user opts in, the dispatched teammate owns the interview and the design artifacts — this skill only seeds the resulting tokens into the frontend afterwards and records a verbose `## Design taste` section plus reference paths into `CLAUDE.md` so future agents inherit the visual intent. The taste section must be evocative, not a one-liner; the reference paths must be machine-greppable backticked relative paths.
 - **The skill ends with a draft PR.** Push the branch and open a draft PR via `gh pr create --draft` so the scaffold-time CI fires on first commit. Do not merge; do not flip the PR to ready; do not switch back to `main`; do not delete the branch.

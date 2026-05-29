@@ -23,6 +23,7 @@ composes a component).
 1. **<Slice title>**
    - Has UI?: <yes | no>
    - Blocked by: <none | slice #N>
+   - Touches app composition?: <yes — edits `create_app` / `main.py` / root router | no>
    - User stories covered: <story id(s) or "—">
    - Tasks (atomic, DAG — `Blocked by` lists every real upstream, 1-up only):
      - `1.e2e.1` — `e2e` — <one UI user flow, mapped to one parent-issue AC scenario>. Blocked by: none
@@ -42,6 +43,7 @@ composes a component).
 (…)
 
 Notes the reader should verify before approving:
+- **App-composition serialization** — any two slices marked "Touches app composition? yes" are chained with a 1-up `Blocked by` edge (never parallel), so they merge one at a time onto the same `create_app` / root-router surface. A 3+ slice chain all editing that surface is a smell — flag for the architect to pin the signature in an ADR / C4-component doc instead.
 - **Each task is atomic** — exactly one test case / endpoint / utility / page / component / hook. Data-model changes ride along with the first endpoint/utility that introduces them — they are never their own task. Bundled tasks ("X and Y") MUST be split.
 - Within-slice dependencies are a **DAG**, not a single chain. `e2e` tasks remain sequential among themselves. The first `backend` task and the first `frontend` task are each blocked by the last `e2e`. Beyond that, `Blocked by` records only real upstream needs (endpoint that consumes the model introduced by a prior task; component that uses a hook; page that composes a component). Independent endpoints / hooks / components are siblings — same upstream, no edge between them.
 - `e2e` deliveries should read as **a single user flow through the UI**, not API contracts. One `e2e` task = one test case = one mapped acceptance-criteria scenario.
