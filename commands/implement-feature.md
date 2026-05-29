@@ -10,7 +10,7 @@ Run one full sweep across the lifecycle stages, in order, for a single feature m
 - **Discovery** is owned by the `task-finder.sh` script (read-only, single run, no LLM).
 - **Every state mutation** — label flips, `TaskCreate`, `Agent` dispatch, `TaskUpdate(owner)` assignment, draft → ready promotion, squash-merge — is owned by this command.
 
-The nine `task-finder-stage-<n>-<name>.sh` scripts under `skills/operation-git/scripts/` are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
+The `task-finder-stage-<n>-<name>.sh` scripts under `skills/operation-git/scripts/` (the reconcile stage 0 plus the nine lifecycle stages) are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
 
 This command does **not** wait for backgrounded sub-agents to finish. Once an agent is dispatched, the command moves on. Wrap with `/loop /implement-feature <feature-name>` to keep advancing.
 
@@ -37,7 +37,7 @@ Bash({
 })
 ```
 
-The script returns ONE markdown report covering all nine stages on stdout. Parse positionally:
+The script returns ONE markdown report covering the reconcile stage (Stage 0) and all nine lifecycle stages on stdout. Parse positionally:
 
 - Each stage section is `## Stage <N>: <stage-name>` followed by one or more `- ...` lines.
 - Every listed candidate is ELIGIBLE — `task-finder.sh` and its delegated per-stage scripts drop ineligible candidates silently.
@@ -48,11 +48,37 @@ If the script exits non-zero, stderr carries a diagnostic (`task-finder: not a G
 
 ### Step 2 — Process the report, stage by stage
 
-Process the nine stages **in order** (cross-stage cascade *within* a pass is not preserved — the snapshot is frozen at `task-finder.sh` time; the `/loop` wrapper carries it across passes). Within each stage, eligible candidates **fan out in parallel** — emit all per-candidate `Agent` + `TaskUpdate(owner)` calls together in one batched response — **except where the per-slice implement budget below collapses same-slice implement-type candidates**.
+Process the stages **in order, Stage 0 first** (cross-stage cascade *within* a pass is not preserved — the snapshot is frozen at `task-finder.sh` time; the `/loop` wrapper carries it across passes). Within each stage, eligible candidates **fan out in parallel** — emit all per-candidate `Agent` + `TaskUpdate(owner)` calls together in one batched response — **except where the per-slice implement budget below collapses same-slice implement-type candidates**.
 
 If a stage's candidate list is `- (none)`, log `Stage <N> (<stage-name>): nothing to pick up` and move on.
 
 Use the `operation-git` skill's `gh-commands` reference and `dispatch-prompt` template as the source of truth for query / mutation shapes.
+
+---
+
+#### Stage 0 — `reconcile` (release orphaned locks; no agent dispatch)
+
+Process this stage **first, before Stage 1**, and **before initializing `claimed_slices`** — it dispatches nothing and is exempt from the per-slice implement budget.
+
+Stage 0 lists work frozen in an in-flight label state by a sub-agent that died mid-run (SIGKILL under memory pressure, a killed process tree, a hung agent) without advancing the label. Nothing in Stages 1–9 ever re-picks such an item, so it stalls permanently — and a stale `status:in-progress` task keeps blocking its slice's siblings via `slice-in-flight.sh`. This stage **releases the lock**; it does NOT resurrect the dead agent. The next `/loop` pass re-discovers the released item in its normal ready state and re-dispatches a **fresh** agent, which resumes from durable state (the slice branch's WIP commits + the issue body + any handoff doc). Releasing a lock this pass therefore does NOT make the item eligible for Stages 1–9 *this* pass — the snapshot is frozen; recovery lands next pass, exactly like every other cross-stage cascade.
+
+For each orphan line, apply the label flip named by its `release:<action>` token, then (best-effort) clean up the dead agent's tracking task:
+
+| `release:<action>` | Line prefix | Label flip |
+|--------------------|-------------|------------|
+| `ready-to-implement` | `task:#<n>`  | `gh issue edit <n> --remove-label "status:in-progress" --add-label "status:ready-to-implement"` |
+| `need-fix`           | `task:#<n>`  | `gh issue edit <n> --add-label "review:need-fix"` |
+| `review-pending`     | `task:#<n>`  | `gh issue edit <n> --remove-label "review:running" --add-label "review:pending"` |
+| `clear-e2e`          | `slice:#<n>` | `gh issue edit <n> --remove-label "e2e:running"` |
+| `review-pending`     | `slice:#<n>` | `gh issue edit <n> --remove-label "review:running" --add-label "review:pending"` |
+| `need-fix`           | `slice:#<n>` | `gh issue edit <n> --add-label "review:need-fix"` |
+| `clear-fix-pr`       | `pr:#<n>`    | `gh pr edit <n> --remove-label "status:fix-in-progress"` |
+
+Each flip exactly reverses the lock the orchestrator applied at dispatch, restoring the item to its pre-dispatch state. The `release:need-fix` cases re-add the gate label the fix-stage lock stripped (`status:in-progress` is left untouched — the fix lock never removed it). After flipping, if a tracking task whose `owner` encodes this issue number is still open in `TaskList` (e.g. `engineer-implement-<n>`, `reviewer-review-task-<n>`, `engineer-e2e-<n>`, `engineer-fix-pr-<n>`), `TaskUpdate({ taskId, status: "deleted" })` — its agent is gone. A missing tracking task (different session) is benign; skip silently.
+
+Treat a `422` from a flip (label already moved by a concurrent fire) as benign and skip. Stage 0 never dispatches, never merges, never adds `claimed_slices`.
+
+The death gate is owned by the script: a runtime-telemetry liveness heartbeat (authoritative for engineer / reviewer dispatches — a fresh `last_seen` proves the agent is alive and is never reaped, no matter how quiet GitHub is) with GitHub-activity staleness as the fallback for agents without a telemetry record (`RECONCILE_HEARTBEAT_STALE_MINUTES` / `RECONCILE_STALE_MINUTES`, both default 30). Do NOT second-guess a listed orphan — `task-finder.sh` already applied the gate; every Stage 0 line is eligible.
 
 ---
 
@@ -291,13 +317,14 @@ No `TaskCreate`, no `Agent`. Never `--force`; never push directly to `main`; nev
 After Stage 9, print exactly one summary line:
 
 ```
-implement-feature(<feature-name>): pass complete (kickoff <K> / implement <I> / review-task <RT> / fix-task <FT> / prepare-slice <PS> / review-slice <RS> / fix-slice <FS> / fix-pr <FPR> / close-pr <CP>)
+implement-feature(<feature-name>): pass complete (reconcile <RC> / kickoff <K> / implement <I> / review-task <RT> / fix-task <FT> / prepare-slice <PS> / review-slice <RS> / fix-slice <FS> / fix-pr <FPR> / close-pr <CP>)
 ```
 
-Each count is the number of candidates *processed* in this fire (label flips for stage 1, dispatches for stages 2–8, draft → ready promotions for stage 9 — whether or not the PR was also auto-merged). Skipped candidates (failed the defense-in-depth re-check, lost a merge race, or collapsed by the per-slice implement budget) are NOT counted. `prepare-slice` and `fix-slice` dispatch engineers in the background — their count is "dispatched this fire", not "finished validating".
+Each count is the number of candidates *processed* in this fire (lock releases for stage 0, label flips for stage 1, dispatches for stages 2–8, draft → ready promotions for stage 9 — whether or not the PR was also auto-merged). Skipped candidates (failed the defense-in-depth re-check, lost a merge race, or collapsed by the per-slice implement budget) are NOT counted. `prepare-slice` and `fix-slice` dispatch engineers in the background — their count is "dispatched this fire", not "finished validating".
 
 ## Iron rules
 
+- **Reconcile (Stage 0) runs first, releases locks, dispatches nothing.** It only flips an orphaned in-flight label back to its pre-dispatch state so the next `/loop` pass re-dispatches a fresh agent from durable state (WIP commits + issue body). It never resurrects the dead agent, never merges, never touches `claimed_slices`. Released items are NOT eligible for Stages 1–9 this pass — recovery lands next pass.
 - **One milestone per invocation.** Run `/implement-feature <feature-name>` once per feature; `<feature-name>` flows into the `task-finder.sh` invocation and into every per-stage mutation.
 - **One `task-finder.sh` run per pass.** Single shot, no LLM. Do NOT call it once per stage; do NOT call it again mid-pass; do NOT dispatch an agent to wrap the call.
 - **The `task-finder.sh` report is the SOLE source of truth for what to process.** Do not re-query GitHub for candidate lists — the report is the snapshot. Per-stage defense-in-depth re-checks (Stage 9 step 1) remain in scope.

@@ -5,7 +5,7 @@ description: "Single source of truth for every git / GitHub operation the workfl
 
 # operation-git
 
-Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory. (Lifecycle candidate discovery for `/implement-feature` lives entirely as scripts here too — `task-finder.sh` + nine `task-finder-stage-<n>-<name>.sh` — with no agent or skill layer in between.)
+Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory. (Lifecycle candidate discovery for `/implement-feature` lives entirely as scripts here too — `task-finder.sh` + the reconcile stage (0) and nine lifecycle `task-finder-stage-<n>-<name>.sh` scripts — with no agent or skill layer in between.)
 
 ## When to activate
 
@@ -77,7 +77,8 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the ni
 
 | Script | Stage | Purpose |
 |--------|-------|---------|
-| `scripts/task-finder.sh <feature-name>` | — | Umbrella driver. Prechecks repo + milestone, runs the nine per-stage scripts in order, emits the canonical `# task-finder report` markdown + a summary line. Exits non-zero with a diagnostic on stderr on precheck failure or any per-stage failure. |
+| `scripts/task-finder.sh <feature-name>` | — | Umbrella driver. Prechecks repo + milestone, runs the reconcile stage (0) plus the nine lifecycle stages in order, emits the canonical `# task-finder report` markdown + a summary line. Exits non-zero with a diagnostic on stderr on precheck failure or any per-stage failure. |
+| `scripts/task-finder-stage-0-reconcile.sh` | 0 | Orphaned locks — work frozen in an in-flight label state (`status:in-progress` no-`review:*` tasks, `review:running`, `e2e:running`, fix-slice `status:in-progress`+`e2e:validated` no-`review:*`, draft-PR `status:fix-in-progress`) by a sub-agent that died mid-run. Death gate (priority order): (1) the runtime-telemetry liveness heartbeat — a signal meta with `ended_at==null` whose `last_seen` is stale ≥ `RECONCILE_HEARTBEAT_STALE_MINUTES` (default = `RECONCILE_STALE_MINUTES`); a fresh `last_seen` VETOES the reap (covers engineer + reviewer); (2) GitHub-activity staleness ≥ `RECONCILE_STALE_MINUTES` (default 30; activity = `updatedAt`, plus slice-branch last commit for engineer locks) as the fallback when no telemetry record exists (e2e-author, telemetry off). Emits `release:<action>` directives the orchestrator flips to release the lock. |
 | `scripts/task-finder-stage-1-kickoff-slice.sh` | 1 | `level:slice`+`kind:feature`+`status:ready-to-implement` slices with zero open blockers. |
 | `scripts/task-finder-stage-2-implement-task.sh` | 2 | `level:task`+`kind:feature`+`status:ready-to-implement` tasks, zero open blockers, slice not in flight, single `type:*`, parent slice resolved. |
 | `scripts/task-finder-stage-3-review-task.sh` | 3 | `level:task`+`kind:feature`+`status:in-progress` tasks carrying `review:pending`. |

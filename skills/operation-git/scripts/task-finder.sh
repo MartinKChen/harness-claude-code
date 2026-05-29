@@ -2,10 +2,14 @@
 # task-finder.sh
 #
 # Read-only candidate discovery for the /implement-feature lifecycle. Runs the
-# nine per-stage discovery scripts against ONE snapshot of GitHub state for a
-# given milestone and emits ONE structured markdown report. Never flips labels,
-# never creates tasks, never dispatches agents — every mutation is owned by
-# /implement-feature.
+# reconcile stage (Stage 0) plus the nine lifecycle stages against ONE snapshot
+# of GitHub state for a given milestone and emits ONE structured markdown
+# report. Never flips labels, never creates tasks, never dispatches agents —
+# every mutation is owned by /implement-feature.
+#
+# Stage 0 (reconcile) is discovery for orphaned locks — work frozen in an
+# in-flight label state by a sub-agent that died mid-run. It emits release
+# directives; the orchestrator flips the lock back so the next pass re-dispatches.
 #
 # Replaces the former `task-finder` agent + nine `workflow-task-finder-*` skills:
 # the per-stage logic is pure shell, so the LLM round-trip and Skill prompt-include
@@ -55,6 +59,7 @@ fi
 # Stage definitions: "<n>:<stage-name>". Stage-name maps 1:1 to the per-stage
 # script `task-finder-stage-<n>-<stage-name>.sh` and to the report heading.
 stages=(
+  "0:reconcile"
   "1:kickoff-slice"
   "2:implement-task"
   "3:review-task"
