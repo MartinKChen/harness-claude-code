@@ -70,7 +70,7 @@ jobs:
 
   # ---- BEGIN frontend (react-vite) ----
   frontend-checks:
-    name: frontend · type/test
+    name: frontend · lint/type/format/test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -84,6 +84,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci || npm install
+      - name: Lint/format (biome)
+        # biome ci runs the linter, formatter (check mode, no writes), and
+        # import organization in one pass; non-zero exit on any violation.
+        run: npx biome ci .
       - name: Type check (tsc)
         run: npm run typecheck
       - name: Tests (vitest)
