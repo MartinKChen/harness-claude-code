@@ -1,6 +1,6 @@
 ---
 name: operation-engineer-handoff
-description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/harness-claude-code/<repo>/handoffs/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Loaded conditionally: at engineer kickoff when a handoff doc already exists at the computed path, and on-demand when the `engineer-budget-gate.sh` hook denies a mutation with a handoff instruction (default threshold 150K)."
+description: "Bounded-session handoff for the engineer agent. Owns the doc path convention (`/tmp/harness-claude-code/<repo>/handoffs/<unit>.md`), the incoming-pickup procedure (read the doc, verify WIP commits, resume from the recorded stop point), the outgoing-handoff procedure (finish the current TDD step, commit + push, write the doc, exit cleanly without flipping `review:pending`), and the handoff-doc template. Loaded conditionally: at engineer kickoff when a handoff doc already exists at the computed path OR the slice branch carries prior `Refs #<unit>` WIP commits (crash recovery), and on-demand when the `engineer-budget-gate.sh` hook denies a mutation with a handoff instruction (default threshold 150K). Also defines the crash-resilience contract: a SIGKILL'd agent leaves no doc, but its pushed WIP commits plus the Stage-0 reconcile reaper let a fresh dispatch resume from the last committed step."
 ---
 
 # operation-engineer-handoff
@@ -15,10 +15,10 @@ Do not author "I think I'm running out of context, let me hand off" prose. Wait 
 
 ## When to activate
 
-- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: a handoff doc exists at the computed path for this unit of work. The engineer agent checks `[ -f /tmp/harness-claude-code/<repo>/handoffs/<unit>.md ]` at kickoff and loads this skill only if the file exists.
+- **Incoming pickup** — At engineer kickoff, after the loaded workflow's worktree-setup step and before any implementation step. Trigger: **either** a handoff doc exists at the computed path for this unit of work (graceful handoff), **or** no doc exists but the slice branch already carries `Refs #<unit>` WIP commits from a prior dispatch that was killed mid-run before it could finish (crash recovery). The engineer agent loads this skill when `[ -f /tmp/harness-claude-code/<repo>/handoffs/<unit>.md ]` OR `git -C <worktree> log --grep "Refs #<unit-id>"` is non-empty.
 - **Outgoing handoff** — When the `engineer-budget-gate.sh` PreToolUse hook denies a mutating tool call with a handoff instruction in its `permissionDecisionReason`. The agent loads this skill in response to the deny and runs the procedure below.
 
-Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff is only wired into the engineer agent. Do NOT activate to "checkpoint" progress mid-task when no hook has fired; commit + push as normal.
+Do NOT activate for reviewer / orchestrator / e2e-author dispatches — handoff is only wired into the engineer agent. Do NOT write a handoff *doc* mid-task to "checkpoint" progress when no budget-gate deny has fired — the checkpoint mechanism is ordinary commit + push of each completed step (see **Crash resilience**), not a doc.
 
 ## Handoff doc path
 
@@ -40,18 +40,17 @@ One unit of work, one handoff doc. The doc is overwritten on every outgoing hand
 
 ## Incoming pickup
 
-Run after the workflow's worktree-setup step and BEFORE any implementation step.
+Run after the workflow's worktree-setup step and BEFORE any implementation step. There are two pickup paths — a graceful handoff (doc present) and a crash recovery (no doc, but the branch carries prior WIP commits).
 
 1. Compute the handoff doc path from the dispatch verb + repo.
-2. If the file does not exist, exit this procedure — proceed normally with the workflow.
-3. If the file exists, read it end-to-end.
-4. Verify the WIP commits the doc lists are actually present on the slice branch:
+2. **Doc present — graceful handoff.** Read it end-to-end. Verify the WIP commits it lists are actually present on the slice branch:
    ```bash
    git -C <worktree> log --grep "Refs #<unit-id>"
    ```
-   If commits the doc references are missing from the branch, the previous handoff was incomplete — surface a diagnostic naming the missing SHAs and stop. Do NOT proceed; do NOT delete the doc.
-5. Resume from the doc's **Where to pick up next** section. Do NOT redo committed steps. Do NOT second-guess decisions already recorded under **Surprises / decisions** — they exist precisely so the next agent doesn't re-litigate them.
-6. Leave the handoff doc on disk while you work. Delete it only after the workflow's terminal action (push + `review:pending` flip, or equivalent for fix-pr) has succeeded — at that point this unit of work is complete and the doc is no longer relevant. Cleanup:
+   If commits the doc references are missing from the branch, the previous handoff was incomplete — surface a diagnostic naming the missing SHAs and stop. Do NOT proceed; do NOT delete the doc. Otherwise resume from the doc's **Where to pick up next** section. Do NOT redo committed steps. Do NOT second-guess decisions already recorded under **Surprises / decisions** — they exist precisely so the next agent doesn't re-litigate them.
+3. **No doc but prior `Refs #<unit-id>` WIP commits exist — crash recovery.** The previous dispatch was killed mid-run (a `SIGKILL` gives no chance to write a doc) and the Stage-0 reconcile reaper released the lock so you were re-dispatched. Reconstruct the stop point from the branch itself: read every WIP commit and its diffstat (`git -C <worktree> log --stat --grep "Refs #<unit-id>"`), map the committed steps onto the issue's done criteria, and resume from the first unsatisfied step. Do NOT redo committed steps. Treat any uncommitted working-tree change as suspect — a partial edit captured at kill time — `git restore` it and re-derive that step cleanly so you build on a clean, committed base.
+4. **Neither doc nor prior WIP commits.** Start fresh — proceed normally with the workflow.
+5. Leave the handoff doc (when one exists) on disk while you work. Delete it only after the workflow's terminal action (push + `review:pending` flip, or equivalent for fix-pr) has succeeded — at that point this unit of work is complete and the doc is no longer relevant. Cleanup:
    ```bash
    rm -f /tmp/harness-claude-code/<repo>/handoffs/<unit>.md
    ```
@@ -65,9 +64,19 @@ Trigger: `engineer-budget-gate.sh` returned a `deny` whose `permissionDecisionRe
 3. **Write the handoff doc** at `/tmp/harness-claude-code/<repo>/handoffs/<unit>.md` using the template at `templates/handoff-doc.md`. Fill every section that has content; omit sections that don't (but keep the headers stable so the pickup agent can `grep` for them).
 4. **Exit cleanly.** Do NOT flip `review:pending` (the work isn't done). Do NOT touch `status:in-progress` (the unit is still the same dispatch's lock). Do NOT close the issue or open a PR. Surface a short diagnostic to the caller naming the handoff doc path so whoever re-dispatches knows to re-trigger.
 
+## Crash resilience — the checkpoint contract
+
+A budget-gate handoff is *graceful*: you finish a step, commit, push, and write the doc. A crash is not — a `SIGKILL` (memory pressure, killed process tree) is uncatchable, so a crashed dispatch writes **no doc and no exit signal**. Recovery is therefore not your job at crash time; it is split across two mechanisms that have already been built:
+
+- **The Stage-0 reconcile reaper** (`task-finder-stage-0-reconcile.sh`, run each `/implement-feature` pass) detects the orphaned lock — your dispatch's in-flight label with a stale telemetry heartbeat — and flips it back to its ready state. The next pass re-dispatches the unit to a fresh engineer.
+- **Your pushed WIP commits** are the only state that survives. The fresh engineer's **Incoming pickup** path 3 above resumes from them.
+
+What this asks of you while you work: **commit and push each completed TDD step promptly — do not batch pushes to the end.** Every pushed step is a durable checkpoint that bounds crash loss to at most the single in-flight step, and (as a bonus) keeps the slice branch's last-commit time fresh, which is the liveness signal the reaper's GitHub-staleness fallback reads for engineer dispatches that have no telemetry record. This is *not* the mid-task doc-writing the iron rules forbid — it is ordinary commit + push, just promptly rather than hoarded. The handoff *doc* is still written only on a budget-gate deny.
+
 ## Iron rules
 
 - **One unit, one doc.** Never write a handoff doc for a unit other than the one this dispatch is working. Never read a handoff doc for a different unit.
+- **Push completed steps promptly; never hoard commits.** A pushed step is a crash checkpoint and a liveness signal. Local-only commits are lost if the worktree is reclaimed, and a long unpushed stretch reads as a dead branch to the reaper.
 - **Commits are the source of truth; the doc is just a pointer.** Anything the next agent needs to act on must already be in a pushed commit. The doc describes *where to continue from* the committed state — it never carries uncommitted diffs.
 - **Never force-push, never skip hooks during a handoff commit.** If a pre-push hook fails, drop the handoff, fix the failure first, then re-attempt. A broken push leaves the branch in a state the next agent can't trust.
 - **Verify before you resume.** Always confirm the doc's referenced commits actually exist on the branch before acting on the doc's instructions. A doc that references SHAs not on the branch is poisoned — surface and stop.
