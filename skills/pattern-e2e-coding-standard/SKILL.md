@@ -68,6 +68,14 @@ Never mix: a single precondition is seeded through exactly one path. Don't `INSE
 - Always isolate seeded data per test (unique slugs / emails / IDs) so concurrent specs don't collide on UNIQUE constraints. A test that hard-codes `email: "test@example.com"` will fight every other test that does the same.
 - Clean up after the spec (transaction rollback in a fixture teardown, or explicit delete) unless the harness already truncates between tests.
 
+### Asserting against external-service doubles
+
+When a scenario's outcome lands in an external-service double (mail catcher, queue, object store, fake gateway), assert against the double — never assume its behavior:
+
+- **A double has its own API semantics — never assume them.** Ordering, pagination, indexing lag, and eventual consistency of any emulator / sandbox follow its contract; verify against the double's *actual* behavior, not your expectation. Record the specific fact (e.g. a given mail catcher's result ordering) in the project's `.claude/memory/patterns/` overlay, not here.
+- **Wait for the expected count, not merely "≥1".** When one scenario produces several artifacts in the same sink, polling "until at least one exists" returns a stale earlier artifact; wait for count ≥ N, then select the target.
+- **One element per assertable locator.** A matcher that hits two elements is a strict-mode violation; use distinct copy or `data-testid`.
+
 ### Anti-patterns (flag and fix)
 
 - **Invented payload fields.** Sending `{ "user_name": ... }` because it "looks right" when the contract says `{ "username": ... }`. → Read the contract; halt if missing.

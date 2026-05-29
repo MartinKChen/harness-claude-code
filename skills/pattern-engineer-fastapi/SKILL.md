@@ -58,6 +58,10 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - `BackgroundTasks` parameter only for fire-and-forget work that can lose to a crash; persistent work uses a real queue.
 - Lifespan is async; don't put blocking I/O there without a thread pool wrapper.
 
+### Operational knobs (env-driven)
+
+- Operational knobs gating external integrations are env-driven — rate limits, worker tick cadence, outbound timeouts. In-memory limiter state that persists across runs is a leading cause of flaky / failing E2E; read these from settings / `os.getenv()`, never hard-code.
+
 ### OpenAPI + docs
 
 - Tag every route (`tags=["users"]`) so the auto-generated docs group correctly.

@@ -44,6 +44,12 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - `try_files $uri $uri/ /index.html` is mandatory for any SPA — without `$uri/`, directory-path requests 404.
 - Pre-push hook's `container:smoke-api-proxy` probe catches misconfig by `Content-Type` (`text/html` on an API probe = SPA catch-all intercepted).
 
+### External-dependency doubles (for E2E)
+
+- **Compose includes a stand-in for every external dependency the E2E flow touches** — mail catcher, object-store emulator, fake gateway, broker. A spec can't verify an integration whose counterpart was never started.
+- **Connection scheme matches the client's requirement** (e.g. an async vs sync driver prefix), and **every service that builds the client applies the same transformation** — a rewrite present in the worker but missing in the web server fails only once a real connection is opened.
+- **Reverse-proxy ordering** (restated from *Frontend nginx*): API / upstream `location` blocks sit ABOVE the SPA `try_files` fallback, or client routes 404 and API calls return the app shell.
+
 ### Secrets
 
 - Runtime env vars only. Never `COPY` / `ARG` / `ENV` baked into the image.

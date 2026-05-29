@@ -37,9 +37,11 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 If the list is empty, halt and surface `slice has no E2E specs to validate` (an upstream issue-creation bug — every `kind:feature` slice should ship E2E coverage).
 
-### 4. Run the specs via testcontainers, iterate on production-code fixes
+### 4. Boot gate, then run the specs via testcontainers and iterate on production-code fixes
 
-Bring up the slice's stack via testcontainers (the agent's loaded patterns own the specifics — `docker compose -p <slug>` is typical) using a slug derived from the slice branch name (lowercase, non-alphanumeric → `-`), then run only the touched specs with Playwright.
+**Pre-flight — prove the full stack boots before the first spec.** Bring the slice's stack up and wait for every service to report healthy (`docker compose -p <slug> up -d --wait`, or poll each `/healthz`) — including a stand-in for every external dependency the flow exercises (mail catcher, object-store emulator, fake gateway, broker). Derive `<slug>` from the slice branch name (lowercase, non-alphanumeric → `-`). The first E2E run is also the first integration smoke test: if the stack can't reach healthy, the failure is **wiring** (a missing service double, the wrong connection scheme, a bad proxy block) — fix that first; do not read it as a spec failure.
+
+Once the stack is healthy, run only the touched specs with Playwright.
 
 For each failure:
 
@@ -71,6 +73,7 @@ Terminal action. Exit. Do NOT close the slice, do NOT touch `status:in-progress`
 ## Iron rules
 
 - **Never modify the E2E specs.** Production-only fixes here. A failing E2E that requires spec changes is a `status:need-attention` bail, not a fix.
+- **Boot gate before the first spec.** Bring the whole stack — including a double for every external dependency the flow touches — to healthy before running any spec. A stack that can't reach healthy is a wiring bug (missing service double, wrong connection scheme, bad proxy block), not a spec failure; fix the wiring first.
 - **Every commit carries `Refs #<slice-#>`** (single trailer — slice-level work, no task context).
 - **Each fix starts with a failing unit/integration test** in production-code land that mirrors the E2E's symptom. Drive RED→GREEN with the minimum change.
 - **Propagate via `rg`** when the E2E's symptom is a class of bug (multiple endpoints with the same missing rate-limit decorator, multiple forms with the same missing CSRF wiring). Each equivalent site gets its own RED→GREEN.

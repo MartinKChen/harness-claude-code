@@ -97,6 +97,13 @@ Finding shape:
 **Fix:** Add two tests: one posting `{ items: [] }` asserting `response.status_code == 400`, and one posting `{ items: [{ sku: "X", qty: -1 }] }` asserting `response.status_code == 400` with the `quantity_must_be_positive` error code.
 ```
 
+### Emitted-artifact correctness — output consumed by an external service (HIGH)
+
+A unit test asserting a module's *own* output still passes when that output is wrong for its consumer. Where a module emits an artifact handed to an external service and consumed elsewhere — a link / redirect / callback URL, a webhook payload, a signed object URL, a queue message — the coverage gap is a test that asserts the emitted value against the **consuming** contract (the route table, the webhook spec, the vendor's expected schema), not just the emitter's intent.
+
+- **Self-asserting emitter test** — the only test asserts the emitter reproduces its own literal (`assert build_link() == "https://app/reset?token=..."`) without checking that value resolves against the consumer's route table / schema. File a HIGH: the emitter's contract is the consumer's, not its own.
+- **Copy-pasted emitter defect** — several emitters of the same artifact (multiple mail templates building the same reset URL, multiple producers of one queue message) each have their own passing unit test; a wrong shape repeats across all of them undetected. File one consolidated HIGH listing every emitter, since each test blesses its own output.
+
 ### Selector + assertion quality — `type:e2e` only (HIGH)
 
 E2E test code is itself the implementation; review *coverage* and the *quality of the assertions*, not implementation cleverness.

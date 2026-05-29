@@ -111,6 +111,16 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 - Cap total retries (≤3) and total elapsed time (≤a few seconds for synchronous request paths; longer for background workers).
 - Idempotency: retry only when the operation is idempotent (or carries an `Idempotency-Key` honored by the callee).
 
+### External-integration discipline
+
+These rules govern any external service the system integrates with — message / email delivery, payment gateways, object storage, SMS, third-party REST APIs, brokers, webhook senders, identity providers. Service-specific facts (a given emulator's ordering, a vendor's quirk) belong in the project's `.claude/memory/patterns/` overlay, never inline here.
+
+- **Emitted artifacts conform to the *consuming* contract, not the emitter's intent.** A value the system hands to an external system and another component later consumes — a link / redirect / callback URL, a webhook payload, a signed object URL, a queue message — must match what the consumer requires (the route table, the webhook spec, the vendor's expected schema). The emitter's unit test passes by asserting its own output, so the same defect repeats across every emitter; fix and test all emitters of one artifact together.
+- **Async delivery through an external sink is an inherent race.** When work is committed locally then delivered to an external service by a worker / queue, the artifact is not guaranteed present the instant the API returns. Provide a synchronous, delivery-confirmed path the caller can rely on, or document that observers must poll the sink until it's visible — never tune `sleep` values in production code to win the race.
+- **External-client connection strings match the runtime's required scheme / protocol, applied identically at every entrypoint that builds the client.** A driver / URL rewrite (e.g. an async vs sync driver prefix) present in one entrypoint (worker) but missing in another (web server) is invisible to unit tests and only fails once a real connection is opened.
+- **Knobs that gate external calls are env-configurable** — rate limits, retry / backoff, poll / tick intervals, timeouts. In-process limiter / quota state persists across test runs and silently throttles E2E; never hard-code.
+- **Transport / serialization can mangle payloads in transit.** Verify the artifact survives the external service's encoding round-trip (line-folding, charset, content-transfer-encoding, JSON escaping) — assert the consumer receives exactly what was emitted.
+
 ### Caching — cache-aside
 
 - Read path: check cache → miss → fetch from source → populate cache with TTL → return. Single helper per cache key family.

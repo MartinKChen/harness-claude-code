@@ -116,6 +116,14 @@ def create_order(...): ...
 - Contract declares a version (`/v1/...`) → implementation mounts under the contracted version prefix.
 - Contract declares a deprecation date → implementation emits the `Deprecation` response header (and a sunset note in logs).
 
+#### Emitted artifacts handed to an external service (HIGH)
+
+A module that emits an artifact consumed by an external system — a link / redirect / callback URL, a webhook payload, a signed object URL, a queue message — must produce a value that conforms to the **consuming** contract, not the emitter's intent. A unit test asserting the emitter's own output still passes when that output is wrong for its consumer, so review the emitted value against what the consumer requires:
+
+- A callback / redirect / reset URL resolves against the route table (`docs/api-contract/`) — path, query-param names, trailing-slash spelling.
+- A webhook / queue payload matches the consumer's expected schema (the vendor's webhook spec, or the consumer's contract).
+- Copy-pasted emitter defects survive unit tests because each test blesses its own service — when several emitters produce the same artifact, check (and cite) them together.
+
 ### Data-model contract conformance
 
 For every entity declared in the data-model contract whose ORM model / migration is in the diff, walk these checks:

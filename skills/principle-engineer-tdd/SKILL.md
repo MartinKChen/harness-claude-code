@@ -54,6 +54,10 @@ Commit-message format is owned by the **dispatched caller**, not this skill. Eac
 
 5. **Final cleanup commit.** Lint, type-check, and any final hygiene. Commit: `chore: lint/type fixes`.
 
+### Green units ≠ integrated — the seams first execute at E2E
+
+Unit and module tests verify each module against its own contract with every external service faked, so the **seams between components — connection config, emitted-artifact shape, async delivery timing, proxy routing — have no test surface until E2E.** Mocked-away seams first execute when the real stack boots. Therefore the acceptance test that proves wiring (step 3) must, for any slice that crosses an external-service seam, run against the **real booted stack with real (or emulated) external services** — not in-process fakes. A suite of green units is not an integrated system.
+
 ### What counts as a valid RED
 
 Every RED — acceptance test (step 0), module test (step 1a), contract test (step 2) — must fail for a *reason that proves the missing behavior*, not for incidental noise. Two flavors are legitimate:
@@ -158,6 +162,7 @@ These are non-negotiable. They are what makes the discipline a discipline.
 - **Each step is its own commit.** RED, GREEN, and REFACTOR are three commits, never two. The commit trail is part of the deliverable — a future reader should be able to read `git log` and see the cadence.
 - **Refactor only under green.** If a refactor step turns the suite red, revert and try smaller. Never "fix forward" with another behavior change masquerading as a cleanup.
 - **The acceptance test is the goalpost, not the proof of all behavior.** A green acceptance test proves *wiring*. Module tests and contract tests carry the coverage weight; the acceptance test only proves the pieces compose.
+- **Green units ≠ integrated.** Mocked-away seams (connection config, emitted-artifact shape, async delivery timing, proxy routing) first execute at E2E. The acceptance / integration test that proves wiring runs against the real booted stack with real or emulated external services, never in-process fakes.
 
 ## Template
 
