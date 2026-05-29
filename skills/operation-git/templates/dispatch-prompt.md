@@ -1,6 +1,6 @@
 # Dispatch-prompt skeleton
 
-Orchestrator skills pass a minimal prompt to dispatched sub-agents. The agent rediscovers everything (issue body, slice branch, worktree path, recent commits) on its own from the issue ID. Keep the prompt small — extra context here is hard to audit and goes stale.
+Orchestrator skills pass a minimal prompt to dispatched sub-agents. The agent rediscovers everything (issue body, slice branch, worktree path, recent commits) on its own from the issue ID. Keep the prompt small — extra context here is hard to audit and goes stale. The orchestrator fills ONLY the placeholder number — never failure logs or diagnosis, even for fix / fix-pr dispatches.
 
 ## Implement / author a task
 

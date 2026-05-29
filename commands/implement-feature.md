@@ -63,6 +63,8 @@ If a stage's candidate list is `- (none)`, log `Stage <N> (<stage-name>): nothin
 
 Use the `operation-git` skill's `gh-commands` reference and `dispatch-prompt` template as the source of truth for query / mutation shapes.
 
+Fill **only** the issue/PR number into the chosen `dispatch-prompt.md` skeleton — never add failure context, CI output, or diagnosis to the prompt. The agent rediscovers everything from the ID; extra context goes stale and duplicates the agent's work.
+
 ---
 
 #### Stage 0 — `reconcile` (release orphaned locks; no agent dispatch)
@@ -374,5 +376,6 @@ Never stop the loop while any tracking task is still open — a quiet GitHub is 
 - **`type:*` decides the agent type, never the body.** Malformed `type:*` is dropped silently by the discovery skill; do not invent a routing.
 - **`kind:feature` only.**
 - **No code-changing work in this command itself.** Every code change, push, comment, and PR merge beyond `gh pr ready` / `gh pr merge` (Stage 9) is owned by the dispatched sub-agent.
+- **Detect-and-dispatch, never analyze.** The orchestrator never inspects code, CI logs, test output, diffs, or failing files to diagnose a candidate. `task-finder.sh` has already gated eligibility (a fix-pr candidate *means* CI failed or there's a conflict — that is all the orchestrator needs to know). All discovery and diagnosis belong to the dispatched agent. Do NOT run `gh run view` / `gh run view --log-failed` / `gh pr checks` / log greps, and do NOT read the slice's source to understand a failure. The one read the orchestrator may do is the Stage 9 defense-in-depth `gh pr view --json mergeable,statusCheckRollup` re-check — a go/no-go gate, not a diagnosis.
 - **Stage 9 promotes every mergeable draft to ready; it auto-closes only `merge:auto`.** `gh pr ready` runs for all mergeable drafts regardless of merge-mode; `gh pr merge --squash --delete-branch` runs only when the candidate line's merge-mode is `auto`. `merge:manual` drafts are left open for the user. Never `--force`, never push to `main`, never override branch protection.
 - **Skip, don't fail, on benign outcomes** at every stage — `422` from a label flip race, `merge race` from a recomputed mergeability, `nothing to pick up` from a stage whose only line is `- (none)`.
