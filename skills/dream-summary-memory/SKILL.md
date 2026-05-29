@@ -1,6 +1,6 @@
 ---
 name: dream-summary-memory
-description: "The 'dreaming' pass over a consuming project's recent history. Reads GitHub issues AND PRs closed in the last 24h — review/fix comment threads and fix commits (issues), plus CI-failure and merge-conflict history (PRs) — distills the recurring, pattern-wise mistakes engineers and reviewers keep making, and writes them as additive rule overlays under `.claude/memory/patterns/<skill>.md`. Maps each improvement to the relevant `pattern-engineer-*` / `pattern-reviewer-*` skill, honors overlay precedence from `memory-convention`, appends an audit entry to `.claude/memory/dream-log.md`, and reports a summary. Writes autonomously (no per-edit approval) so it can run unattended on a schedule. Never edits baseline pattern skills in this plugin. Activate on '/dream-summary-memory', 'dream the memory', or 'summarize recent issues into memory'."
+description: "The 'dreaming' pass over a consuming project's recent history. Reads GitHub issues AND PRs closed since the last dream run (the cutoff recorded in `dream-log.md`, not a fixed time window — so it can run on demand at any cadence) — review/fix comment threads and fix commits (issues), plus CI-failure and merge-conflict history (PRs) — distills the recurring, pattern-wise mistakes engineers and reviewers keep making, and writes them as additive rule overlays under `.claude/memory/patterns/<skill>.md`. Maps each improvement to the relevant `pattern-engineer-*` / `pattern-reviewer-*` skill, honors overlay precedence from `memory-convention`, appends an audit entry to `.claude/memory/dream-log.md`, and reports a summary. Writes autonomously (no per-edit approval) so it can run unattended on a schedule. Never edits baseline pattern skills in this plugin. Activate on '/dream-summary-memory', 'dream the memory', or 'summarize recent issues into memory'."
 ---
 
 # dream-summary-memory
@@ -30,15 +30,23 @@ mkdir -p "$MEMORY_ROOT/patterns"
 
 Memory is always-on (see `memory-convention`); never gate on the directory pre-existing.
 
-### 2. Determine the window
+### 2. Determine the cutoff
 
-The nominal window is **issues and PRs closed in the last 24 hours**, narrowed by the `dream-log.md` cutoff so a re-run the same day does not reprocess.
+There is **no fixed time window**. The cutoff is the timestamp of the last dream run, recorded in `dream-log.md` — process every in-scope issue and PR closed **after** that point, however long ago it was. This lets the dream run on demand at any cadence (hourly, daily, after a long gap) without missing or reprocessing history.
 
 ```bash
-SINCE="$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+# The last run's timestamp is the most recent `## <ISO-8601>` heading.
+# Entries are appended, so the newest is the LAST such heading in the file.
+if [ -f "$MEMORY_ROOT/dream-log.md" ]; then
+  SINCE="$(grep '^## ' "$MEMORY_ROOT/dream-log.md" | tail -1 | sed 's/^## //')"
+fi
+
+# Bootstrap (no prior run / no parseable heading): default to the last 24h so
+# the very first pass stays bounded instead of scanning all history.
+SINCE="${SINCE:-$(date -u -v-24H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)}"
 ```
 
-If `$MEMORY_ROOT/dream-log.md` exists, read its most recent `## <ISO-8601>` heading; if that timestamp is later than `$SINCE`, use it as the cutoff instead. List both candidate sets:
+`$SINCE` is the only cutoff — do not intersect it with a 24h floor. List both candidate sets:
 
 ```bash
 # Closed feature issues (review→fix history).
@@ -102,31 +110,7 @@ For each target skill with ≥ 1 improvement, merge into `$MEMORY_ROOT/patterns/
 
 ### 6. Append the audit entry and report
 
-Append to `$MEMORY_ROOT/dream-log.md` (this heading's timestamp is the next run's cutoff source):
-
-```markdown
-## <ISO-8601 timestamp>
-
-**Window:** <cutoff-ts> → <now-ts>
-**Issues consumed:** #<n>, #<m>, … (<count> total)
-**PRs consumed:** #<p>, #<q>, … (<count> total)
-
-**Overlays touched:**
-- `patterns/<skill>.md` — <N> rules added (<sharpened|carve-out|new-rule|example> × …)
-
-**Patterns captured:**
-- [<skill>] [<category>] <one-line summary of the rule>
-- ...
-
-**Conflict hotspots noted:**
-- `<path>` — conflicted across slices #<a>, #<b>, … → <structural fix proposed, or "watch, not yet pattern-wise">
-
-**Overlay conflicts skipped (need human reconciliation):**
-- [<skill>] [<category>] <baseline says X, history suggests Y>
-
-**Dropped as one-off (not pattern-wise):**
-- #<n>/PR #<p> <one-line> — instance-specific (or a lone merge conflict), not generalized
-```
+Append a new entry to `$MEMORY_ROOT/dream-log.md` using [`templates/dream-log-entry.md`](templates/dream-log-entry.md) (this heading's timestamp is the next run's cutoff source). Append at the **end** of the file so the newest heading is last — §2 reads the cutoff with `grep '^## ' | tail -1`.
 
 Then print a concise summary to the user: issues + PRs consumed, overlays touched, rule count, conflict hotspots, and any overlay conflicts skipped. Terminal action. Exit.
 
@@ -135,7 +119,7 @@ Then print a concise summary to the user: issues + PRs consumed, overlays touche
 - **Pattern-wise only.** A single-instance bug never becomes memory. Only a recurring, generalizable class of mistake earns an overlay rule. When in doubt, drop it and log it under "Dropped as one-off".
 - **Conflicts are parallelism friction, not mistakes — by default.** Slices are built in parallel, so merge conflicts are expected and most carry no lesson. Promote a conflict to a rule ONLY when the same file is a repeat collision point across slices, and frame it as a structural de-contention fix — never "avoid conflicts". Lone conflicts are dropped.
 - **Reads GitHub, not telemetry.** The dreaming input is closed-issue review/fix history plus closed-PR CI-failure and merge-conflict history. Runtime telemetry (`signals/runtime/*`) is for ad-hoc operational analysis and is out of scope here.
-- **Autonomous, but auditable.** Write overlays without prompting (so scheduled runs work), but every run appends a `dream-log.md` entry and prints a summary. The log is the cutoff source — never re-derive the window from filesystem mtimes.
+- **Autonomous, but auditable.** Write overlays without prompting (so scheduled runs work), but every run appends a `dream-log.md` entry and prints a summary. The most recent `dream-log.md` heading is the *sole* cutoff — there is no fixed time window. Never re-derive the cutoff from filesystem mtimes or fall back to a rolling 24h once the log exists.
 - **Additive overlays only; never override baseline.** Follow `memory-convention` precedence. A proposed rule that contradicts a baseline rule is logged as a conflict, not written.
 - **Baseline pattern skills in this plugin are never edited.** All writes target `$MAIN_ROOT/.claude/memory/patterns/` in the consuming project. "The baseline is wrong" → note it in the log as an upstream-PR candidate; do not act on it here.
 - **Merge, don't clobber.** Preserve hand-edited overlay sections; append under the matching section.
