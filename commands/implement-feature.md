@@ -1,5 +1,5 @@
 ---
-description: Drive one end-to-end pass through the slice → task → review → fix → close → PR → merge lifecycle for a single feature milestone. Run the `task-finder.sh` script once (read-only, no LLM in the loop) to identify every eligible candidate across the nine lifecycle stages, then perform the per-stage label flips + `TaskCreate` + `Agent` dispatch (or merge + memory capture) directly. Within a stage, candidates fan out in parallel — but at most one implement-type agent (implement / fix / E2E) runs per slice at a time, while review tasks have no per-slice limit; across stages, processing is sequential. Each pass is a snapshot — wrap with `/loop /implement-feature <feature-name>` to keep advancing the milestone end-to-end as backgrounded agents finish.
+description: Drive one end-to-end pass through the slice → task → review → fix → close → PR → merge lifecycle for a single feature milestone. Run the `task-finder.sh` script once (read-only, no LLM in the loop) to identify every eligible candidate across the nine lifecycle stages, then perform the per-stage label flips + `TaskCreate` + `Agent` dispatch (or merge + memory capture) directly. Within a stage, candidates fan out in parallel — but at most one implement-type agent (implement / fix / E2E) runs per slice at a time, while review tasks have no per-slice limit; across stages, processing is sequential. Each pass is a snapshot. Run it under self-paced `/loop /implement-feature <feature-name>`: every backgrounded agent's completion re-invokes the orchestrator to run the next pass (event-driven fast path), and a long backstop `ScheduleWakeup` runs a full reconcile pass to catch dead agents that never signaled and merge-driven `Blocked by` cascades. The loop ends only when a pass dispatches nothing and no tracking tasks remain.
 argument-hint: <feature-name>
 ---
 
@@ -12,7 +12,7 @@ Run one full sweep across the lifecycle stages, in order, for a single feature m
 
 The `task-finder-stage-<n>-<name>.sh` scripts under `skills/operation-git/scripts/` (the reconcile stage 0 plus the nine lifecycle stages) are pure discovery and emit eligible-candidate lists only; they never flip labels, never dispatch agents, never merge PRs.
 
-This command does **not** wait for backgrounded sub-agents to finish. Once an agent is dispatched, the command moves on. Wrap with `/loop /implement-feature <feature-name>` to keep advancing.
+This command does **not** wait for backgrounded sub-agents to finish *within* a pass. Once an agent is dispatched, the command moves on to the next candidate and ends the pass. What carries the milestone forward *across* passes is the trigger model in **Step 4** — an agent finishing re-invokes the orchestrator (event-driven fast path), backstopped by a long `ScheduleWakeup`. Run the command under self-paced `/loop /implement-feature <feature-name>` (no interval) so those re-invocations re-enter this command.
 
 ## Arguments
 
@@ -322,9 +322,35 @@ implement-feature(<feature-name>): pass complete (reconcile <RC> / kickoff <K> /
 
 Each count is the number of candidates *processed* in this fire (lock releases for stage 0, label flips for stage 1, dispatches for stages 2–8, draft → ready promotions for stage 9 — whether or not the PR was also auto-merged). Skipped candidates (failed the defense-in-depth re-check, lost a merge race, or collapsed by the per-slice implement budget) are NOT counted. `prepare-slice` and `fix-slice` dispatch engineers in the background — their count is "dispatched this fire", not "finished validating".
 
+### Step 4 — Arm the next trigger (event-driven fast path + slow backstop)
+
+A "pass" is everything Steps 0–3 just did. This step decides what triggers the *next* pass. The labels-as-truth contract is unchanged — every trigger does the same thing: run `task-finder.sh` and dispatch the newly-eligible successors. The only question is **when** to run it. There are three triggers:
+
+- **Fast path (event-driven, primary).** When a sub-agent dispatched in any prior pass finishes, the harness re-invokes the orchestrator with a `<task-notification>`. Under the `/loop` wrapper that re-enters this command — a fresh pass. The just-finished agent has already flipped its labels (`review:pending`, `e2e:validated`, `review:passed`, …), so this pass's `task-finder.sh` surfaces the successor stage for that agent's slice, plus any slice its completion unblocked. **Do NOT schedule a short-interval wakeup to poll for in-flight agents** — completion re-invocation is automatic and immediate; a short poll just burns passes and cache.
+- **Slow backstop (timer, safety net).** Three things produce no completion notification, so the fast path is blind to them: (1) an agent SIGKILLed under memory pressure never signals "done" — its orphaned lock is only recoverable by **Stage 0 reconcile**; (2) a `Blocked by` chain unblocks when *this command* merges a slice PR (Stage 9), not when any agent finishes; (3) the orchestrator session itself may be lost. Cover all three with one long backstop wake, armed at the end of every pass that still has work in flight:
+
+  ```
+  ScheduleWakeup({
+    delaySeconds: 1800,
+    prompt: "/loop /implement-feature <feature-name>",
+    reason: "implement-feature backstop for <feature-name>: reconcile orphaned locks + flow merge-driven cascades"
+  })
+  ```
+
+  1800s is a backstop, not a poll — the fast path fires far sooner whenever an agent actually finishes. Keep it long; do not drop it toward a poll interval.
+- **Manual.** `/implement-feature <feature-name>` invoked directly runs exactly one pass and arms the same backstop.
+
+**Choosing the trigger at the end of a pass** — count work still in flight: open tracking tasks in `TaskList` whose `owner` matches this command's dispatch naming (`*-implement-*`, `reviewer-review-task-*`, `engineer-e2e-*`, `*-fix-task-*`, `engineer-fix-slice-*`, `reviewer-review-slice-*`, `engineer-fix-pr-*`), unioned with anything dispatched this pass.
+
+- **Work in flight** → arm the backstop `ScheduleWakeup` above and end the turn. The fast path re-invokes you the moment an agent finishes; the backstop only fires if nothing does within 30 min.
+- **Nothing in flight AND this pass's finder report was all `- (none)` across every stage** → the milestone is **quiescent**. Emit the summary line, arm **no** wakeup, and end the loop. This is the sole stop condition.
+
+Never stop the loop while any tracking task is still open — a quiet GitHub is not quiescence if an agent is mid-run.
+
 ## Iron rules
 
 - **Reconcile (Stage 0) runs first, releases locks, dispatches nothing.** It only flips an orphaned in-flight label back to its pre-dispatch state so the next `/loop` pass re-dispatches a fresh agent from durable state (WIP commits + issue body). It never resurrects the dead agent, never merges, never touches `claimed_slices`. Released items are NOT eligible for Stages 1–9 this pass — recovery lands next pass.
+- **The next pass is triggered by an agent finishing, not by a clock.** A dispatched agent's completion re-invokes the orchestrator (fast path); a single long `ScheduleWakeup` (default 1800s) is the *backstop* that catches dead agents, merge-driven `Blocked by` cascades, and a lost session — never a poll. Do NOT add a short-interval wakeup to watch in-flight agents. The loop stops only on **quiescence**: a pass that dispatches nothing AND has zero open tracking tasks. See Step 4.
 - **One milestone per invocation.** Run `/implement-feature <feature-name>` once per feature; `<feature-name>` flows into the `task-finder.sh` invocation and into every per-stage mutation.
 - **One `task-finder.sh` run per pass.** Single shot, no LLM. Do NOT call it once per stage; do NOT call it again mid-pass; do NOT dispatch an agent to wrap the call.
 - **The `task-finder.sh` report is the SOLE source of truth for what to process.** Do not re-query GitHub for candidate lists — the report is the snapshot. Per-stage defense-in-depth re-checks (Stage 9 step 1) remain in scope.
