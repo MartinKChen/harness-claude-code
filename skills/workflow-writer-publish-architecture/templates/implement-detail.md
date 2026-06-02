@@ -1,6 +1,10 @@
 # <Feature Name> — Implementation Detail
 
 > Companion to `requirement.md`. Captures *how* the feature will be built, given the decisions in ADR-{NNNN}. The **only** feature-bounded architecture artifact — every other artifact referenced below lives at the repo level under `docs/`.
+>
+> **Transient build input.** This file (and its sibling `requirement.md`) exists to feed `create-issues`. Once that feature's issues are created, `create-issues` archives this pair out of the live doc tree. Two rules follow:
+> - **Build explanation only.** Architecture rationale, module/file-tree shape, repo layout — *why* this was built. Operational procedures (enable prod, deploy, roll back, swap a provider, local-dev setup, common dev tasks) are **runbooks**: they live under `docs/runbooks/`, not here. Link to them from the Runbooks section below.
+> - **Never the sole home of a canonical fact.** A constraint, table, integrity rule, state machine, or rate-limit budget is defined in its durable artifact (ADR / `docs/data-model/` / `docs/api-contract/`) and merely *linked up to* from here. This file may point *up* at a durable home; archiving it must never delete canon.
 
 ## Overview
 
@@ -48,7 +52,14 @@
 
 ## Rollout Plan
 
-<Migration order, feature flags, backfill steps, and how to roll back. Keep it short — one numbered list of steps.>
+<Migration order, feature flags, backfill steps, and how to roll back *for this rollout*. Keep it short — one numbered list of steps. A repeatable operational procedure (deploy, rollback, enable prod) is a **runbook** — define it under `docs/runbooks/` and link it from the Runbooks section below, don't inline the procedure here.>
+
+## Runbooks
+
+<Link to the durable operational runbooks under `docs/runbooks/` that this feature introduces or touches. Procedures live in those files, not here — this section is just the index of pointers. Empty is fine if the feature adds no operational procedure.>
+
+- [`runbooks/ops/<procedure>.md`](../../runbooks/ops/<procedure>.md) — <one-line: when an SRE runs it>
+- [`runbooks/dev/<procedure>.md`](../../runbooks/dev/<procedure>.md) — <one-line: when an engineer runs it>
 
 ## Out of Scope (deferred with trigger)
 
