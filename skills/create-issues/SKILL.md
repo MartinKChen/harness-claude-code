@@ -1,6 +1,6 @@
 ---
 name: create-issues
-description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues with typed task sub-issues (e2e → backend → frontend). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, and data models; quizzes user; on approval opens slice issues + `feature/<slice#>-<intent>` branches and task sub-issues with 1-up `Blocked by` chains. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
+description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues with typed task sub-issues (e2e → backend → frontend). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, data models, and the design system's surface + navigation inventory; emits a foundation/shell slice first for frontend-bearing features and a page-reachability gate (each page task declares its entry source); quizzes user; on approval opens slice issues + `feature/<slice#>-<intent>` branches and task sub-issues with 1-up `Blocked by` chains. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
 ---
 
 # create-issues
@@ -88,6 +88,12 @@ Read every source listed below in full — partial reads will skew the slice bre
   ls docs/data-model/ 2>/dev/null
   ```
 
+- **Design system + surface inventory (mandatory for any frontend-bearing feature).** List `docs/design-system/` and read `surfaces.md` (the surface + navigation inventory locked by `design-lead`), plus `overview.md` / `components.md` / `tokens.md` as the UI work warrants. `surfaces.md` is the contract that closes the orphan-page gap: it enumerates **every routed surface** with its `kind`, **entry source(s)**, global-nav membership, and auth posture, plus the global navigation model. It drives two things downstream: the **foundation/shell slice** (step 3) and the **page-reachability gate** (each frontend page task declares its entry source from this table — step 3 + 5b). If the feature has UI but `docs/design-system/surfaces.md` is absent, halt and surface — lock-in is incomplete; the design phase of `/deep-dive-feature` must have produced it.
+
+  ```bash
+  ls docs/design-system/ 2>/dev/null
+  ```
+
 ### 3. Draft the slice + task breakdown
 
 Decompose the source into thin vertical slices following these rules:
@@ -98,6 +104,31 @@ Decompose the source into thin vertical slices following these rules:
 - Prefer many thin slices over few thick ones.
 - Each slice must be release-safe: merging it on its own does not break the product.
 </vertical-slice-rules>
+
+<foundation-shell-slice>
+**Emit a foundation/shell slice for any frontend-bearing feature — always, as the first slice.** Vertical-slice decomposition splits by *feature*; the cross-cutting **app shell** has no standalone user story, so without a dedicated slice it falls through the cracks and feature pages ship unreachable (no global nav to link into, an empty `/dashboard`). Derive this slice directly from `docs/design-system/surfaces.md` and the architect's app-shell C4 component. It owns:
+
+- The **global navigation container** (the `Navigation` component pattern in `components.md`) — every `top-level` surface in the inventory's nav model gets a nav entry.
+- The **authenticated layout** that wraps protected surfaces.
+- The **landing / dashboard** surface (the `redirect-system` `/` target and the authenticated home).
+- **Error boundaries** per route and the not-found (`*`) view.
+
+Emit it **first** so later feature-page slices plug into an existing shell rather than inventing nav ad hoc. Its tasks follow the normal e2e → backend → frontend typing (e.g. an e2e flow asserting the nav renders and routes, a frontend task per shell component). Only skip the foundation slice when the feature is genuinely backend/database-only (no UI surfaces in the inventory) — then say so explicitly in the quiz rather than silently omitting it.
+</foundation-shell-slice>
+
+<page-reachability-gate>
+**Every routed page task declares an entry source, and the gate verifies that inbound path exists in code.** The invariant is **reachability, not menu-membership** — real apps reach most pages from *other* pages; the global nav is only for top-level destinations. For each frontend task that delivers a **page**, look the page up in `docs/design-system/surfaces.md` and carry its declared **entry source(s)** onto the task body (the `frontend-task-body.md` template has an `Entry source` field). The page is not "done" until that inbound path exists in code — the reviewer (`pattern-reviewer-frontend-standard`) enforces it per this table:
+
+| Page kind | Reached from | In global nav? |
+|---|---|---|
+| `top-level` section | global nav | **yes** |
+| `detail-child` | a row/link on its parent | no |
+| `contextual` (new/edit/dialog) | a control on a parent | no |
+| `external-entry` (login, magic-link) | URL typed / email link | no — exempt from in-app linking |
+| `redirect-system` (`/`→home, 404) | redirect or error | no |
+
+A **parentless (top-level)** page MUST be in the global nav *or* be an explicit redirect target — its only valid in-app entry is the shell, which is exactly why the foundation slice must exist first. A page **with a parent** must be linked from that parent (the linking control ships in the same slice as the page). **External-entry** pages declare "entered via URL/email" and are exempt. If a page in the breakdown has no entry source in `surfaces.md`, halt and surface — it's an orphan and the inventory is incomplete.
+</page-reachability-gate>
 
 For each **slice** (which becomes a parent issue), decide:
 
@@ -242,7 +273,7 @@ gh issue create \
 
 Note: task issues are created **without** a `status:*` label. The `status:ready-to-review` gate exists at the slice level for human design approval; tasks are released the moment their slice is unblocked and their own `Blocked by` chain clears, so a status label on tasks would just be dead weight.
 
-Body follows the type-appropriate template ([`templates/e2e-task-body.md`](templates/e2e-task-body.md) / [`templates/backend-task-body.md`](templates/backend-task-body.md) / [`templates/frontend-task-body.md`](templates/frontend-task-body.md)). Type is carried by the `type:*` label — do not duplicate inside the body.
+Body follows the type-appropriate template ([`templates/e2e-task-body.md`](templates/e2e-task-body.md) / [`templates/backend-task-body.md`](templates/backend-task-body.md) / [`templates/frontend-task-body.md`](templates/frontend-task-body.md)). Type is carried by the `type:*` label — do not duplicate inside the body. For a `frontend` task whose Delivery is a **page**, fill the template's `Entry source` section by copying the page's row from `docs/design-system/surfaces.md` verbatim (route, kind, reached-from, in-global-nav) — this is what the reviewer's reachability gate checks against; omit that section for component/hook tasks.
 
 After creation:
 
@@ -317,6 +348,8 @@ Good — vertical tracer bullets, each merge leaves the product working. Tasks w
 - **Stable task IDs in the breakdown.** Every task has a local ID of the form `<slice#>.<type-code>.<index>` (`e2e` / `be` / `fe`); the index is always present, even when the slice happens to have only one task of that type. IDs are used in `Blocked by` references during steps 3–4 and are translated into real issue numbers as each issue is created in step 5.
 - **1-up `Blocked by` only.** For any chain `a → b → c` (slice or task level), record only the immediate upstream on each node. Never include transitive ancestors — GitHub infers them.
 - **Serialize slices that mutate the same app-composition surface.** Two or more sibling slices that each edit the central wiring (backend `create_app` / `main.py` router-mount + middleware registration; frontend root router / provider tree) MUST be chained with a 1-up `Blocked by` edge, never left parallel — parallel composition edits clash on merge or silently drop one side's wiring. Serialize only the composition surface; module-local routes/components stay parallel. A 3+ slice chain all editing `create_app` is a smell — flag it for the architect to own the `create_app` signature in an ADR / C4-component doc instead of forcing a fully serial backlog.
+- **Foundation/shell slice first for any frontend-bearing feature.** Always emit a foundation slice that owns the app shell — global-nav container, authenticated layout, landing/dashboard, error boundaries — derived from `docs/design-system/surfaces.md` and the architect's app-shell C4 component, and order it as the **first** slice so later feature pages plug into an existing nav. Skip it only when the feature has zero UI surfaces, and say so explicitly in the quiz rather than silently omitting it. The orphan-page failure mode (top-level pages shipped with no nav to reach them) is exactly what this prevents.
+- **Every page task declares an entry source; reachability is the gate.** Each frontend task delivering a *page* carries the page's declared entry source(s) from `docs/design-system/surfaces.md` (route, kind, reached-from, in-global-nav) in its body. The invariant is **reachability, not menu-membership**: a `top-level` page must be in the global nav or be an explicit redirect target; a `detail-child` / `contextual` page must be linked from its parent (the linking control ships in the same slice); `external-entry` pages are exempt. The reviewer (`pattern-reviewer-frontend-standard`) verifies the declared inbound path exists in code before the page is done. A page with no entry source in `surfaces.md` is an orphan — halt and surface, do not invent the path.
 - **DAG dependencies within a slice.** Tasks within a slice form a DAG, not a single chain. `e2e` tasks stay sequential among themselves. The first `backend` task and the first `frontend` task are each blocked by the last `e2e`. Beyond that, `Blocked by` records only real upstream needs (an endpoint blocked by the prior task that introduced its model; a component blocked by its hook; a page blocked by its primary component). Independent endpoints, independent hooks, and independent components are siblings — they share an upstream but not an edge between them. The runtime tiebreaker for multiple-ready tasks (`type:e2e` → `type:backend` → `type:frontend`, then lowest issue number) is enforced at dispatch time, not in the issue graph.
 - **Slice branch is created at issue-creation time.** Step 5a opens the slice issue and immediately creates its `feature/<slice#>-<intent>` branch via `gh issue develop`. The slice is born ready for downstream task work — there is no separate "pickup slice" loop that materializes branches afterwards.
 - **Task sub-issues share the slice branch.** Every task sub-issue created in 5b has the slice's `feature/<slice#>-<intent>` branch (from 5a) linked to it via `gh issue develop --name`. There is no per-task branch — all task work for a slice integrates onto the single slice branch, and the GitHub "Development" link on each task surfaces that shared target.

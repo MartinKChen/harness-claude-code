@@ -19,6 +19,20 @@ The **single** unit being created or modified — pick exactly one of the lines 
 - Component: `<ComponentName>` — <purpose>
 - Hook: `use<Thing>` — <purpose>
 
+<!--
+ENTRY SOURCE — required when the Delivery is a Page; omit this whole section for
+component/hook tasks. Copy the page's declared entry source(s) verbatim from
+docs/design-system/surfaces.md. The reviewer enforces reachability against this:
+the inbound path MUST exist in code before the page is "done"
+(pattern-reviewer-frontend-standard). Reachability, not menu-membership — see the
+create-issues §3 page-reachability-gate table.
+-->
+## Entry source
+- Route: `<the page's route, e.g. /students/:id>`
+- Kind: `<top-level | detail-child | contextual | external-entry | redirect-system>`
+- Reached from: `<global-nav | parent: /students (list row) | control: "New" button on /students | redirect from / | URL typed / email link>`
+- In global nav?: `<yes | no>`
+
 ## Done criteria (EARS)
 - AC1 — The `<component>` SHALL `<response>`.
 - AC2 — WHEN `<user action>`, the `<component>` SHALL `<response>`.
