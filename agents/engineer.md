@@ -38,6 +38,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 - `pattern-engineer-coding-standard`
 - `pattern-engineer-observability`
 - `principle-engineer-tdd`
+- `pattern-test-coverage` — the shared catalogue of what makes a test set complete (the same one the reviewer gates against). You write tests on every dispatch (TDD), so this loads every time; close its gaps in the RED phase to pass the code gate on the first round. When `.claude/memory/patterns/pattern-test-coverage.md` exists, also load `memory-convention` and apply the overlay additively.
 
 **Conditionally invoked — pattern / principle**
 

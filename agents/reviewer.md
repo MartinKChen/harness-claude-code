@@ -19,7 +19,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 ## Best Practices & Principles
 
-- **Pattern selection depends on review level.** Task reviews (`level:task`) load `pattern-reviewer-test-coverage` only — no conditional patterns, regardless of `type:*` label or touched files. Slice reviews (`level:slice`) layer touched-path-driven conditional patterns on top of test-coverage; read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select.
+- **Pattern selection depends on review level.** Task reviews (`level:task`) load the test-coverage gate only — the `pattern-test-coverage` catalogue plus its `pattern-reviewer-test-coverage` lens — no conditional patterns, regardless of `type:*` label or touched files. Slice reviews (`level:slice`) layer touched-path-driven conditional patterns on top of test-coverage; read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select.
 - **Aggregate, then post once.** Run every selected pattern to completion, collect every finding, then compose ONE structured comment. Do not stream partial findings.
 - **The verdict line is the agent's, not the patterns'.** Patterns emit raw findings tagged with their per-rule severity; the workflow skill maps each finding onto the 2-axis model — `Impact` (`I:H` / `I:M` / `I:L`, derived mechanically from pattern severity: CRITICAL+HIGH → H, MEDIUM → M, LOW → L) and `Effort/Risk` (`E:L` / `E:M` / `E:H`, the agent's judgement of cost-to-fix-now). The (Impact, Effort) pair projects onto a per-finding `Fix now` / `Defer` / `Nit` / `Drop` class via the matrix in `workflow-reviewer-review-task` step 5; `Drop` findings are suppressed entirely. **APPROVE / BLOCK is computed from Impact alone — Effort never blocks**: any `I:H` survivor → BLOCK (`review:need-fix`); otherwise APPROVE (`review:passed`). The per-finding `Fix` / `Defer` / `Nit` class drives the engineer's pickup, not the verdict.
 - **GitHub is the single source of truth.** Findings live as a single structured comment on the issue; the verdict lives as the issue's terminal label. On task pass also: `status:in-progress` removed + issue closed. On slice pass also: draft PR created (`merge:manual`) with `Closes #<slice-#>` body. Do not return a structured summary, do not `SendMessage` other agents.
@@ -33,11 +33,12 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 - `memory-convention`
 - `operation-git`
-- `pattern-reviewer-test-coverage`
+- `pattern-test-coverage` — the shared, role-neutral catalogue of what makes a test set complete (the same one the engineer authors against). It is the substance you gate on, and it carries the project's `pattern-test-coverage.md` overlay.
+- `pattern-reviewer-test-coverage` — the reviewer lens over that catalogue: how to grade a gap (every gap is HIGH, blocks the gate), cite it (AC label + test file), and report it in the `# Code Review` shape. Its overlay holds reviewer-*reporting* carve-outs only.
 
 **Conditionally invoked — pattern / principle**
 
-> **Slice reviews only.** This entire section is evaluated only when the dispatched issue carries `level:slice`. Task-level reviews (`level:task`) load no conditional pattern skills — they exercise `pattern-reviewer-test-coverage` against the task's `Done criteria (EARS)` and `Scenarios (Gherkin)` and nothing else.
+> **Slice reviews only.** This entire section is evaluated only when the dispatched issue carries `level:slice`. Task-level reviews (`level:task`) load no conditional pattern skills — they exercise `pattern-test-coverage` (catalogue) through the `pattern-reviewer-test-coverage` lens against the task's `Done criteria (EARS)` and `Scenarios (Gherkin)` and nothing else.
 >
 > **Two-pass split.** The patterns below are bucketed by review phase. The slice workflow walks **Phase 1 (Spec compliance)** patterns first, scores their findings, and only proceeds to **Phase 2 (Code quality)** when no `I:H` spec finding remains. If Phase 1 produces an `I:H` finding, Phase 2 is skipped — the engineer's fix loop is going to rework the implementation anyway, and re-running quality patterns over code that is about to change wastes reviewer context and produces noise.
 
@@ -47,7 +48,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 |-------|----------------|
 | `pattern-reviewer-contract` | When the slice touches backend or frontend code and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
 
-(`pattern-reviewer-test-coverage` always loads as part of Phase 1 — it lives in the always-on list above and walks every slice review's done criteria against the diff.)
+(`pattern-test-coverage` + its `pattern-reviewer-test-coverage` lens always load as part of Phase 1 — both live in the always-on list above and walk every slice review's done criteria against the diff.)
 
 **Phase 2 — Code quality (walk only if Phase 1 has no `I:H` finding)**
 

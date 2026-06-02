@@ -34,7 +34,7 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 Slice reviews walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
 
-- **Phase 1 — Spec compliance**: `pattern-reviewer-test-coverage` (always loaded; walks done criteria + Gherkin scenarios against the diff) and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These patterns answer *"did this slice build what was asked?"* — they catch missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model.
+- **Phase 1 — Spec compliance**: the test-coverage gate — the shared `pattern-test-coverage` catalogue read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks done criteria + Gherkin scenarios against the diff) — and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These patterns answer *"did this slice build what was asked?"* — they catch missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model.
 - **Phase 2 — Code quality**: every other loaded pattern (coding standard, observability, security, language- and framework-specific patterns, container, database). These patterns answer *"is what was built well-built?"* — they catch quality, security, and maintainability issues regardless of whether the spec was met.
 
 Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records. Tag every Phase 1 finding with `phase: spec` and every Phase 2 finding with `phase: quality`.

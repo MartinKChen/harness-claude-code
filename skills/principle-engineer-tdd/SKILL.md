@@ -146,9 +146,10 @@ Before step 0, fetch the GitHub issue under work (`gh issue view <n>` or via its
 
 ## Companion references
 
-The detailed catalogues that used to live in this file are now sibling docs — load them on demand, not always-on, so the discipline stays terse in normal flow:
+The detailed catalogues that used to live in this file are now sibling docs / skills — load them on demand, not always-on, so the discipline stays terse in normal flow:
 
-- **`edge-cases.md`** — checklist of edge cases every module-test file must cover (null, empty, boundary, error paths, race, large data, special chars). Load when authoring or reviewing the test file for a public behavior.
+- **`pattern-test-coverage`** — the canonical, role-neutral catalogue of *what makes a test set complete*: AC / Gherkin / migration coverage, the full edge-case breadth, named-observable assertions, emitted-artifact correctness, and the **deletable-code spine** (a behavior is done only when deleting any one production line would fail a test). This is the same catalogue the reviewer gates against, so closing its gaps in the RED phase is how you pass the code gate on the first round instead of the second. It carries the project's `pattern-test-coverage.md` overlay — the durable record of coverage gaps this project keeps shipping — so load it (and `memory-convention` when that overlay exists) on every RED step that authors a test. It supersedes the quick checklist in `edge-cases.md`; reach for `edge-cases.md` only as a terse inline reminder.
+- **`edge-cases.md`** — terse inline checklist of edge cases every module-test file must cover (null, empty, boundary, error paths, race, large data, special chars). A subset of `pattern-test-coverage` §4, kept for a fast glance mid-loop.
 - **`anti-patterns.md`** — testing anti-patterns table + rationalizations table. Load when about to make a TDD-step decision, or when catching yourself reaching for an excuse to skip a step (file-scoped test runs, "I'll test after", inline mocks instead of fakes, etc.).
 
 ## Iron rules
@@ -165,6 +166,7 @@ These are non-negotiable. They are what makes the discipline a discipline.
 - **Refactor only under green.** If a refactor step turns the suite red, revert and try smaller. Never "fix forward" with another behavior change masquerading as a cleanup.
 - **The acceptance test is the goalpost, not the proof of all behavior.** A green acceptance test proves *wiring*. Module tests and contract tests carry the coverage weight; the acceptance test only proves the pieces compose.
 - **Green units ≠ integrated.** Mocked-away seams (connection config, emitted-artifact shape, async delivery timing, proxy routing) first execute at E2E. The acceptance / integration test that proves wiring runs against the real booted stack with real or emulated external services, never in-process fakes.
+- **A behavior's tests are complete only against `pattern-test-coverage`.** Each behavior you grow must close every gap in that catalogue that applies to it — the deletable-code spine, edge-case breadth, named-observable assertions, emitted-artifact correctness — *and* whatever the project's `pattern-test-coverage.md` overlay adds. This is the same catalogue the reviewer gates against; an uncovered branch you leave in the RED phase is a `review:need-fix` finding waiting to happen. Close it while authoring, not on the fix round.
 - **Done ≠ the task's own tests pass.** Before flipping `review:pending` or clearing `status:fix-in-progress`, run the shared `scripts/ci-checks.sh` for every touched stack — including DB-backed tests — and proceed only when green. Running a single test file (e.g. `pytest tests/unit/test_signup_router.py`) proves the one behavior under the loop; it does not prove the unit of work is done.
 
 ## Template
