@@ -142,7 +142,7 @@ This distinction is the single most important guard against writing code before 
 
 ### Reading the acceptance criteria
 
-Before step 0, fetch the GitHub issue under work (`gh issue view <n>` or via its URL). The acceptance criteria — typically EARS + Gherkin scenarios in the issue body — are the source of truth for what the acceptance test must assert. The PRD under `docs/product-requirement-document/<feature-name>/` is background context only; do not derive acceptance criteria from `requirement.md`. If no issue is identified, or the issue's acceptance criteria are missing, vague, or contradict themselves, stop and ask the user to resolve it before writing any test. Do not invent acceptance criteria.
+Before step 0, fetch the GitHub issue under work (`gh issue view <n>` or via its URL). The acceptance criteria — typically EARS + Gherkin scenarios in the issue body — are the source of truth for what the acceptance test must assert. The PRD under `docs/product-requirement-document/<feature-name>/` is background context only; do not derive acceptance criteria from `requirement.md`. By the time a task is implemented the PRD pair has usually been archived by `create-issues` into `docs/product-requirement-document/_archive/<feature-name>/` — its absence from the live tree is expected and is **not** a blocker, precisely because it was never load-bearing here. The durable contracts you actually build against (ADR / `docs/data-model/` / `docs/api-contract/`) stay live. If no issue is identified, or the issue's acceptance criteria are missing, vague, or contradict themselves, stop and ask the user to resolve it before writing any test. Do not invent acceptance criteria.
 
 ## Companion references
 

@@ -1,11 +1,13 @@
 ---
 name: create-issues
-description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues with typed task sub-issues (e2e → backend → frontend). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, data models, and the design system's surface + navigation inventory; emits a foundation/shell slice first for frontend-bearing features and a page-reachability gate (each page task declares its entry source); quizzes user; on approval opens slice issues + `feature/<slice#>-<intent>` branches and task sub-issues with 1-up `Blocked by` chains. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
+description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues with typed task sub-issues (e2e → backend → frontend). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, data models, and the design system's surface + navigation inventory; emits a foundation/shell slice first for frontend-bearing features and a page-reachability gate (each page task declares its entry source); quizzes user; on approval opens slice issues + `feature/<slice#>-<intent>` branches and task sub-issues with 1-up `Blocked by` chains; then archives the now-spent PRD pair (`requirement.md` + `implement-detail.md`) into `_archive/<feature>/` so they never contaminate later agent reasoning. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
 ---
 
 # create-issues
 
-Turn a locked-in feature into a set of release-safe **vertical slice** GitHub issues, each broken down into typed **task sub-issues** (e2e / backend / frontend). The skill is always invoked with a `<feature-name>` that points at `docs/product-requirement-document/<feature-name>/` — there is no free-form / ad-hoc input path. It decomposes the work, quizzes the user for explicit approval, then creates the parent issue + task sub-issues per slice.
+Turn a locked-in feature into a set of release-safe **vertical slice** GitHub issues, each broken down into typed **task sub-issues** (e2e / backend / frontend). The skill is always invoked with a `<feature-name>` that points at `docs/product-requirement-document/<feature-name>/` — there is no free-form / ad-hoc input path. It decomposes the work, quizzes the user for explicit approval, creates the parent issue + task sub-issues per slice, then **archives the spent PRD pair**.
+
+**The PRD pair is a single-use input.** `requirement.md` + `implement-detail.md` exist for exactly one purpose: to be sliced into issues here. Once the issues carry the work, nothing re-reads those two files as a load-bearing input (engineers work from issue bodies; the durable contracts — ADR / data-model / api-contract / runbooks — carry every canonical fact). Leaving them in the live tree only lets a stale or superseded intent silently contaminate later agent reasoning. So this skill's **last act** is to relocate the pair into `docs/product-requirement-document/_archive/<feature-name>/` (step 6). The two governing rules that fall out: **`create-issues` reads only *active* features** (those still under the live PRD root), and **nothing globs `_archive/`**.
 
 ## When to activate
 
@@ -56,7 +58,23 @@ Read every source listed below in full — partial reads will skew the slice bre
   - `docs/product-requirement-document/<feature-name>/requirement.md`
   - `docs/product-requirement-document/<feature-name>/implement-detail.md`
 
-  Read the on-disk copies. The merged `feature-lockin` PR (verified in Step 1) is what guarantees these files are present and current — do not re-check, and do not fall back to a different ref or a free-form description if a read returns empty. If a file genuinely fails to read, that's a lock-in contract violation: halt and surface, do not invent context. Note any user stories present in the source — they will be carried into the slice breakdown.
+  Read the on-disk copies. The merged `feature-lockin` PR (verified in Step 1) is what guarantees these files are present and current — do not re-check, and do not fall back to a different ref or a free-form description if a read returns empty. Note any user stories present in the source — they will be carried into the slice breakdown.
+
+  **Archived-feature guard.** If `docs/product-requirement-document/<feature-name>/` is absent, check `docs/product-requirement-document/_archive/<feature-name>/` before treating it as a lock-in violation:
+
+  ```bash
+  ls docs/product-requirement-document/<feature-name>/ 2>/dev/null || \
+    ls docs/product-requirement-document/_archive/<feature-name>/ 2>/dev/null
+  ```
+
+  - If the live directory is present → proceed normally.
+  - If it's absent **but** `_archive/<feature-name>/` exists → this feature was **already sliced** (step 6 archives the PRD pair at the end of a successful run). **STOP** and surface:
+
+    > Feature `<feature-name>` has already been sliced and its build docs are archived under `_archive/`. `create-issues` only operates on active features. If you intend to re-slice it, restore the pair from `_archive/<feature-name>/` (e.g. `git mv` it back) first.
+
+  - If **neither** exists → genuine lock-in contract violation: halt and surface, do not invent context.
+
+  This keeps the single governing rule explicit: **`create-issues` reads only active features.** No other skill needs `_archive/` awareness — the graveyard is read by nothing.
 
 - **Critical paths (mandatory).** List `docs/critical-path/` and read every critical-path file whose entry point, steps, or summary touches the surface this feature is changing. Critical paths are organized by user flow, not by feature, so a single feature can touch one, several, or zero of them — list first, then decide which to read.
 
@@ -302,9 +320,49 @@ After creation:
 
    Stay **1-up**: never include a transitive ancestor as a blocker — GitHub infers them. Cross-slice task blockers are allowed when truly required, but again only the immediate upstream.
 
-#### 5c. Final summary
+#### 5c. Report created issues
 
 Report the created parent issue + task sub-issue numbers/URLs back to the user, grouped by slice, and include the linked development branch name for each slice. Slice issues are in `status:ready-to-review` — the human is expected to review and (per the flow spec) flip them to `status:ready-to-implement` to release them to the loops. Task sub-issues carry no `status:*` label; they're released automatically when the slice is unblocked and their own `Blocked by` chain clears.
+
+### 6. Archive the spent PRD pair
+
+This is the skill's **last act**, and it runs **only after every issue and sub-issue from step 5 was created successfully**. If issue creation failed partway, do **not** archive — surface the partial state instead, so a re-run can finish creating issues against the still-live PRD.
+
+The PRD pair (`requirement.md` + `implement-detail.md`) has now done its entire job: the work lives in the issues. Relocate the pair out of the live read surface so no later agent globs a stale intent.
+
+1. **Relocate the directory** with `git mv` so history follows:
+
+   ```bash
+   feature="<feature-name>"
+   mkdir -p docs/product-requirement-document/_archive
+   git mv "docs/product-requirement-document/${feature}" \
+          "docs/product-requirement-document/_archive/${feature}"
+   ```
+
+2. **Stamp frontmatter** on both `_archive/<feature>/requirement.md` and `_archive/<feature>/implement-detail.md`:
+
+   ```yaml
+   ---
+   status: sliced            # build docs consumed by create-issues
+   sliced_at: <YYYY-MM-DD>   # absolute date — today
+   ---
+   ```
+
+   Plus a one-line human banner at the top of each body:
+   `> **Archived (sliced <date>).** Build input only — not a live reference. Durable facts live in ADR / data-model / api-contract / runbooks.`
+
+3. **Commit on the current branch** (no PR):
+
+   ```bash
+   git add -A docs/product-requirement-document/
+   git commit -m "docs(prd): archive ${feature} build docs (sliced)"
+   ```
+
+   If the current branch is `main` and your repo protects it, branch first (`git switch -c chore/archive-${feature}`) and open a tiny PR instead — the relocation itself is the load-bearing part either way.
+
+4. **Report** the archive move (old path → `_archive/<feature>/`) and the commit hash, alongside the issue summary from 5c.
+
+Why archive here rather than in a separate skill: `requirement.md` and `implement-detail.md` are published together at lock-in but for one transient purpose — feeding this skill. The moment the issues exist they are spent, so the archive is a deterministic tail of the same operation, not a later human decision. Their durable counterparts (ADRs, data models, API contracts, runbooks) stay live and carry every canonical fact forward.
 
 ## Pattern
 
@@ -357,6 +415,8 @@ Good — vertical tracer bullets, each merge leaves the product working. Tasks w
 - **Acceptance criteria on the parent issue cover E2E/UI only.** Include the AC section on the parent issue **only when the slice has UI**, and scope it to behavior a user can validate from the UI. Backend/data-model behavior lives in the corresponding task's done criteria.
 - **EARS + Gherkin for behavioral criteria.** Wherever EARS notation is used (parent-issue AC for UI slices, backend-task done criteria, frontend-task done criteria), non-trivial criteria add 1+ Gherkin scenarios with `Given` / `When` / `Then` steps. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) MUST appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
 - **Migration tests are mandatory when a task introduces a data-model change.** When a backend task introduces or changes a data model alongside its endpoint/utility, the task MUST include Gherkin scenarios for both upgrade and downgrade migrations in its done criteria.
+- **The PRD pair is single-use; archive it after slicing.** `requirement.md` + `implement-detail.md` are inputs to this skill and nothing else re-reads them as load-bearing. After every issue is created (step 5), relocate the pair into `docs/product-requirement-document/_archive/<feature-name>/` via `git mv`, stamp `status: sliced` frontmatter, and commit (step 6). Physical relocation — not just a flag — is what keeps stale intent off the agent read surface; agents glob the live tree and would read a `status:`-flagged file left in place. Archive only on full success; never archive a partial run.
+- **`create-issues` reads only active features.** If the live `docs/product-requirement-document/<feature-name>/` is gone but `_archive/<feature-name>/` exists, the feature was already sliced — STOP and surface, do not re-slice from the archive. Nothing globs `_archive/`; it is the graveyard, read by no skill.
 
 ### EARS notation cheat sheet
 

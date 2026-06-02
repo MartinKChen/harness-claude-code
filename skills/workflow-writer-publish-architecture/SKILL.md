@@ -1,13 +1,25 @@
 ---
 name: workflow-writer-publish-architecture
-description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md` under `docs/product-requirement-document/<feature-name>/`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`. Commits on the current branch; no PR, no scaffold. Activate on '/workflow-writer-publish-architecture'."
+description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md` under `docs/product-requirement-document/<feature-name>/`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`, and durable operational runbooks under `docs/runbooks/{ops,dev}/`. Commits on the current branch; no PR, no scaffold. Activate on '/workflow-writer-publish-architecture'."
 ---
 
 # workflow-writer-publish-architecture
 
-Materialize every output of an approved architectural design and commit them on the current branch. Owns: ADRs, the ADR index, the feature's implementation-detail doc, the C4-PlantUML diagrams, per-resource OpenAPI 3.1 contracts, per-entity ODCS v3.1 data models, the optional `CLAUDE.md` architecture-context update, and the inline commit on the current branch.
+Materialize every output of an approved architectural design and commit them on the current branch. Owns: ADRs, the ADR index, the feature's implementation-detail doc, the C4-PlantUML diagrams, per-resource OpenAPI 3.1 contracts, per-entity ODCS v3.1 data models, the durable operational runbooks, the optional `CLAUDE.md` architecture-context update, and the inline commit on the current branch.
 
-This skill **assumes the design is already settled and approved** with the user. It does not run a design interview, does not push, does not open a PR, and does not run any scaffold gate. Only **`implement-detail.md` is feature-bounded**; ADRs, C4 diagrams, API contracts, and data models all live at the repo level so they survive across features.
+This skill **assumes the design is already settled and approved** with the user. It does not run a design interview, does not push, does not open a PR, and does not run any scaffold gate.
+
+### The two-tier doc model this skill enforces
+
+Artifacts split into two tiers, and this skill is where the split is enforced:
+
+- **Transient build inputs** — only **`implement-detail.md` is feature-bounded**. Its entire job is to feed `create-issues`; once that feature's issues exist, `create-issues` archives it out of the live tree (see that skill's archive step). Nothing re-reads a shipped feature's `implement-detail.md` as a load-bearing input.
+- **Durable contracts** — ADRs, C4 diagrams, API contracts, data models, **and runbooks** all live at the repo level under `docs/` and are read live across every feature. They survive archiving.
+
+Two rules fall out of this split, both enforced here:
+
+1. **Runbooks are durable, never transient.** Operational procedures go to `docs/runbooks/{ops,dev}/` (or the runbooks root for both-audience), **never** buried inside `implement-detail.md`. If you are asked to write a runbook-shaped section into `implement-detail.md`, **warn and redirect** it to `docs/runbooks/` (see step 2).
+2. **Dependency direction is strictly one-way.** A canonical fact (a constraint, table, rule, state machine, rate-limit budget) has **exactly one home, in the durable tier**. `implement-detail.md` may point *up* at a durable home; **no durable artifact may point *down* into `requirement.md` or `implement-detail.md`** for the substance of a canonical fact. Materialize every canonical fact in its durable artifact, then let `implement-detail.md` link up to it. This is what makes `implement-detail.md` always-safe to archive — see step 2's self-containment check.
 
 ## When to activate
 
@@ -40,6 +52,7 @@ This skill is **scope-aware**. The dispatch prompt's trigger phrase selects whic
 | `Publish ADRs for <feature-name>` | `adr` | ADR files + ADR index + C4 diagrams + optional `CLAUDE.md` architecture-context update |
 | `Publish API contracts for <feature-name>` | `api-contract` | `docs/api-contract/_shared.yaml` (when missing) + per-resource `docs/api-contract/<entity>.yaml` |
 | `Publish data models for <feature-name>` | `data-model` | per-entity `docs/data-model/<entity>.yaml` |
+| `Publish runbooks for <feature-name>` | `runbooks` | durable runbooks under `docs/runbooks/{ops,dev}/` (or runbooks root for both-audience) |
 | `Publish architecture lockin for <feature-name>` | `all` (legacy full-scope) | every artifact above, in a single batched commit |
 
 In step 2, run only the artifact sub-block(s) that match the dispatched scope; skip the rest. In step 4, use the scope-appropriate Conventional Commits subject (template list lives in that step).
@@ -52,13 +65,14 @@ The `architect` agent ran the design interview and composed the per-scope artifa
 
 Send a `SendMessage(to=architect)` with:
 
-- An identifying line stating who you are (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, or `data-model-writer`) and which scope you cover.
+- An identifying line stating who you are (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer`, or `runbook-writer`) and which scope you cover.
 - The `<feature-name>` and your `<worktree_path>` so `architect` can resolve any `{worktree_path}` placeholder in its composed prompt.
 - An explicit ask for the scope-appropriate artifact-publishing info:
   - `implement-detail-writer` — architecture summary (modules, key boundaries, integration points), list of ADR IDs to cross-reference, list of persistence entities and API resources to link, failure modes, observability hooks, rollout plan, deferred-with-trigger items.
   - `adr-writer` — the partitioned decisions each tagged with its assigned `ADR-{NNNN}` ID, draft Context / Decision / Consequences / Alternatives / Date bodies, the supersession list (existing ADR IDs each new ADR replaces), deferred-with-trigger items, whether `CLAUDE.md` architecture-context needs updating, and which C4 levels (context / container / component) need changes and what changes per level.
   - `api-contract-writer` — list of API resources to write or update (or "no API surface" if none), and for each resource the operations and their shapes (verbs, paths, parameters, request/response schemas). Whether `_shared.yaml` needs editing.
   - `data-model-writer` — list of persistence entities to write or update (or "no persistence changes" if none), and for each entity the columns, constraints, foreign-key behavior, invariants, and migration notes.
+  - `runbook-writer` — list of durable operational procedures to write or update (or "no runbooks" if none), and for each: its audience (`ops` / `dev` / both), the trigger, prerequisites, the ordered steps, the verification signal, and rollback. Plus the durable artifacts (ADR / data-model / api-contract IDs) each runbook should link *up* to.
 
 Wait for `architect`'s reply. If `architect` does not respond, or responds with anything other than the structured scope-appropriate payload, STOP and surface the gap — do not improvise content. If `architect`'s reply explicitly says your scope is a no-op, record the reason for step 5 and skip step 2 + step 4 entirely. If a piece of context is unclear once the payload arrives, send a follow-up `SendMessage(to=architect)` for clarification before generating artifacts.
 
@@ -84,7 +98,9 @@ For the implement-detail doc (`docs/product-requirement-document/{feature-name}/
 
 - Start from `templates/implement-detail.md`.
 - `{feature-name}` matches the directory the requirement lives in.
-- **This is the only feature-bounded architecture artifact.** Cross-reference each ADR by ID rather than re-arguing the decision. Cross-reference the C4 diagrams under `docs/architecture/`, the per-resource OpenAPI files under `docs/api-contract/`, and the per-entity ODCS files under `docs/data-model/` instead of duplicating their content.
+- **This is the only feature-bounded (transient) architecture artifact**, and it gets archived once `create-issues` slices the feature. Keep it to **build explanation only** — architecture rationale, the module/file-tree shape, repo layout, why-this-was-built reasoning. Cross-reference each ADR by ID rather than re-arguing the decision. Cross-reference the C4 diagrams under `docs/architecture/`, the per-resource OpenAPI files under `docs/api-contract/`, the per-entity ODCS files under `docs/data-model/`, and the runbooks under `docs/runbooks/` instead of duplicating their content.
+- **Never the sole home of a canonical fact.** A constraint, table, integrity rule, state machine, or rate-limit budget must be **materialized in its durable artifact** (ADR / data-model / api-contract) and merely *linked up to* from here. If you find yourself writing the authoritative definition of such a fact into `implement-detail.md`, stop: it belongs in (or needs a freshly minted) durable artifact. Once that exists, leave a pointer here. This keeps `implement-detail.md` safe to archive — archiving it must never delete canon.
+- **Warn and redirect runbook content.** If the payload hands you a section that is actually an operational procedure (enable prod, deploy, roll back, swap a provider, local-dev setup, a common dev task), do **not** write it into `implement-detail.md`. Surface a one-line warning ("`<section>` reads as a runbook — durable, not feature-bounded; routing it to `docs/runbooks/`") and emit it under the `runbooks` artifact block instead (it lands in the same commit when scope is `all`; under a single-scope dispatch, note it for the `runbook-writer`). Leave at most a pointer stub in `implement-detail.md`.
 
 For the C4-PlantUML architecture diagrams (`docs/architecture/*.puml`) — **scope: `adr`, `all`**:
 
@@ -112,6 +128,20 @@ For each persistence entity (`docs/data-model/{entity}.yaml`) — **scope: `data
 - Name the file after the entity in the casing the codebase uses (e.g. `user.yaml`, `order_item.yaml`).
 - If the design adds columns or constraints to an **existing** entity, **edit the existing file in place** rather than spawning a new file. New entities only get new files.
 - Conventions: code-first modeling (models are the source of truth, migrations are generated from them — never the reverse), plural `physicalName`, descriptive column names, `pk/fk/idx/uq/vw` constraint prefixes inside the `constraints` block.
+
+For each durable operational runbook (`docs/runbooks/{ops,dev}/<procedure>.md`, or `docs/runbooks/<procedure>.md` for both-audience) — **scope: `runbooks`, `all`**:
+
+- Start from `templates/runbook.md`.
+- **The directory is the audience signal** — `ops/` for SRE / release operators, `dev/` for engineers and dev-facing agents, the runbooks root for a both-audience procedure. There is no `audience:` frontmatter tag; nothing routes on one. Create `docs/runbooks/`, `docs/runbooks/ops/`, and `docs/runbooks/dev/` as needed.
+- One file per procedure. If a runbook for this procedure already exists, **edit it in place** rather than spawning a duplicate.
+- A runbook is a procedure executed *after* the feature ships and is feature-agnostic in spirit (enable prod, deploy, roll back, swap a provider, local-dev setup, a common dev task). Build explanation ("why we built it this way") is **not** a runbook — it stays in `implement-detail.md`. Project-wide standards (e.g. logging conventions) are neither — they belong with the relevant `pattern-*` skill or an ADR.
+- Each runbook links *up* to the durable artifacts that define the canonical facts it touches (ADR / data-model / api-contract). It must **never** reference a feature's `requirement.md` / `implement-detail.md` — those are transient and get archived.
+
+**Durable self-containment check (scopes `adr`, `api-contract`, `data-model`, `runbooks`, `all`).** Before committing any durable artifact, scan its body for a reference to `requirement.md` or `implement-detail.md` as the *source* of a canonical definition (a constraint, table, rule, state machine, rate-limit budget — phrasings like "see implement-detail §N for the rules", "described in requirement.md"). If you find one, the canon is in the wrong tier:
+
+- **Materialize the fact here**, in this durable artifact (inline the rule/table into the ADR, define the constraint in the data-model YAML, spell the policy out in `_shared.yaml`).
+- If the fact has **no natural durable home today**, that is a signal to **mint one** (e.g. a new `ADR-{NNNN}` for a state machine that currently only lives as an enum) — surface this to the user rather than leaving canon in the transient tier.
+- A durable artifact may cross-reference *another durable artifact*; it may **never** cite the PRD pair for substance. Cross-references *up* from `implement-detail.md` to a durable artifact are the correct direction and are fine.
 
 For `CLAUDE.md` — **scope: `adr`, `all`**:
 
@@ -149,6 +179,7 @@ Use the Conventional Commits subject that matches the dispatched scope:
 | `adr` (multiple ADRs from one feature) | `docs(adr): ADR-{NNNN}..{MMMM} <feature-name> architecture` |
 | `api-contract` | `docs(api): <feature-name> api contracts` |
 | `data-model` | `docs(data): <feature-name> data models` |
+| `runbooks` | `docs(runbooks): <feature-name> operational runbooks` |
 | `all` (legacy full-scope) | `docs(adr): ADR-{NNNN}..{MMMM} <feature-name> architecture` |
 
 Capture the commit hash — step 5 reports it.
@@ -172,11 +203,12 @@ Each artifact has a template under `templates/` in this skill's directory. Copy 
 |-------|---------------------|---------|
 | `templates/adr.md` | `docs/architecture-decision-record/ADR-{NNNN}.md` | One file per coherent decision. Title each after its decision, not the feature. Name superseded ADR IDs in the Context section. Cross-reference sibling ADRs by ID where they constrain or inform each other. |
 | `templates/adr-index.md` | `docs/architecture-decision-record/README.md` | The canonical index of accepted ADRs. **Always update.** Add a row per new ADR. For each superseded ADR, change its `Status` to `Superseded`, fill its `Superseded by` column with the new ID, and delete the superseded `.md` file. IDs are immutable; rows sort ascending by ADR ID; append new rows at the bottom. |
-| `templates/implement-detail.md` | `docs/product-requirement-document/{feature-name}/implement-detail.md` | The **only** feature-bounded architecture artifact. Companion to the feature's `requirement.md`. Cross-reference each ADR by ID, the C4 diagrams under `docs/architecture/`, the OpenAPI files under `docs/api-contract/`, and the ODCS files under `docs/data-model/` rather than inlining their content. |
+| `templates/implement-detail.md` | `docs/product-requirement-document/{feature-name}/implement-detail.md` | The **only** feature-bounded (transient) architecture artifact — archived by `create-issues` once the feature is sliced. Build explanation only. Companion to the feature's `requirement.md`. Cross-reference each ADR by ID, the C4 diagrams under `docs/architecture/`, the OpenAPI files under `docs/api-contract/`, the ODCS files under `docs/data-model/`, and the runbooks under `docs/runbooks/` rather than inlining their content. Never the sole home of a canonical fact. |
 | `templates/c4-context.puml` | `docs/architecture/c4-context.puml` | C4-PlantUML system-context diagram (level 1). Repo-wide. Update only when the design changes who interacts with the system or which external systems it depends on. |
 | `templates/c4-container.puml` | `docs/architecture/c4-container.puml` | C4-PlantUML container diagram (level 2). Repo-wide. Maintain whenever the system has more than one deployable unit. |
 | `templates/c4-component.puml` | `docs/architecture/c4-component-<container>.puml` | C4-PlantUML component diagram (level 3). Repo-wide, one file per container whose internal modules warrant diagramming. |
 | `templates/api-contract-shared.yaml` | `docs/api-contract/_shared.yaml` | OpenAPI 3.1 fragment that defines the shared auth scheme, pagination / idempotency / concurrency parameters, rate-limit headers, common error responses (`BadRequest` / `Unauthorized` / `Forbidden` / `NotFound` / `Conflict` / `PreconditionFailed` / `RateLimited`), and the canonical `Error` schema. **One file repo-wide.** Per-resource files `$ref` into this. |
 | `templates/api-contract.yaml` | `docs/api-contract/{entity}.yaml` | OpenAPI 3.1 per-resource contract — **one file per resource, repo-wide**, with every operation (list / read / create / update / delete / custom) under `paths:`. References shared components via `$ref: "./_shared.yaml#/components/<bucket>/<name>"`. Resource-specific schemas live under this file's `components.schemas`. Validate the bundled spec, not each fragment in isolation. |
 | `templates/data-model.yaml` | `docs/data-model/{entity}.yaml` | Open Data Contract Standard (ODCS) v3.1 — one file per persistence entity, repo-wide. Self-contained: a reader should not have to chase any other file to know the entity's shape. Code-first modeling, plural `physicalName`, descriptive column names, `pk/fk/idx/uq/vw` constraint prefixes inside the `constraints` block. |
+| `templates/runbook.md` | `docs/runbooks/{ops,dev}/<procedure>.md` (or `docs/runbooks/<procedure>.md` for both-audience) | Durable, repo-level operational procedure executed *after* a feature ships — enable prod, deploy, roll back, swap a provider, local-dev setup, common dev tasks. Directory is the audience signal (`ops/` = SRE, `dev/` = engineers, root = both); no `audience:` tag. Links *up* to ADR / data-model / api-contract for canonical facts; never references `requirement.md` / `implement-detail.md`. |
 | `templates/claude-md-architecture-context.md` | `CLAUDE.md` (the `## Architecture context` section) | **Only when the design adds a service, datastore, external dependency, or otherwise shifts the high-level topology.** Edit the architecture-context section in place; never append a per-feature changelog. The goal: a new agent reading this should know the system's shape at a glance. |

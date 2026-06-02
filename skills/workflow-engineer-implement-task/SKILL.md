@@ -42,8 +42,9 @@ Then pull entity- / decision-specific context on demand as the change shape clar
 - `docs/architecture-decision-record/<adr-name>.md` — only when the index entry tells you the ADR constrains the change.
 - `docs/data-model/<entity>.yaml` — for each persistence entity the change touches.
 - `docs/api-contract/<entity>.yaml` — for each API resource the change touches.
+- `docs/runbooks/dev/<procedure>.md` — when the task requires running a documented developer procedure (local environment setup, applying migrations, a common dev task the runbook covers) rather than re-deriving the steps. `docs/runbooks/ops/<procedure>.md` only when the change directly touches a release / deploy / enable-production surface. Runbooks are the durable home for *how to run a procedure*; consult the matching one instead of inventing or guessing the steps. Do not bulk-load `docs/runbooks/` — open only the procedure the task actually exercises.
 
-The two baseline reads happen up front; everything else stays on-demand. Never bulk-load every ADR / contract / data-model.
+The two baseline reads happen up front; everything else stays on-demand. Never bulk-load every ADR / contract / data-model / runbook.
 
 ### 3. Set up the slice worktree
 
@@ -83,7 +84,7 @@ Terminal action. Exit. Do NOT close the task, do NOT touch `status:in-progress`,
 - **Treat the assigned issue as the contract.** If acceptance criteria are missing or ambiguous, stop and ask before writing code.
 - **Never write production code without a failing test first; never write more production code than the failing test requires.**
 - **Every commit carries BOTH `Refs` trailers.** Without `Refs #<task-#>` AND `Refs #<slice-#>`, the reviewer can't scope by task and the slice-level review can't aggregate per task.
-- **Pull architecture context per-entity on demand — never bulk-load.** Read only the specific entity / ADR files the change actually touches.
+- **Pull architecture context per-entity on demand — never bulk-load.** Read only the specific entity / ADR files the change actually touches. The same applies to runbooks: when the task requires a documented procedure (dev-environment setup, migrations, a common dev task, or a deploy/enable-prod surface), read the matching `docs/runbooks/{dev,ops}/<procedure>.md` and follow it rather than guessing the steps.
 - **Mirror an already-shipped sibling before inventing shape.** `rg` for an existing endpoint / hook / form that does the same kind of work and match its conventions exactly.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed.
 - **Commit at the TDD cadence.** One commit per RED / GREEN / REFACTOR step (where applicable). Scaffolding goes in discrete `chore(scaffold):` / `build:` commits BEFORE the first RED.

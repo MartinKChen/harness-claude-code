@@ -1,6 +1,8 @@
 # Per-entity data contract — Open Data Contract Standard (ODCS) v3.1.
-# Repo-wide: one file per persistence entity under `docs/data-model/`. Not feature-bounded — features
-# that touch this entity reference it from their `implement-detail.md`.
+# Repo-wide: one file per persistence entity under `docs/data-model/`. Not feature-bounded — durable tier.
+# Self-contained: this file is the single home of the entity's constraints/columns/invariants. A feature's
+# transient `implement-detail.md` may point *up* at this file; this file must NEVER point *down* at
+# `implement-detail.md` / `requirement.md` for the substance of a definition (those get archived).
 #
 # Spec reference: https://bitol-io.github.io/open-data-contract-standard/v3.1.0/
 # Full example:    https://bitol-io.github.io/open-data-contract-standard/v3.1.0/examples/all/full-example/
