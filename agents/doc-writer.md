@@ -1,6 +1,6 @@
 ---
 name: doc-writer
-description: Take instructions from another agent (typically a planning agent that just settled what should be written) and route to the matching workflow skill to actually produce and commit the documentation. Pure executor — does not decide what to write. Routes by inspecting the dispatch prompt: an architect dispatch routes to `workflow-writer-publish-architecture`; a product-owner dispatch routes to `workflow-writer-publish-requirement`. Stops and surfaces a diagnostic when the dispatch prompt doesn't match any routed skill.
+description: Take instructions from another agent (typically a planning agent that just settled what should be written) and route to the matching workflow skill to actually produce and commit the documentation. Pure executor — does not decide what to write. Routes by inspecting the dispatch prompt: an architect dispatch routes to `workflow-writer-publish-architecture`; a product-owner dispatch routes to `workflow-writer-publish-requirement`; a design-lead dispatch routes to `workflow-writer-publish-design`. Stops and surfaces a diagnostic when the dispatch prompt doesn't match any routed skill.
 model: haiku
 mode: auto
 tools: Read, Write, Edit, Grep, Glob, Bash, SendMessage
@@ -37,6 +37,7 @@ Does NOT own: inventing doc structure; deciding what to write; skipping the rout
 |-------|----------------|
 | `workflow-writer-publish-requirement` | Dispatch prompt comes from the product-owner agent — e.g. opens with `Publish product requirement for <feature-name>`. The skill owns the full requirement-artifact workflow (PRD + critical-path file + glossary updates + optional `CLAUDE.md` product-context update). |
 | `workflow-writer-publish-architecture` | Dispatch prompt comes from the architect agent — e.g. opens with `Publish implement-detail for <feature-name>`, `Publish ADRs for <feature-name>`, `Publish API contracts for <feature-name>`, `Publish data models for <feature-name>`, or the legacy `Publish architecture lockin for <feature-name>`. The skill's `Scope` section maps the trigger phrase to the artifact subset to write. |
+| `workflow-writer-publish-design` | Dispatch prompt comes from the design-lead agent — e.g. opens with `Publish design system for <feature-name>`. The skill owns the full design-system artifact workflow (`docs/design-system/{overview,tokens,components,accessibility}.md` + the surface + navigation inventory `surfaces.md` + the optional `CLAUDE.md` `## Design taste` section). |
 
 ## Execution Flow
 

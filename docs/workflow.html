@@ -432,7 +432,7 @@
   <p class="eyebrow">harness-claude-code · workflow guide</p>
   <h1>How the workflow works</h1>
   <p class="lede">
-    A walkthrough of the two top-level commands, the seven role-based agents,
+    A walkthrough of the three top-level commands, the eight role-based agents,
     and the GitHub-issue lifecycle they drive together — including who talks to
     whom, where the user sits in the loop, and how every state transition is
     recoverable because the source of truth lives on issues and labels.
@@ -458,7 +458,7 @@
 <section id="big-picture">
   <h2>The big picture</h2>
   <p>
-    The harness has <strong>three top-level commands</strong> and <strong>seven role-based agents</strong>. Commands
+    The harness has <strong>three top-level commands</strong> and <strong>eight role-based agents</strong>. Commands
     are <em>orchestrators</em>: they don't write code themselves; they bring agents
     onto a team, brief them, route messages, and dispatch one-shot sub-agents
     against GitHub-issue state — backed by pure-shell discovery scripts
@@ -477,14 +477,17 @@
             ┌────────────┐         ┌────────────┐                ┌──────────────┐
             │ product-   │         │ scaffold-  │                │ orchestrator │
             │  owner →   │         │  project   │                │ (task-finder │
-            │ architect  │         │ (templates │                │  .sh + agent │
-            │ + writers  │         │ + design)  │                │  dispatch)   │
-            └─────┬──────┘         └─────┬──────┘                └──────┬───────┘
+            │ design-    │         │ (templates │                │  .sh + agent │
+            │  lead →    │         │ + seeds    │                │  dispatch)   │
+            │ architect  │         │  locked    │                └──────┬───────┘
+            │ + writers  │         │  tokens)   │                       │
+            └─────┬──────┘         └─────┬──────┘                       │
                   │                      │                              │
                   ▼                      ▼                              ▼
-          PRD + ADRs + contracts   bootable stack + tokens    GitHub issues + labels
-          (committed on feature    (compose up; PR opened)    drive engineer / e2e /
-           branch; PR opened)                                 reviewer dispatches
+       PRD + design system + ADRs   bootable stack + tokens    GitHub issues + labels
+       + surfaces + contracts       (compose up; PR opened)    drive engineer / e2e /
+       (committed on feature                                   reviewer dispatches
+        branch; PR opened)
 </pre>
   </div>
 </section>
@@ -502,14 +505,16 @@
       <p>
         Run once per feature, before any code lands. The user converses with
         <code>product-owner</code> until the requirement is locked, then with
-        <code>architect</code> until the technical decisions are locked. Each
-        interviewer is <strong>read-only</strong>; writer teammates
-        (<code>doc-writer</code> instances) commit the artifacts. The phase
-        ends with a single PR titled <code>feature-lockin</code>.
+        <code>design-lead</code> until the visual language + surface/navigation
+        inventory are locked, then with <code>architect</code> until the
+        technical decisions are locked. Each interviewer is
+        <strong>read-only</strong>; writer teammates (<code>doc-writer</code>
+        instances) commit the artifacts. The phase ends with a single PR
+        titled <code>feature-lockin</code>.
       </p>
       <ul>
-        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + ADRs + implement-detail + per-entity api-contract / data-model files</li>
-        <li><code>/scaffold-project</code> — greenfield only; reads the ADRs and brings up a bootable stack</li>
+        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + design system + surface/nav inventory + ADRs + implement-detail + per-entity api-contract / data-model files</li>
+        <li><code>/scaffold-project</code> — greenfield only; reads the ADRs and brings up a bootable stack, seeding the locked design tokens</li>
       </ul>
     </div>
     <div class="phase exec">
@@ -535,11 +540,11 @@
 <section id="agents">
   <h2>The agents</h2>
   <p>
-    Seven role-based subagents under <code>agents/</code>. Each one is briefed
+    Eight role-based subagents under <code>agents/</code>. Each one is briefed
     by a command or a workflow skill, never by the user directly. Roles are
     sharp on purpose: <code>product-owner</code> never writes architecture;
-    <code>engineer</code> never writes E2E specs; <code>reviewer</code> is
-    read-only on production code.
+    <code>design-lead</code> never writes code; <code>engineer</code> never
+    writes E2E specs; <code>reviewer</code> is read-only on production code.
   </p>
   <table class="matrix">
     <thead>
@@ -558,16 +563,22 @@
         <td>Interviews the user about the six product axes (user, problem, success criteria, scope-in, non-goals, edge cases). Composes a dispatch prompt for the <code>requirement-writer</code> at the end; never writes files.</td>
       </tr>
       <tr>
+        <td class="role">design-lead</td>
+        <td class="model">opus</td>
+        <td><span class="badge r">read</span></td>
+        <td>Interviews the user about the visual language and information architecture. Locks the design system + the <strong>surface / navigation inventory</strong> (every routed surface and how it's reached). Composes a dispatch prompt for the <code>design-writer</code>; <code>ui-ux-pro-max</code> is its toolbox. Reads PRD; never writes files.</td>
+      </tr>
+      <tr>
         <td class="role">architect</td>
         <td class="model">opus</td>
         <td><span class="badge r">read</span></td>
-        <td>Interviews the user about technical decisions. Composes four scoped dispatch prompts (implement-detail, ADR, api-contract, data-model). Reads PRD; never writes files.</td>
+        <td>Interviews the user about technical decisions. Reads the locked surface inventory and models the app shell / nav container as a real C4 component. Composes four scoped dispatch prompts (implement-detail, ADR, api-contract, data-model). Reads PRD; never writes files.</td>
       </tr>
       <tr>
         <td class="role">doc-writer</td>
         <td class="model">sonnet</td>
         <td><span class="badge w">write</span></td>
-        <td>Five named instances: <code>requirement-writer</code> (Phase 1), then <code>implement-detail-writer</code>, <code>adr-writer</code>, <code>api-contract-writer</code>, <code>data-model-writer</code> (Phase 2). Each writer pulls its scoped payload from the matching interviewer via <code>SendMessage</code>, then commits its artifacts.</td>
+        <td>Six named instances: <code>requirement-writer</code> (Phase 1), <code>design-writer</code> (Phase 1.5), then <code>implement-detail-writer</code>, <code>adr-writer</code>, <code>api-contract-writer</code>, <code>data-model-writer</code> (Phase 2). Each writer pulls its scoped payload from the matching interviewer via <code>SendMessage</code>, then commits its artifacts.</td>
       </tr>
       <tr>
         <td class="role">engineer</td>
@@ -600,7 +611,7 @@
 <section id="discovery-flow">
   <h2>Discovery — <code>/deep-dive-feature</code></h2>
   <p>
-    Two sequential phases, eleven numbered steps. The orchestrator
+    Three sequential phases (product → design → architecture). The orchestrator
     <em>grows the team one teammate at a time</em>: it does not pre-create
     writers until the interviewer they answer is ready to hand off a
     dispatch payload.
@@ -626,6 +637,17 @@
         <li>Invites <code>requirement-writer</code> (<code>subagent_type = doc-writer</code>)</li>
         <li>Writer pulls payload from <code>product-owner</code> via <code>SendMessage</code></li>
         <li>Writer commits PRD, critical-path, glossary updates</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">STEP 6A–6D</div>
+      <h4>Phase 1.5: design</h4>
+      <div class="who"><code>design-lead</code> + user + <code>design-writer</code></div>
+      <ul>
+        <li>Orchestrator invites <code>design-lead</code> after the requirement is published</li>
+        <li>User talks to <code>design-lead</code> directly</li>
+        <li>Locks the visual language + the surface / navigation inventory</li>
+        <li><code>design-writer</code> commits <code>docs/design-system/{overview,tokens,components,accessibility}.md</code> + <code>surfaces.md</code></li>
       </ul>
     </div>
     <div class="step">
@@ -689,9 +711,9 @@
     <li>Materialize backend → commit. Materialize frontend → commit. Materialize <code>docker-compose.yaml</code> → commit.</li>
     <li><strong>Boot check</strong>: <code>docker compose up -d --build</code>, probe each framework-metadata endpoint, then <code>docker compose down</code>. Stops on failure — does not mutate templates to mask a broken boot.</li>
     <li>Materialize Playwright e2e → <code>npm install</code> → commit.</li>
-    <li>Discover any installed UI/UX design skills; ask the user once whether to bring one in.</li>
-    <li>If a design skill is picked, invoke it via the <code>Skill</code> tool. The design skill drives its own interview and commits design artifacts under <code>docs/design-system/</code>.</li>
-    <li>If <code>docs/design-system/tokens.md</code> landed, translate the tokens into <code>frontend/src/styles/tokens.css</code> and import them from the frontend entry → commit.</li>
+    <li>Materialize the CI pipeline + CI-parity pre-push hook → commit.</li>
+    <li><strong>Assert the design system exists</strong>: <code>docs/design-system/tokens.md</code> and <code>surfaces.md</code> must be present (locked upstream by <code>design-lead</code> during <code>/deep-dive-feature</code>). Fails loudly if absent — scaffold consumes the design system, it does not generate it.</li>
+    <li>Translate the locked <code>tokens.md</code> into <code>frontend/src/styles/tokens.css</code> and import it from the frontend entry → commit. (The <code>## Design taste</code> section of <code>CLAUDE.md</code> is already authored by <code>design-writer</code> — scaffold doesn't re-write it.)</li>
     <li>Push and open the PR.</li>
   </ol>
 </section>
@@ -1135,9 +1157,10 @@
   <p>
     Two distinct channels: a <strong>Team</strong>-shared channel for the
     interactive discovery agents (<code>product-owner</code>,
-    <code>architect</code>, <code>doc-writer</code> instances) and a
-    <strong>one-shot dispatch</strong> channel for the lifecycle agents
-    (<code>engineer</code>, <code>e2e-author</code>, <code>reviewer</code>).
+    <code>design-lead</code>, <code>architect</code>, <code>doc-writer</code>
+    instances) and a <strong>one-shot dispatch</strong> channel for the
+    lifecycle agents (<code>engineer</code>, <code>e2e-author</code>,
+    <code>reviewer</code>).
   </p>
   <div class="lanes">
     <div class="lane">
@@ -1153,6 +1176,8 @@
       <ul>
         <li><code>product-owner</code> ↔ user (direct)</li>
         <li><code>product-owner</code> ↔ <code>requirement-writer</code> (pull payload)</li>
+        <li><code>design-lead</code> ↔ user (direct)</li>
+        <li><code>design-lead</code> ↔ <code>design-writer</code> (pull payload)</li>
         <li><code>architect</code> ↔ user (direct)</li>
         <li><code>architect</code> ↔ 4 writers (pull scoped payloads)</li>
       </ul>
@@ -1228,13 +1253,8 @@
     <tbody>
       <tr>
         <td class="role">discovery interview</td>
-        <td>Only the user knows what they want to build. <code>product-owner</code> and <code>architect</code> talk to the user <strong>directly</strong> — the orchestrator does not interpose, paraphrase, or guess.</td>
-        <td>Answers questions. Says "lock requirements" / "lock decisions" when ready.</td>
-      </tr>
-      <tr>
-        <td class="role">scaffold opt-in</td>
-        <td><code>/scaffold-project</code> asks once, via <code>AskUserQuestion</code>, whether to bring a UI/UX design skill in before opening the scaffold PR.</td>
-        <td>Picks a design skill, or skips. If picked, talks to the design skill directly.</td>
+        <td>Only the user knows what they want to build. <code>product-owner</code>, <code>design-lead</code>, and <code>architect</code> talk to the user <strong>directly</strong> — the orchestrator does not interpose, paraphrase, or guess.</td>
+        <td>Answers questions. Says "lock requirements" / "lock the design" / "lock decisions" when ready.</td>
       </tr>
       <tr>
         <td class="role">PR review</td>

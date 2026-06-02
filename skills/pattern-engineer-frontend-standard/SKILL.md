@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-frontend-standard
-description: "React frontend bullets: composition-first components, custom hooks, route registration + reachability test in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, error boundaries per route, Framer Motion, native a11y elements, mobile-first, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+description: "React frontend bullets: composition-first components, custom hooks, route registration + entry-source reachability (a real inbound path from the shell or parent, not just a passing URL-render test) in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, stable mutation returns, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, error boundaries per route, Framer Motion, native a11y elements, mobile-first, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
 ---
 
 # pattern-engineer-frontend-standard
@@ -34,6 +34,11 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - A new page lands with BOTH the route registration in `App.tsx` AND a matching `App.test.tsx` test in the same slice.
 - `App.test.tsx` asserts the page is reachable at its declared URL (`render <App />` inside `<MemoryRouter initialEntries={[url]}>`, expect heading).
 - When editing `App.test.tsx`, never overwrite the file wholesale — accumulate tests; `git diff` it before commit.
+- **A registered route is not a reachable page.** The URL-render test above passes even when nothing in the running app links to the page — that's exactly the orphan-page trap (a top-level surface with no global nav to reach it). The invariant is **reachability, not menu-membership**: the task's declared **Entry source** (carried from `docs/design-system/surfaces.md` onto the task body) must exist as a real inbound path in code, and a test must exercise it:
+  - **`top-level`** page → an entry in the global-nav container (or an explicit redirect target). Test: render the shell, click the nav item, assert the page renders. A top-level page whose only "entry" is the route registration is an orphan — wire it into the nav (the nav lives in the foundation/shell slice, which ships first).
+  - **`detail-child`** / **`contextual`** page → a link/row/control on its **parent** surface (e.g. a list row → `/entities/:id`, a "New" button → `/entities/new`). The linking control ships in the **same slice** as the page. Test: render the parent, activate the control, assert navigation.
+  - **`external-entry`** page (login, magic-link) → entered via typed URL / email link; exempt from in-app linking. The URL-render test alone suffices.
+  - **`redirect-system`** (`/` → home, `*` → 404) → assert the redirect/fallback resolves.
 - Cross-page navigation links (e.g. "Forgot password?" on `/login` + "Back to login" on `/forgot`) ship in the same slice as the page they reference.
 
 ### TanStack Query

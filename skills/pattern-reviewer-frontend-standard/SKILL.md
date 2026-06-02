@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-frontend-standard
-description: "React-specific code-quality audit for a frontend diff: component design, hook correctness, route registration + reachability, TanStack Query route-param guards, mutation `onSuccess` invalidation + return stability, idempotency-key rotation on 4xx, sticky one-shot UI state, API-access through `src/lib/api`, error boundaries per route, native semantic a11y elements, Tailwind ↔ tokens, App.test.tsx wholesale-replacement trap, empty-state inside `<main>` landmark. Each finding cites `file:line` with BAD/GOOD snippets. Activate on frontend diffs."
+description: "React-specific code-quality audit for a frontend diff: component design, hook correctness, route registration + entry-source reachability (a real inbound path from the shell or parent per the page's declared kind — reachability, not menu-membership), TanStack Query route-param guards, mutation `onSuccess` invalidation + return stability, idempotency-key rotation on 4xx, sticky one-shot UI state, API-access through `src/lib/api`, error boundaries per route, native semantic a11y elements, Tailwind ↔ tokens, App.test.tsx wholesale-replacement trap, empty-state inside `<main>` landmark. Each finding cites `file:line` with BAD/GOOD snippets. Activate on frontend diffs."
 ---
 
 # pattern-reviewer-frontend-standard
@@ -56,6 +56,20 @@ A new page lands with BOTH the `App.tsx` route entry AND an `App.test.tsx` reach
 - **Page shipped without `App.test.tsx` assertion** — the next slice can break the route silently.
 - **`App.test.tsx` wholesale-replaced** — pre-existing route tests silently deleted. Verify with `git diff HEAD~1 HEAD -- App.test.tsx` that every prior test is still present.
 - **Cross-page link not shipped with the page** — `/login` shows "Forgot password?" but `/forgot` has no "Back to login".
+
+**Reachability, not menu-membership — verify a real inbound path (HIGH).** A registered route with a passing `MemoryRouter` URL-render test is **not** a reachable page: that test passes even when nothing in the running app links to it. This is the orphan-page failure mode (top-level surfaces shipped with no nav to reach them). The task body carries a declared **Entry source** (route, kind, reached-from, in-global-nav), copied from `docs/design-system/surfaces.md`. Verify the declared inbound path actually exists in code, per the page kind:
+
+| Page kind | Required inbound path | Flag when missing |
+|---|---|---|
+| `top-level` | an entry in the global-nav container (or an explicit redirect target) | route exists, nav has no link → **orphan** |
+| `detail-child` | a row/link on its **parent** surface | detail page with no parent link |
+| `contextual` (new/edit/dialog) | a control on a parent (e.g. "New" button) | dialog/route with no opener |
+| `external-entry` (login, magic-link) | none — entered via URL/email | do NOT force into a menu (false positive) |
+| `redirect-system` (`/`→home, 404) | a redirect / fallback that resolves | unmatched route with no fallback |
+
+- Do **not** force a `detail-child` / `contextual` / `external-entry` page into the global nav — that's a false positive; their valid entry is a parent link or a typed URL.
+- A `top-level` page whose only entry is the route registration is a **HIGH** finding: it's unreachable in the running app. The global-nav link belongs to the foundation/shell slice — confirm the page is wired into it.
+- The inbound path should be pinned by a test (render the shell/parent, activate the link/control, assert navigation) — flag a missing reachability test, not just a missing link.
 
 ### TanStack Query — route-param guards (HIGH)
 

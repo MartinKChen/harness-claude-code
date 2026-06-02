@@ -1,11 +1,11 @@
 ---
 name: scaffold-project
-description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` for stack + topology, creates a scaffold branch, materializes backend, frontend, e2e, and `docker-compose.yaml` from templates, verifies the stack boots end-to-end, optionally invokes a UI/UX design skill and seeds its tokens into the frontend, then pushes and opens a PR. Activate on '/scaffold-project', 'scaffold the project'. Do NOT activate if any scaffold surface already exists."
+description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` for stack + topology, creates a scaffold branch, materializes backend, frontend, e2e, and `docker-compose.yaml` from templates, verifies the stack boots end-to-end, asserts the design system locked upstream by `/deep-dive-feature` exists and seeds its tokens into the frontend, then pushes and opens a PR. Activate on '/scaffold-project', 'scaffold the project'. Do NOT activate if any scaffold surface already exists."
 ---
 
 # scaffold-project
 
-Take a **greenfield** project from empty to a stack that boots end-to-end: backend reachable on its framework-metadata endpoint, frontend reachable on its default page, every Dockerfile builds, `docker compose up` brings the whole topology up, a Playwright smoke spec drives the served frontend, and — if the user opts in — a design system is authored by a UI/UX teammate and its tokens are seeded into the frontend. Each surface commits as it lands, and the run ends by pushing the branch and opening a PR.
+Take a **greenfield** project from empty to a stack that boots end-to-end: backend reachable on its framework-metadata endpoint, frontend reachable on its default page, every Dockerfile builds, `docker compose up` brings the whole topology up, a Playwright smoke spec drives the served frontend, and the design system locked upstream by `/deep-dive-feature` (its `docs/design-system/tokens.md`) is seeded into the frontend as CSS custom properties. Each surface commits as it lands, and the run ends by pushing the branch and opening a PR.
 
 No feature endpoints, no routes, no migrations, no auth knobs, no contract-derived paths. Those land later, when a feature task brings them in via the engineer lane.
 
@@ -23,7 +23,7 @@ Do NOT activate when:
 
 ## Scope
 
-Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those concerns are out of scope and are picked up once the engineer lane takes over. The design-system step is structural too: tokens land as CSS custom properties consumable by the frontend, not as production components.
+Scaffold has no feature code to test, no secrets to handle, no schema to model, and no migrations to ship. Those concerns are out of scope and are picked up once the engineer lane takes over. The design-system step is consumption, not authoring: the system is locked upstream by `design-lead` during `/deep-dive-feature`, and scaffold only seeds its already-committed tokens into the frontend as CSS custom properties — not as production components, and never by generating the design system itself.
 
 ## Templates
 
@@ -141,7 +141,7 @@ git commit -m "chore(scaffold): e2e (playwright + smoke spec)"
 
 ### 9. Scaffold CI pipeline + CI-parity pre-push hook → commit
 
-Materialize a minimal PR-validation pipeline so the draft PR opened at step 13 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run.
+Materialize a minimal PR-validation pipeline so the draft PR opened at step 12 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run.
 
 **Materialize and wire the CI-parity pre-push hook (mandatory).** The workflow's per-stack check jobs run `bash scripts/ci-checks.sh`; the committed pre-push hook runs the *same* script for every touched stack, so a push that would fail CI is denied locally in one run — no peeling failures apart one PR-cycle at a time. Wire it:
 
@@ -170,46 +170,37 @@ git add .github/workflows/pr-validation.yml .githooks/pre-push
 git commit -m "chore(scaffold): ci (pr-validation pipeline + ci-parity pre-push hook)"
 ```
 
-### 10. Offer the design-system step
+### 10. Assert the locked design system exists
 
-The frontend currently ships with no opinion on visual language. Discover available UI/UX design skills at runtime — scan the `Skill` tool's available skill list for any skill whose name or description matches `ui`, `ux`, or `design` (e.g. `ui-ux-pro-max:ui-ux-pro-max`). Then ask the user — once, with `AskUserQuestion` — whether to bring in a design skill to author a design system before the PR opens, listing the discovered skills as options plus a "skip" option.
+The design system is **locked upstream by `design-lead` and committed by `design-writer` during `/deep-dive-feature`** — scaffold no longer generates it, it consumes it. Before seeding, assert the artifact is present:
 
-If the user **declines / skips**: jump to step 13.
+```bash
+test -f docs/design-system/tokens.md && test -f docs/design-system/surfaces.md
+```
 
-If no design skill is available: surface "no UI/UX design skill is installed — skipping the design-system step", then jump to step 13.
+If either file is missing, **STOP and fail loudly**: surface "`docs/design-system/` is absent or incomplete (`tokens.md` / `surfaces.md` not found) — the design system must be locked via `/deep-dive-feature` before scaffolding. Run the design phase first, then re-run `/scaffold-project`." Do NOT invoke any UI/UX skill, do NOT invent tokens, do NOT proceed to the seed step. This assertion is what prevents a silent regression to the old "scaffold generates the design system" behavior.
 
-If the user **picks a skill**: continue to step 11.
+### 11. Seed design tokens into the frontend → commit
 
-### 11. Invoke the selected design skill
-
-Invoke the picked design skill via the `Skill` tool and let it drive the conversation with the user. The dispatched skill owns the interview and the design artifacts under `docs/design-system/` (typically `overview.md`, `tokens.md`, `components.md`, `accessibility.md`, and sample pages). This skill MUST NOT interrupt or batch on top of those questions — wait for the design skill to return.
-
-If the design skill does not produce a `docs/design-system/tokens.md` (or equivalent token source), surface that the design output is missing and jump to step 13 — do not invent tokens.
-
-### 12. Seed design tokens into the frontend + record design taste in CLAUDE.md → commit
-
-Once `docs/design-system/tokens.md` exists, do all three of:
+Read the locked `docs/design-system/tokens.md` and seed it into the frontend (the design taste prose and `## Design taste` section of `CLAUDE.md` are already authored by `design-writer` — scaffold does not re-write them):
 
 1. Write `frontend/src/styles/tokens.css` with one `:root { --<token-name>: <value>; ... }` block. Each property's name MUST match the token name in `tokens.md` (e.g. `color/brand/500` → `--color-brand-500`). Every color, font, spacing, radius, shadow, and motion token in `tokens.md` MUST appear here.
 2. Add `import './styles/tokens.css';` to `frontend/src/main.tsx` (or the entry file the chosen frontend stack uses) so the tokens are loaded at boot. Do not author components, pages, or further styling — the seam stops at "tokens are reachable from production code".
-3. Update `CLAUDE.md` at the repo root with a `## Design taste` section so future agents working on the frontend inherit the same visual intent without re-reading every artifact. Append the section if `CLAUDE.md` already exists; create the file with just this section if it does not. The section MUST contain:
-   - **A verbose, evocative description of the design taste** — multiple sentences (not bullets, not a single tagline) that name the style family (e.g. "minimalist with a hint of brutalism", "glassmorphism over a dark canvas", "warm editorial with generous whitespace"), the emotional register (calm / energetic / serious / playful), the color philosophy (dominant hues, accent role, contrast posture), the typography character (display vs. body voice, weight contrast, scale rhythm), the spatial rhythm (density, breathing room, alignment posture), the motion philosophy (snappy / soft / restrained / expressive), and the interaction principles (affordance style, focus treatment, feedback timing). Draw the wording verbatim where possible from `docs/design-system/overview.md`; do NOT summarize so tightly that the taste becomes generic. A reader who has never opened the design-system docs should be able to feel the product's voice from this section alone.
-   - **Reference paths** pointing to where the canonical design system lives so agents know where to deepen their understanding: `docs/design-system/overview.md` (taste + style rationale), `docs/design-system/tokens.md` (source-of-truth tokens), `docs/design-system/components.md` (component patterns) and `docs/design-system/accessibility.md` (a11y posture) if present, plus `frontend/src/styles/tokens.css` (the CSS custom properties the tokens compile to). Each reference MUST be a backticked relative path on its own line under a `### References` sub-heading so it's machine-greppable.
 
-Commit all three together:
+Commit both together:
 
 ```bash
-git add frontend/src/styles/tokens.css frontend/src/main.tsx CLAUDE.md
-git commit -m "chore(scaffold): seed design tokens into frontend and record design taste in CLAUDE.md"
+git add frontend/src/styles/tokens.css frontend/src/main.tsx
+git commit -m "chore(scaffold): seed locked design tokens into frontend"
 ```
 
-### 13. Push branch and open the draft PR
+### 12. Push branch and open the draft PR
 
 ```bash
 git push -u origin chore/scaffold-project
 ```
 
-Then open the PR as a **draft** with `gh pr create --draft`, so the CI workflow scaffolded at step 9 fires on draft open and the user gets first-commit signal before the PR flips to ready. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke, CI pipeline), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and — if step 12 ran — the design-system entry-point files (`docs/design-system/overview.md`, `frontend/src/styles/tokens.css`) plus the `## Design taste` section appended to `CLAUDE.md`.
+Then open the PR as a **draft** with `gh pr create --draft`, so the CI workflow scaffolded at step 9 fires on draft open and the user gets first-commit signal before the PR flips to ready. Title: `chore(scaffold): bootstrap project skeleton`. Body lists the surfaces that landed (backend stack, frontend stack, compose services, e2e smoke, CI pipeline), a one-line confirmation that `docker compose up` reached 200 on every framework-metadata endpoint locally, and the seeded design tokens (`frontend/src/styles/tokens.css`, compiled from the locked `docs/design-system/tokens.md`).
 
 ```bash
 gh pr create \
@@ -222,7 +213,7 @@ gh pr create \
 - Compose services: <list>
 - E2E: Playwright smoke spec
 - CI: `.github/workflows/pr-validation.yml` (per-stack checks → docker build → e2e)
-- Design system: <yes — `docs/design-system/` + seeded `frontend/src/styles/tokens.css` + `## Design taste` section appended to `CLAUDE.md` | not included>
+- Design tokens: seeded `frontend/src/styles/tokens.css` (compiled from locked `docs/design-system/tokens.md`)
 
 ## Boot check
 Locally verified `docker compose up` reaches 200 on backend framework-metadata and frontend `/`.
@@ -244,9 +235,9 @@ Report the PR URL and stop.
 - **Greenfield only.** If any scaffold surface (`backend/`, `frontend/`, compose file, `e2e/`) already exists, STOP. This skill does not partial-fill.
 - **No defaulted URIs, service names, ports, or framework choices.** Stack variants and topology come from `docs/architecture-decision-record/`. If the ADR doesn't say, STOP and surface — never guess.
 - **Templates materialize; they do not author code.** No routes beyond what the template ships (which is none). No components / pages beyond the placeholder. No middleware, no settings logic, no auth, no migrations, no router. If the next step needs any of those, that's the engineer lane's job.
-- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens` (if any).** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
+- **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens`.** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.
 - **CI is scaffold-time validation only.** The pipeline produced at step 9 runs lint/type/format/test, builds images locally, and runs e2e against compose. It MUST NOT push images, assume an OIDC role, reference a registry, or deploy. Deploy pipelines, environment gates, and tag-driven promotion are the `sre` agent's lane — surface and STOP if the user asks scaffold to add any of those.
 - **CI checks are single-sourced; the pre-push hook is mandatory.** Each per-stack check job runs `bash scripts/ci-checks.sh`, and the committed `.githooks/pre-push` (wired with `git config core.hooksPath .githooks`) runs that *same* script for every touched stack. Never inline the check commands into the workflow — that reintroduces the drift this exists to kill. The hook must be materialized and wired at step 9; record the one-time `git config core.hooksPath .githooks` in the README so every clone enables it.
-- **The design-system step is opt-in.** Always ask; never default to "yes" or "no". If the user opts in, the dispatched teammate owns the interview and the design artifacts — this skill only seeds the resulting tokens into the frontend afterwards and records a verbose `## Design taste` section plus reference paths into `CLAUDE.md` so future agents inherit the visual intent. The taste section must be evocative, not a one-liner; the reference paths must be machine-greppable backticked relative paths.
+- **The design system is consumed, not generated.** Scaffold never invokes a UI/UX skill and never authors `docs/design-system/`. The system is locked upstream by `design-lead` and committed by `design-writer` during `/deep-dive-feature` (the `## Design taste` section of `CLAUDE.md` is written there too). At step 10 scaffold asserts `docs/design-system/tokens.md` and `surfaces.md` exist and **fails loudly** if either is absent — it does not invent tokens or fall back to generating a design system. Step 11 only seeds the locked `tokens.md` into `frontend/src/styles/tokens.css` and imports it at boot.
 - **The skill ends with a draft PR.** Push the branch and open a draft PR via `gh pr create --draft` so the scaffold-time CI fires on first commit. Do not merge; do not flip the PR to ready; do not switch back to `main`; do not delete the branch.

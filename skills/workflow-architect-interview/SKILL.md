@@ -54,6 +54,7 @@ Identify what the system must do, who calls it, what it integrates with, and wha
 Read in this order, stopping as soon as you have enough context:
 
 - `docs/GLOSSARY.md` (if the file exists) — domain vocabulary already locked in by the PRD lane, so questions land using the same terms the user has already settled on.
+- `docs/design-system/surfaces.md` (if the file exists) — the **surface + navigation inventory** locked by `design-lead`. Mandatory reading for any frontend-bearing feature: it enumerates every routed surface, the global navigation model, and the per-surface auth posture. Reading it here is what tells you the **app shell / global-nav container exists as a real architectural component** — you will model it as such in step 4 (a C4 component and a file-tree entry in `implement-detail.md`), not as an incidental `Dashboard.tsx`. This gives `create-issues` a second, architectural signal for its foundation/shell slice.
 - `docs/architecture-decision-record/README.md` — the index of prior decisions. **Do not bulk-open ADR files.** Open an individual ADR only when its index summary suggests overlap with the decision under discussion.
 - `docs/architecture/` — the existing C4-PlantUML diagrams (context / container / component) that describe the system's current shape. Open whichever level matches the question you are about to ask first.
 - Codebase entry points and manifests (`package.json`, `pyproject.toml`, `go.mod`, etc.) for the current stack, services, and shared infra.
@@ -89,6 +90,8 @@ Plain text, not AskUserQuestion. For each architectural question handed to you, 
 - **Recommendation**: Final choice and rationale, with the recommended option labeled `(Recommended)`.
 
 **e. Supersession callout (if any).** If your recommendation would supersede one or more existing ADRs, list the IDs explicitly and summarize what changes for the system as a result. Surface this list at approval time so the downstream artifact-publishing flow can mark the index and delete the superseded files.
+
+**f. App shell as a real component (frontend-bearing features).** When `docs/design-system/surfaces.md` exists, model the **app shell / global-nav container** as a first-class architectural component, not an incidental page: it owns the global navigation, the authenticated layout that wraps protected surfaces, the landing/dashboard surface, and the per-route error boundaries. Reflect it as a real **C4 component** (so `adr-writer` adds it to the component diagram) and as an explicit file-tree entry in the `implement-detail.md` payload (e.g. an `AppShell` / `AppLayout` + `Navigation` module). The surface inventory's auth posture also tells you where the route-guard / protected-layout seam lives. This is the architectural signal `create-issues` reads to emit its foundation/shell slice — without it, top-level pages ship unreachable.
 
 ### 5. Iterate
 
@@ -154,7 +157,7 @@ Compose **4 separate dispatch prompts** — one per writer — and surface them 
 
 `implement-detail-writer` needs:
 
-- An architecture summary (modules, key boundaries, integration points) suitable for the `Architecture` and `Modules` sections of `implement-detail.md`.
+- An architecture summary (modules, key boundaries, integration points) suitable for the `Architecture` and `Modules` sections of `implement-detail.md`. For frontend-bearing features, this summary MUST include the **app shell / nav container** as an explicit module with a file-tree entry (e.g. `AppShell` / `AppLayout` + `Navigation` + the protected-route guard), derived from `docs/design-system/surfaces.md` — not folded into an incidental page.
 - The list of ADR IDs to cross-reference (the ADRs themselves will be written by `adr-writer`; the cross-references resolve once the files land).
 - The list of persistence entities (with file names like `<entity>.yaml`) to link from the Data Model section.
 - The list of API resources (with file names) to link from the API Surface section.
@@ -166,7 +169,7 @@ Compose **4 separate dispatch prompts** — one per writer — and surface them 
 - The supersession list — every existing ADR ID whose row should be marked `Superseded` and whose `.md` file should be deleted, paired with the new ADR ID that replaces it.
 - Any deferred-with-trigger items so they land in the relevant ADR's Consequences/Future-triggers section.
 - Whether the high-level topology shifted, so the writer knows whether to update the architecture-context section of `CLAUDE.md`.
-- Which C4 levels need updating (context / container / component) and what changes per level.
+- Which C4 levels need updating (context / container / component) and what changes per level. For frontend-bearing features, the **component** diagram for the frontend container MUST include the app shell / nav container as a real component (per step 4f).
 
 `api-contract-writer` needs:
 

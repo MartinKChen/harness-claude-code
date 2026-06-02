@@ -1,15 +1,15 @@
 ---
-description: Deep-dive a new feature end-to-end — product discovery with `product-owner` (read-only), then architecture discovery with `architect` (read-only). Each interviewer composes scope-tagged artifact-publishing payloads and stays available for follow-up requests. The orchestrator invites writer teammates and dispatches each writer directly with a trigger phrase; every writer's first step is to pull its payload from the matching interviewer via `SendMessage`. `product-owner` answers `requirement-writer` (`subagent_type = doc-writer`); `architect` answers the 4 architecture writers (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` — all `subagent_type = doc-writer`). Each writer publishes and commits its scoped artifacts. Orchestrator creates a feature branch in a worktree after Phase 1 interview-finished; every writer's commits land there; orchestrator opens a single lock-in PR at the end.
+description: Deep-dive a new feature end-to-end — product discovery with `product-owner` (read-only), then design discovery with `design-lead` (read-only), then architecture discovery with `architect` (read-only). Each interviewer composes scope-tagged artifact-publishing payloads and stays available for follow-up requests. The orchestrator invites writer teammates and dispatches each writer directly with a trigger phrase; every writer's first step is to pull its payload from the matching interviewer via `SendMessage`. `product-owner` answers `requirement-writer`; `design-lead` answers `design-writer`; `architect` answers the 4 architecture writers (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer`) — all writers `subagent_type = doc-writer`. Each writer publishes and commits its scoped artifacts. Orchestrator creates a feature branch in a worktree after Phase 1 interview-finished; every writer's commits land there; orchestrator opens a single lock-in PR at the end.
 argument-hint: [optional: short description of the feature]
 ---
 
 # deep-dive-feature
 
-Orchestrate a deep-dive on a new feature, in two sequential phases. Phase 1 is product discovery, owned by the `product-owner` teammate (read-only); when its interview lands, the orchestrator brings the `requirement-writer` teammate (`subagent_type = doc-writer`) into the team and dispatches it directly with a trigger phrase — the writer's first step is to pull the artifact-publishing payload from `product-owner` via `SendMessage`, then publish and commit the PRD, critical-path file, glossary updates, and any `CLAUDE.md` product-context update. Phase 2 is technical discovery, owned by the `architect` teammate (read-only); when its interview lands, the orchestrator brings 4 architecture writer teammates into the team (all `subagent_type = doc-writer`, scoped by name to implement-detail / ADR / API contracts / data model) and dispatches each one directly with its scoped trigger phrase — each writer's first step is to pull its scope-appropriate payload from `architect` via `SendMessage`, then publish and commit its scoped artifacts. The final phase records every decision in git as a single labeled lock-in PR.
+Orchestrate a deep-dive on a new feature, in three sequential phases. Phase 1 is product discovery, owned by the `product-owner` teammate (read-only); when its interview lands, the orchestrator brings the `requirement-writer` teammate (`subagent_type = doc-writer`) into the team and dispatches it directly with a trigger phrase — the writer's first step is to pull the artifact-publishing payload from `product-owner` via `SendMessage`, then publish and commit the PRD, critical-path file, glossary updates, and any `CLAUDE.md` product-context update. Phase 1.5 is design discovery, owned by the `design-lead` teammate (read-only); when its interview lands, the orchestrator brings the `design-writer` teammate (`subagent_type = doc-writer`) into the team and dispatches it directly — the writer pulls the artifact-publishing payload from `design-lead`, then publishes and commits the design system (`docs/design-system/{overview,tokens,components,accessibility}.md`) and the **surface + navigation inventory** (`docs/design-system/surfaces.md`). Phase 2 is technical discovery, owned by the `architect` teammate (read-only) — which reads the locked surface inventory and models the app shell as a real component; when its interview lands, the orchestrator brings 4 architecture writer teammates into the team (all `subagent_type = doc-writer`, scoped by name to implement-detail / ADR / API contracts / data model) and dispatches each one directly with its scoped trigger phrase — each writer's first step is to pull its scope-appropriate payload from `architect` via `SendMessage`, then publish and commit its scoped artifacts. The final phase records every decision in git as a single labeled lock-in PR.
 
-You (the orchestrator) coordinate the phases, gate on explicit user confirmation at the lock points, and grow the team one teammate at a time as each phase opens. Do **not** answer product or architectural questions yourself — route them to the right teammate. Equally important: do **not** answer on behalf of the user when a teammate asks the user a question — always wait for the human's actual reply.
+You (the orchestrator) coordinate the phases, gate on explicit user confirmation at the lock points, and grow the team one teammate at a time as each phase opens. Do **not** answer product, design, or architectural questions yourself — route them to the right teammate. Equally important: do **not** answer on behalf of the user when a teammate asks the user a question — always wait for the human's actual reply.
 
-Git flow at a glance: `product-owner` interviews the user directly until the requirement is locked and a kebab-case `<feature-name>` is proposed (Steps 1–4). Orchestrator creates a milestone and a worktree-backed feature branch off latest `main` (Step 5), then invites `requirement-writer` (`subagent_type = doc-writer`) and dispatches it directly with the trigger phrase; `requirement-writer`'s first step is to pull the artifact-publishing payload from `product-owner` via `SendMessage`, then it runs the `workflow-writer-publish-requirement` skill to write and commit the PRD, critical-path file, glossary, and any `CLAUDE.md` product-context update inside the worktree (Step 6). `architect` is invited into the team for technical discovery (Step 7); when its interview lands and it composes 4 scope-tagged artifact-publishing payloads, the orchestrator invites 4 architecture writer teammates (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` — all `subagent_type = doc-writer`) and dispatches each writer directly with its scoped trigger phrase; each writer's first step is to pull its scope-appropriate payload from `architect` via `SendMessage`, then it runs the `workflow-writer-publish-architecture` skill at its dispatched scope to write and commit its scoped artifacts (Steps 7–10). Orchestrator pushes the branch and opens a `feature-lockin`-labeled PR linked to the milestone at the very end (Step 11). **No scaffold step.** Design-system generation is intentionally out of scope for this command — run the design flow separately when needed.
+Git flow at a glance: `product-owner` interviews the user directly until the requirement is locked and a kebab-case `<feature-name>` is proposed (Steps 1–4). Orchestrator creates a milestone and a worktree-backed feature branch off latest `main` (Step 5), then invites `requirement-writer` (`subagent_type = doc-writer`) and dispatches it directly with the trigger phrase; `requirement-writer`'s first step is to pull the artifact-publishing payload from `product-owner` via `SendMessage`, then it runs the `workflow-writer-publish-requirement` skill to write and commit the PRD, critical-path file, glossary, and any `CLAUDE.md` product-context update inside the worktree (Step 6). `design-lead` is invited for design discovery (Steps 6A–6B); when its interview lands and it composes the design payload, the orchestrator invites `design-writer` (`subagent_type = doc-writer`) and dispatches it directly; `design-writer` pulls the payload from `design-lead` and runs `workflow-writer-publish-design` to write and commit the design system + surface/nav inventory inside the worktree (Steps 6C–6D). `architect` is invited into the team for technical discovery (Step 7) — its brief points it at the locked `docs/design-system/surfaces.md` so the app shell / nav container is modeled as a real C4 component, not an incidental page; when its interview lands and it composes 4 scope-tagged artifact-publishing payloads, the orchestrator invites 4 architecture writer teammates (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` — all `subagent_type = doc-writer`) and dispatches each writer directly with its scoped trigger phrase; each writer runs the `workflow-writer-publish-architecture` skill at its dispatched scope to write and commit its scoped artifacts (Steps 7–10). Orchestrator pushes the branch and opens a `feature-lockin`-labeled PR linked to the milestone at the very end (Step 11). **No scaffold step** — scaffolding the bootable stack (and seeding the locked design tokens into the frontend) is `scaffold-project`'s job, run after this command merges.
 
 ## Initial input
 
@@ -134,7 +134,75 @@ Then send the dispatch prompt **directly to `requirement-writer`** (NOT to `prod
 
 The orchestrator MUST respect the writer's user-confirmation gate: do not approve commits on the user's behalf. The orchestrator owns invites + dispatching the writer with the trigger phrase; the writer owns pulling its payload, asking the user to confirm, and committing; `product-owner` owns answering the writer's request with the payload it composed during the interview.
 
-When `requirement-writer` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to Step 7.
+When `requirement-writer` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to the design phase (Step 6A).
+
+---
+
+## Phase 1.5 — Design discovery with `design-lead`
+
+## Step 6A — Invite `design-lead` and brief
+
+Invite `design-lead` into the team. Name + subagent_type match verbatim (`name = "design-lead"`, `subagent_type = "design-lead"`). This agent runs in **plan mode** and is **read-only on disk** — it conducts the interview, locks the product's visual language and information architecture, and composes one scoped artifact-publishing payload for the `design-writer` teammate the orchestrator will invite at Step 6D.
+
+Then send the initial brief via `SendMessage`. The brief MUST cover:
+
+- The requirement file `design-lead` should read first: `docs/product-requirement-document/{feature-name}/requirement.md` (and the sibling Critical Path / Glossary files), plus any existing `docs/design-system/` it should extend rather than re-litigate.
+- The instruction: **work inside the worktree** at `{worktree_path}` — every read must target that directory.
+- The instruction: **lead a design discovery conversation with the user directly**. The orchestrator will not forward messages during the interview (see Step 6B). `design-lead` should expect to hear from the user directly.
+- The instruction: lock both the **visual language** (brand/personality/tone, color philosophy, typography, spatial rhythm, motion posture, platform priority, accessibility targets) and — the linchpin — the **surface + navigation inventory** (every routed surface with its kind, entry source(s), global-nav membership, and auth; plus the global navigation model). No surface may be left without an entry source.
+- The instruction: if any design question depends on product intent, message `product-owner` directly via `SendMessage`.
+- The instruction: **do not write artifacts**. `design-lead` is read-only. Artifact writing happens via the `design-writer` teammate (`name = "design-writer"`, `subagent_type = "doc-writer"`) that the orchestrator will invite at Step 6D. `design-lead`'s job is to compose **one scoped artifact-publishing payload** at the end of `workflow-design-interview`, report that the interview is finished, and then **stay available on the team** to answer `design-writer`'s incoming `SendMessage` request with the payload. `design-lead` never sends the payload unsolicited — it waits for the writer to ask.
+
+Tell the user in one short sentence that `design-lead` is up and the design phase is starting.
+
+---
+
+## Step 6B — User talks to `design-lead` directly
+
+Hand the conversation over to `design-lead`. **The orchestrator does not forward messages during this phase.** The user converses with `design-lead` directly; replies surface verbatim. The orchestrator's role here is purely passive:
+
+- Do not interpose, paraphrase, or interpret either side.
+- Do not answer design questions yourself. Do not skip ahead to architecture.
+- Do not answer on behalf of the user — `design-lead`'s questions land in front of the human and the human responds directly.
+- Resume an active role only at Step 6C, when `design-lead` reports the interview is finished.
+
+If `design-lead` messages `product-owner` (e.g. when a design decision depends on product intent), let that exchange happen between teammates; you do not need to mediate teammate-to-teammate messages.
+
+---
+
+## Step 6C — Wait for `design-lead` to report the interview is finished
+
+The `workflow-design-interview` skill ends with `design-lead`:
+
+1. Locking the visual language and the surface + navigation inventory with the user.
+2. Composing **one scoped dispatch prompt** for `design-writer` (`subagent_type = doc-writer`) covering `docs/design-system/{overview,tokens,components,accessibility}.md`, the surface/nav inventory `docs/design-system/surfaces.md`, and the optional `CLAUDE.md` `## Design taste` section.
+3. Surfacing the dispatch prompt in one turn and reporting that the interview is finished and the prompt is composed and ready to send.
+
+This is the signal that the design is locked and the user has approved it. **Do not advance to Step 6D until `design-lead` reports "interview finished, dispatch prompt composed".** If `design-lead` is still asking the user questions or has not yet reached the dispatch-prompt composition, keep waiting.
+
+`design-lead` is now waiting on the team — it will not send any `SendMessage` unsolicited. Once the orchestrator dispatches `design-writer` at Step 6D, the writer sends its own `SendMessage(to=design-lead)` requesting the payload; `design-lead` answers that request with the composed dispatch prompt.
+
+---
+
+## Step 6D — Invite `design-writer` and dispatch it directly
+
+Invite the writer teammate into the team. `name = "design-writer"`, `subagent_type = "doc-writer"`. The name is the addressable identifier; the subagent_type is the underlying agent that routes by inspecting the dispatch trigger phrase.
+
+Then send the dispatch prompt **directly to `design-writer`** (NOT to `design-lead`). The orchestrator does not tell `design-lead` anything at this step — `design-lead` is already waiting on the team to answer incoming requests from writers. Substitute the actual `{feature-name}` and `{worktree_path}` before sending:
+
+> Publish design system for `{feature-name}`. The worktree is `{worktree_path}` — every artifact path and every `git` invocation must target this directory (e.g. `git -C {worktree_path} ...`). Run `workflow-writer-publish-design` end-to-end. Your **first step** is to send a `SendMessage(to=design-lead)` requesting the artifact-publishing payload (locked visual language for `overview.md` / `tokens.md` / `components.md` / `accessibility.md`, the surface + navigation inventory for `surfaces.md`, and any `CLAUDE.md` `## Design taste` update). `design-lead` composed it at the end of `workflow-design-interview` and is waiting for your request — do not invent any content yourself, especially not token values or the surface inventory. Once you have the payload, generate the artifacts, ask the user to confirm the file list, commit with `docs(design): {feature-name} design system + surface inventory`, and report the commit hash + file paths.
+
+`design-writer` then:
+
+1. Sends `SendMessage(to=design-lead)` to pull the artifact-publishing payload. `design-lead` replies with the composed payload, substituting placeholders the writer supplied.
+2. Generates its artifacts inside the worktree at `{worktree_path}`.
+3. **Asks the user to confirm the file list** (the publish skill's hand-back step). The user replies directly to the writer; the orchestrator does not interpose.
+4. On user confirmation, commits on `docs/{feature-name}` with the Conventional Commits subject `docs(design): {feature-name} design system + surface inventory`.
+5. Reports final status (commit hash, file paths written).
+
+The orchestrator MUST respect the writer's user-confirmation gate: do not approve commits on the user's behalf.
+
+When `design-writer` reports the commit is done, surface the file list and commit hash to the user in one short message and move on to Step 7.
 
 ---
 
@@ -145,6 +213,7 @@ Invite `architect` into the team. Name + subagent_type match verbatim (`name = "
 Then send the initial brief via `SendMessage`. The brief MUST cover:
 
 - The requirement file the architect should read first: `docs/product-requirement-document/{feature-name}/requirement.md` (and the sibling Critical Path / Glossary files).
+- The locked design system the architect must read: `docs/design-system/` — **especially `docs/design-system/surfaces.md`** (the surface + navigation inventory locked in the design phase). The architect models the **app shell / global-nav container as a real C4 component** and a file-tree entry in `implement-detail.md`, derived from that inventory — not as an incidental `Dashboard.tsx`. This gives `create-issues` a second, architectural signal for the foundation/shell slice.
 - The architecture context the architect should survey: `docs/architecture-decision-record/README.md` (ADR index) and the existing C4 diagrams under `docs/architecture/`.
 - The instruction: **work inside the worktree** at `{worktree_path}` — every read must target that directory.
 - The instruction: **lead a technical discovery conversation with the user directly**. The orchestrator will not forward messages during the interview (see Step 8). The architect should expect to hear from the user directly.
@@ -226,7 +295,7 @@ The orchestrator MUST respect each writer's user-confirmation gate: do not appro
 
 ## Step 11 — Orchestrator: push and open the lock-in PR
 
-The branch already exists (created in Step 5) and every writer teammate's commits already landed on it (Step 6 for `requirement-writer`, Step 10 for each of the 4 architecture writer teammates that had artifacts to write). All that's left is to push and open the PR.
+The branch already exists (created in Step 5) and every writer teammate's commits already landed on it (Step 6 for `requirement-writer`, Step 6D for `design-writer`, Step 10 for each of the 4 architecture writer teammates that had artifacts to write). All that's left is to push and open the PR.
 
 ```
 git -C {worktree_path} push -u origin docs/{feature-name}
@@ -242,6 +311,8 @@ gh pr create \
 - PRD: `docs/product-requirement-document/{feature-name}/requirement.md`
 - Critical Path update: ...
 - Glossary update: ...
+- Design system: `docs/design-system/{overview,tokens,components,accessibility}.md`
+- Surface + navigation inventory: `docs/design-system/surfaces.md`
 - ADR-{NNNN}: ... (under `docs/architecture-decision-record/`)
 - Implementation detail: `docs/product-requirement-document/{feature-name}/implement-detail.md`
 - C4 diagrams (any updated): `docs/architecture/c4-*.puml`
@@ -266,15 +337,16 @@ Confirm the PR URL back to the user in one short sentence and stop.
 
 ## Guardrails
 
-- **Grow the team one phase at a time.** Step 1 spins up `product-owner` only. `requirement-writer` (`subagent_type = doc-writer`) joins at Step 6. `architect` joins at Step 7. The 4 architecture writer teammates (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` — all `subagent_type = doc-writer`) join at Step 10. Do not pre-create teammates; do not skip an invite; do not collapse multiple writers into one.
-- **Name = subagent_type, except for the writers.** Every non-writer teammate has `name` equal to `subagent_type`. The writers are the exception: all share `subagent_type = "doc-writer"` but have distinct names (`requirement-writer` for Phase 1, and `implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` for Phase 2). The name is the addressable identifier the dispatching interviewer uses with `SendMessage`; the subagent_type is the underlying agent that routes by inspecting the dispatch trigger phrase.
-- **Design system is out of scope.** This command intentionally does not author anything under `docs/design-system/`. Design-system generation is isolated from the feature flow — if the feature warrants it, run the dedicated design flow separately, before or after this command.
+- **Grow the team one phase at a time.** Step 1 spins up `product-owner` only. `requirement-writer` (`subagent_type = doc-writer`) joins at Step 6. `design-lead` joins at Step 6A and `design-writer` (`subagent_type = doc-writer`) at Step 6D. `architect` joins at Step 7. The 4 architecture writer teammates (`implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` — all `subagent_type = doc-writer`) join at Step 10. Do not pre-create teammates; do not skip an invite; do not collapse multiple writers into one.
+- **Name = subagent_type, except for the writers.** Every non-writer teammate has `name` equal to `subagent_type` (`product-owner`, `design-lead`, `architect`). The writers are the exception: all share `subagent_type = "doc-writer"` but have distinct names (`requirement-writer` for Phase 1, `design-writer` for Phase 1.5, and `implement-detail-writer`, `adr-writer`, `api-contract-writer`, `data-model-writer` for Phase 2). The name is the addressable identifier the dispatching interviewer uses with `SendMessage`; the subagent_type is the underlying agent that routes by inspecting the dispatch trigger phrase.
+- **The design system is locked here, between product and architecture.** `design-lead` (Steps 6A–6C) interviews the user to lock the visual language and the surface + navigation inventory; `design-writer` (Step 6D) materializes `docs/design-system/{overview,tokens,components,accessibility}.md` and `docs/design-system/surfaces.md`. The design phase runs **after** the requirement is published and **before** the architect starts, so the architect reads the locked surface inventory. This command does NOT scaffold the frontend or seed tokens — `scaffold-project` consumes the locked design system later.
+- **`design-lead` is read-only and runs in plan mode.** It never writes files, never commits. It composes one scope-tagged artifact-publishing payload at the end of `workflow-design-interview`, reports the interview is finished, then **stays available on the team** to answer `design-writer`'s inbound `SendMessage` request (the writer pulls the payload as its first step once the orchestrator dispatches it at Step 6D). `design-lead` never sends a payload unsolicited. Artifact writing and committing is done by `design-writer` via the `workflow-writer-publish-design` skill.
 - **`product-owner` is read-only and runs in plan mode.** It never writes files, never commits. It composes one scope-tagged artifact-publishing payload at the end of `workflow-product-owner-interview`, proposes the kebab-case `<feature-name>`, reports the interview is finished, then **stays available on the team** to answer `requirement-writer`'s inbound `SendMessage` request (the writer pulls the payload as its first step once the orchestrator dispatches it at Step 6). `product-owner` never sends a payload unsolicited. Artifact writing and committing is done by `requirement-writer` via the `workflow-writer-publish-requirement` skill.
 - **`architect` is read-only and runs in plan mode.** It never writes files, never commits. It composes 4 scope-tagged artifact-publishing payloads at the end of `workflow-architect-interview`, reports the interview is finished, then **stays available on the team** to answer each writer's inbound `SendMessage` request (each writer pulls its scope-appropriate payload as its first step once the orchestrator dispatches it at Step 10). `architect` never sends a payload unsolicited. Artifact writing and committing is done by the 4 writers via the `workflow-writer-publish-architecture` skill (one scoped invocation per writer).
-- **Step 3 and Step 8 are direct.** During `product-owner`'s and `architect`'s interviews, the orchestrator does not forward messages — the user talks to the active teammate directly. The orchestrator resumes an active role only at the interview-finished signal (Step 4 / Step 9) and at writer-invite + writer-dispatch time (Step 6 / Step 10).
-- **Never answer for a teammate.** Route product questions to `product-owner`, technical questions to `architect`. If a question comes in for an agent whose phase is over, note it for the active phase or surface it back as out-of-scope for this run — don't answer it yourself.
+- **Step 3, Step 6B, and Step 8 are direct.** During `product-owner`'s, `design-lead`'s, and `architect`'s interviews, the orchestrator does not forward messages — the user talks to the active teammate directly. The orchestrator resumes an active role only at the interview-finished signal (Step 4 / Step 6C / Step 9) and at writer-invite + writer-dispatch time (Step 6 / Step 6D / Step 10).
+- **Never answer for a teammate.** Route product questions to `product-owner`, design questions to `design-lead`, technical questions to `architect`. If a question comes in for an agent whose phase is over, note it for the active phase or surface it back as out-of-scope for this run — don't answer it yourself.
 - **Never answer for the human.** When a teammate asks the user a question, your job is to surface it and wait. Do not simulate, infer, fabricate, or best-guess from `$ARGUMENTS`, the seed sentence, prior turns, the codebase, memory files, or your own intuition. If you don't have a literal reply from the human in the most recent user turn, you do not have an answer — pause and let the user respond. This rule overrides auto mode: auto mode applies to *your* execution decisions, not to product or architectural decisions that belong to the user.
-- **Never skip a lock gate.** The implicit "lock requirements" gate inside `workflow-product-owner-interview` and the implicit lock-decisions gate inside `workflow-architect-interview` each require explicit user confirmation from the human — not your inference of consent.
+- **Never skip a lock gate.** The implicit "lock requirements" gate inside `workflow-product-owner-interview`, the design-lock gate inside `workflow-design-interview`, and the lock-decisions gate inside `workflow-architect-interview` each require explicit user confirmation from the human — not your inference of consent.
 - **Commits land on the feature branch in the worktree, never on `main`.** The orchestrator creates the `docs/{feature-name}` branch as a worktree in Step 5 *before* any agent writes a file. Every agent that engages works and commits inside that worktree.
 - **Don't nudge on idle alone.** A bare `idle_notification` from a teammate is normal turn-end behavior, NOT a "no output" signal.
 - **Don't dictate teammate working style.** Briefs should set goals and constraints, not micro-manage cadence.
