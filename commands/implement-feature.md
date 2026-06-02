@@ -241,17 +241,21 @@ For each eligible slice (line format: `- #<slice-#> | "<title>"`):
 2. **TaskCreate**:
    ```
    subject:     Review slice #<slice-#>: <slice-title>
-   description: <slice-url>. Dispatching reviewer to grade the slice.
-                On pass the reviewer creates the draft PR (merge:manual).
-                On fail it flips review:running → review:need-fix.
+   description: <slice-url>. Invoking the review-slice workflow to fan out
+                dimension reviewers, dedup, adversarially verify, then post the
+                verdict + (on pass) the draft PR (merge:manual) / (on fail) flip
+                review:running → review:need-fix.
    activeForm:  Reviewing slice #<slice-#>
    ```
-3. **`Agent` + `TaskUpdate(owner)`**:
-   - `subagent_type`: `reviewer`
-   - `mode`: `auto`
-   - `name`: `reviewer-review-slice-<slice-#>`
-   - `run_in_background`: `true`
-   - `prompt`: fill the "Review a task or slice" skeleton with `slice` and `<slice-#>`
+3. **`Workflow` + `TaskUpdate(owner)`**: dispatch the review as a fan-out workflow rather than a single `reviewer` agent. The workflow runs in the background, returns a task id immediately, and notifies on completion — the same lifecycle as a backgrounded agent, so the loop-continuation accounting below is unchanged (it keys off the `reviewer-review-slice-<slice-#>` tracking owner and the terminal label flip the workflow performs itself).
+   - **Tool**: `Workflow`
+   - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs` (the script is plugin-shipped, not a consuming-project `.claude/workflows/` entry — resolve `$CLAUDE_PLUGIN_ROOT` from the environment the same way the plugin's hooks do, then pass the absolute path)
+   - `args`: `{ "slice": <slice-#>, "today": "<YYYY-MM-DD>" }` (pass today's date explicitly — the workflow runtime has no clock; it stamps the PR body's review-verdict line with it)
+   - Pair with `TaskUpdate({ taskId, owner: "reviewer-review-slice-<slice-#>" })` in the same batched response, exactly as the agent-dispatch stages do.
+
+   The workflow owns the full review internally — read-only worktree setup, touched-path dimension selection, the Phase-1 spec gate, the Phase-2 quality fan-out, cross-dimension dedup, adversarial verification, the `# Slice Review` comment, the terminal `review:running` → `review:passed` / `review:need-fix` flip, and (on APPROVE) the idempotent `merge:manual` draft PR. Its mechanism lives in `${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs`; the per-dimension catalogues remain the `pattern-reviewer-*` skills (each dimension agent reads exactly one). On a blocked run it posts a diagnostic and leaves `review:running` for human triage, matching `workflow-reviewer-review-slice`.
+
+   > **Fallback.** If `Workflow` is unavailable in the running harness, dispatch the single `reviewer` agent instead (`subagent_type: reviewer`, `name: reviewer-review-slice-<slice-#>`, `run_in_background: true`, prompt = the "Review a task or slice" skeleton with `slice` + `<slice-#>`). The `reviewer` agent + `workflow-reviewer-review-slice` skill are retained unchanged as this degraded path; behaviour is identical minus the dimension isolation and adversarial-verify pass.
 
 Roll back lock + tracking task on synchronous failure.
 
