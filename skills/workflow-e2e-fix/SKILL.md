@@ -38,9 +38,7 @@ If no in-scope comment exists, halt and surface `fix dispatched but no comment n
 
 ### 3. Set up the slice worktree
 
-Create-or-reuse the slice-scoped worktree on the slice branch, rebased onto `origin/main`. `cd` into the worktree path.
-
-Rebase conflict → bail to `status:need-attention` (post a diagnostic comment on the task first).
+Create-or-reuse the slice-scoped worktree on the slice branch (do **not** integrate `origin/main` — fixing happens on the slice branch as-is; main is integrated once, later, at the E2E-validation gate via `workflow-engineer-e2e --merge-main`). `cd` into the worktree path.
 
 ### 4. Modify / add specs per the in-scope comment(s)
 

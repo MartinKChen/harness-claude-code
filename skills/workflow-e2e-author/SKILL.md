@@ -29,10 +29,8 @@ Fetch the task issue (number, title, body, labels, url) via `bash skills/operati
 ### 2. Resolve the slice branch and set up the worktree
 
 - Resolve the parent slice's attached branch from the task.
-- Create-or-reuse the slice-scoped worktree on that branch, rebased onto `origin/main`.
+- Create-or-reuse the slice-scoped worktree on that branch (do **not** integrate `origin/main` — authoring happens on the slice branch as-is; main is integrated once, later, at the E2E-validation gate via `workflow-engineer-e2e --merge-main`).
 - `cd` into the worktree path.
-
-On rebase conflict (worktree setup fails): post a diagnostic comment on the task issue naming the conflicting paths, then flip the task from `status:in-progress` to `status:need-attention`. Do NOT force-push, do NOT proceed.
 
 ### 3. Author / extend Playwright specs based on the issue body
 
@@ -64,5 +62,5 @@ Terminal action. Exit. Do NOT close the task, do NOT open a PR (that's reviewer-
 - **Scope strictly to the issue's test cases.** Anything outside the task body + the parent slice's Gherkin / EARS scenarios is out of scope.
 - **Red is expected; broken is not.** A test that fails on a missing implementation is correct output. A test that fails to load / parse / locate is not.
 - **Never patch production code from this lane.** Production fixes are engineer's lane.
-- **Bail with `status:need-attention`** on unrecoverable blockers (rebase conflict that touches scope, slice branch missing, unfixable smoke-run parse error). Post a diagnostic comment before flipping the label.
+- **Bail with `status:need-attention`** on unrecoverable blockers (slice branch missing, unfixable smoke-run parse error). Post a diagnostic comment before flipping the label.
 - **Truth is in Git and on the task labels.** No structured summaries returned to the orchestrator — the push + the `review:pending` flip are the only outputs.
