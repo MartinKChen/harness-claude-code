@@ -39,7 +39,7 @@ Copy the block in `templates/tsconfig.json` into the project's `tsconfig.json`. 
 ### Imports + module shape
 
 - **Don't hand-order imports.** Biome's `organizeImports` owns the order — stdlib → third-party → `@/...` alias → relative; sorted within each group.
-- Run `npx biome check --write .` after non-trivial edits so the import block matches what `lint/correctness/organizeImports` expects.
+- Run `npx biome check --write .` after non-trivial edits so the import block matches what `assist/source/organizeImports` expects (biome v2 moved import-organizing from a lint rule to an assist action; the command is unchanged).
 - Use path aliases (`@/components/Foo`) from `tsconfig.paths`; mirror in `vite.config.ts` / `vitest.config.ts` so test runs resolve them.
 - Re-export sparingly. Barrel files (`index.ts` that re-exports) are fine for a public API surface; gratuitous re-exports leak into the bundle.
 

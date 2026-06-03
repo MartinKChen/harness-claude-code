@@ -16,8 +16,44 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 88
 target-version = "py312"
+
+[tool.ruff.lint]
+# Curated best-practice rule set. `ruff check` reports (does not auto-fix) these;
+# `ruff check --fix` repairs the fixable ones (imports, simple rewrites). The
+# pre-push hook + ci-checks.sh run `ruff check .` and fail the push on any hit.
+# Security (`S`) is intentionally left to the dedicated `bandit -r .` gate so the
+# two tools don't double-report — see pattern-engineer-python/SKILL.md.
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes — undefined names, unused imports/vars
+    "I",      # isort — deterministic import ordering
+    "N",      # pep8-naming
+    "UP",     # pyupgrade — modern syntax + PEP 604/695 type hints
+    "B",      # flake8-bugbear — likely bugs (mutable defaults, etc.)
+    "C4",     # flake8-comprehensions — prefer comprehensions over C-style loops
+    "SIM",    # flake8-simplify
+    "ASYNC",  # flake8-async — blocking calls / un-awaited work in async defs
+    "RUF",    # ruff-specific — incl. RUF006 dangling asyncio.create_task
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom (`param: X = Depends(...)`, `Query(...)`,
+# etc.) is a function call in an argument default — legitimate framework usage,
+# not the B008 mutable-default bug. Whitelist it so routes don't trip B008.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]
 
 [tool.mypy]
 python_version = "3.12"

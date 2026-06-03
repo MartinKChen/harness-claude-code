@@ -129,6 +129,33 @@ uv run ruff format .       # Auto-format
 uv run ruff check --fix .  # Auto-fix lint (includes import sorting)
 ```
 
+### Enforced ruff rule set
+
+`[tool.ruff.lint] select` in `pyproject.toml` pins the rule groups the pre-push hook and `ci-checks.sh` fail on. The scaffold ships this set; treat it as the baseline:
+
+| Group | Covers |
+|-------|--------|
+| `E` / `W` | pycodestyle errors / warnings |
+| `F` | pyflakes — undefined names, unused imports/vars |
+| `I` | isort — deterministic import ordering |
+| `N` | pep8-naming |
+| `UP` | pyupgrade — modern syntax + PEP 604/695 type hints |
+| `B` | flake8-bugbear — likely bugs (mutable defaults, etc.) |
+| `C4` | flake8-comprehensions — comprehensions over C-style loops |
+| `SIM` | flake8-simplify |
+| `ASYNC` | flake8-async — blocking calls / un-awaited work in async defs |
+| `RUF` | ruff-specific — incl. `RUF006` dangling `asyncio.create_task` |
+
+- **Security (`S`) is intentionally NOT in `select`** — `bandit -r .` owns that gate (see [Banned APIs](#banned-apis-bandit-blocks-these)); selecting `S` too would double-report the same findings.
+- **FastAPI projects must whitelist the DI idiom** so `B008` (function-call-in-default) doesn't fire on every `Depends()`/`Query()`/… route:
+
+  ```toml
+  [tool.ruff.lint.flake8-bugbear]
+  extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path",
+    "fastapi.Header", "fastapi.Cookie", "fastapi.Body", "fastapi.Form",
+    "fastapi.File", "fastapi.Security"]
+  ```
+
 ## Templates
 
 | Asset | Purpose |

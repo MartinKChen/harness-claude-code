@@ -101,7 +101,7 @@ type Fetch<T> =
 
 ### Biome `organizeImports` (LOW)
 
-- Hand-ordered imports that violate biome's grouping (stdlib → third-party → `@/...` alias → relative; sorted within each group) → flag and recommend `npx biome check --write .`.
+- Hand-ordered imports that violate biome's grouping (stdlib → third-party → `@/...` alias → relative; sorted within each group) → flag and recommend `npx biome check --write .`. In biome v2 this is the `assist/source/organizeImports` action (not a lint rule), but it's still surfaced by `biome check` / `biome ci` and applied by the same command.
 - Mixed `import { type Foo } from "..."` vs `import type { Foo } from "..."` — biome rewrites consistently; flag drift.
 
 ### Banned utility types (LOW)

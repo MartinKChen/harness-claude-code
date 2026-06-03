@@ -30,9 +30,11 @@ The directory is auto-created (by `dream-summary-memory`); it is a gitignored wo
 
 ## Overlay file shape
 
-`$MAIN_ROOT/.claude/memory/patterns/<pattern-skill-name>.md` mirrors the structural shape of the baseline pattern skill it overlays. The canonical skeleton is [`templates/pattern-overlay.md`](templates/pattern-overlay.md) — four sections: `## Sharpened triggers`, `## Project-specific carve-outs`, `## New rules`, `## Examples worth pinning`.
+`$MAIN_ROOT/.claude/memory/patterns/<pattern-skill-name>.md` mirrors the structural shape of the baseline pattern skill it overlays. The canonical skeleton is [`templates/pattern-overlay.md`](templates/pattern-overlay.md) — five sections: `## Sharpened triggers`, `## Project-specific carve-outs`, `## New rules`, `## Examples worth pinning`, and `## Hard-gate candidates`.
 
-Any of the four sections may be empty; only populated sections need exist. Each item under a section is a bulleted rule plus an optional fenced code block for BAD/GOOD examples — the same shape pattern skills use today.
+Any of the five sections may be empty; only populated sections need exist. Each item under a section is a bulleted rule plus an optional fenced code block for BAD/GOOD examples — the same shape pattern skills use today.
+
+The first four sections are **rules the loading agent reads and applies** — they participate in the precedence below. `## Hard-gate candidates` is different: it is **advisory to humans**, not an agent-consumed rule. It records that a recurring, mechanically-checkable mistake should graduate from a soft overlay rule into the project's deterministic lint/type/format gate (`pyproject.toml` ruff `select`, `biome.json`, `tsconfig.json`). `dream-summary-memory` writes these recommendations; it never edits the gate config itself, because a hard gate is repo-wide and its promotion is a deliberate, reviewed change (kept in lockstep with the scaffold template and the matching `pattern-engineer-*` skill). This section does not participate in overlay precedence.
 
 ## Overlay precedence
 

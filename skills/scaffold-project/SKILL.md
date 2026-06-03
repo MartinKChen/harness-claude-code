@@ -27,7 +27,10 @@ Scaffold has no feature code to test, no secrets to handle, no schema to model, 
 
 ## Templates
 
-Each `templates/<variant>/` directory holds a working example that copies as-is into the project and produces a bootable surface. The skill picks variants from the ADR's stack declaration.
+Each `templates/<variant>/` directory holds a working, bootable example. The skill picks variants from the ADR's stack declaration, then **tailors the project *configuration* to the declared stack and the surfaces that actually land** — a template is a baseline to adapt, not a verbatim drop. Two hard boundaries govern that tailoring:
+
+- **Configuration is tailored; application code is not authored.** Manifests, lint/type/format rule sets, framework-specific lint whitelists, version pins, and surface wiring are adjusted to fit the ADR — e.g. the ruff `flake8-bugbear.extend-immutable-calls` whitelist must name the *actual* DI framework (`fastapi.Depends` for FastAPI, the equivalent for Django/Flask); `[tool.ruff] target-version` / `requires-python` follow the ADR's runtime; tsconfig `types` follow the chosen test runner (`vitest/globals` vs jest). Routes, components, middleware, settings, migrations, and router wiring are still never authored here — that is the engineer lane.
+- **Tailoring only ever holds or raises a gate, never loosens it below the template baseline.** Adding a rule or a framework whitelist is fine; dropping a lint rule, relaxing a tsconfig strictness flag, widening a security exclusion, or lowering `line-length` discipline to make a check or the boot pass is forbidden. If a baseline gate genuinely cannot hold for the declared stack, STOP and surface — never weaken it silently (this is the same anti-masking invariant as the boot check at step 7).
 
 | Asset | Purpose |
 |-------|---------|
@@ -84,6 +87,14 @@ If the branch already exists locally, STOP — a prior scaffold run is in flight
 
 Copy `templates/<backend-stack>/` into `backend/` (per the ADR's layout). Do not edit the framework entry to add routes, middleware, or settings logic — the template ships a bare `app = FastAPI()` (or equivalent) intentionally. The copy includes `backend/scripts/ci-checks.sh` (the single-sourced check gate); ensure its executable bit survives the copy (`chmod +x backend/scripts/ci-checks.sh`) so the pre-push hook wired at step 9 can invoke it.
 
+**Tailor the config to the declared stack (config only — never author code).** After copying, adapt the manifest to the ADR:
+
+- Set `requires-python` and `[tool.ruff] target-version` to the ADR's Python version.
+- Keep `[tool.ruff.lint] select` at the baseline-or-stricter. If the ADR's backend framework is **not** FastAPI, replace the FastAPI `[tool.ruff.lint.flake8-bugbear] extend-immutable-calls` whitelist with the dependency-injection idiom the *actual* framework uses, so routes don't false-positive on `B008` — adjust the whitelist, never drop the `B` rule to dodge it.
+- Leave the framework entry (`app = FastAPI()` or equivalent) untouched.
+
+Never loosen a baseline rule to make `ci-checks.sh` pass; if it cannot pass for the declared stack, STOP and surface.
+
 ```bash
 git add backend/
 git commit -m "chore(scaffold): backend (<stack>) — framework entry, manifests, Dockerfile, ci-checks"
@@ -92,6 +103,14 @@ git commit -m "chore(scaffold): backend (<stack>) — framework entry, manifests
 ### 5. Scaffold frontend → commit
 
 Copy `templates/<frontend-stack>/` into `frontend/`. Do not add router wiring, components, or pages beyond the template's placeholder. The copy includes `frontend/scripts/ci-checks.sh` (the single-sourced check gate); ensure its executable bit survives the copy (`chmod +x frontend/scripts/ci-checks.sh`) so the pre-push hook wired at step 9 can invoke it.
+
+**Tailor the config to the declared stack (config only — never author code).** After copying, adapt the manifest and tool config to the ADR:
+
+- Point `tsconfig.json` `types` and any test-runner-specific biome rules at the runner the ADR declares (e.g. `vitest/globals` vs jest matchers), keeping every strictness flag at baseline-or-stricter.
+- Pin `@biomejs/biome` and the `biome.json` `$schema` to the same major the baseline targets; do not silently downgrade to dodge a rule the newer major enforces.
+- Leave the placeholder entry/component untouched.
+
+Never relax a tsconfig strictness flag or disable a lint rule to make `ci-checks.sh` pass; if it cannot pass, STOP and surface.
 
 ```bash
 git add frontend/
@@ -234,7 +253,7 @@ Report the PR URL and stop.
 
 - **Greenfield only.** If any scaffold surface (`backend/`, `frontend/`, compose file, `e2e/`) already exists, STOP. This skill does not partial-fill.
 - **No defaulted URIs, service names, ports, or framework choices.** Stack variants and topology come from `docs/architecture-decision-record/`. If the ADR doesn't say, STOP and surface — never guess.
-- **Templates materialize; they do not author code.** No routes beyond what the template ships (which is none). No components / pages beyond the placeholder. No middleware, no settings logic, no auth, no migrations, no router. If the next step needs any of those, that's the engineer lane's job.
+- **Templates are a baseline to tailor — for *configuration*, never for application code.** Project configuration (manifests, lint/type/format rule sets, framework-specific lint whitelists, version/runtime pins, surface wiring) IS adapted to the ADR-declared stack and the surfaces that land — a template is a starting point, not a verbatim drop. Application code is still never authored: no routes beyond what the template ships (none), no components/pages beyond the placeholder, no middleware, settings logic, auth, migrations, or router — those are the engineer lane. **Tailoring may hold or raise a gate, never loosen it below the template baseline**; if a baseline gate cannot hold for the declared stack, STOP and surface rather than weaken it (the same anti-masking rule that governs the boot check).
 - **One commit per surface, in the order `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens`.** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.
 - **CI is scaffold-time validation only.** The pipeline produced at step 9 runs lint/type/format/test, builds images locally, and runs e2e against compose. It MUST NOT push images, assume an OIDC role, reference a registry, or deploy. Deploy pipelines, environment gates, and tag-driven promotion are the `sre` agent's lane — surface and STOP if the user asks scaffold to add any of those.
