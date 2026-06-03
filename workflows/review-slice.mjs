@@ -3,13 +3,20 @@ export const meta = {
   description: 'Fan-out slice review: spec-gate → quality dims → dedup → adversarial verify → one verdict comment + draft PR',
   whenToUse: 'Invoked by the /implement-feature review-slice stage in place of dispatching a single `reviewer` agent. The orchestrator has already flipped review:pending → review:running on the slice. Pass { slice, today }.',
   phases: [
-    { title: 'Prep', detail: 'worktree + diff + dimension selection (1 agent)' },
-    { title: 'Spec', detail: 'phase-1 spec-compliance dimensions, fanned out' },
-    { title: 'Quality', detail: 'phase-2 code-quality dimensions, fanned out (gated)' },
-    { title: 'Verify', detail: 'adversarial refutation of each deduped finding' },
-    { title: 'Publish', detail: 'post verdict + flip label + draft PR (1 agent)' },
+    { title: 'Prep', detail: 'worktree + diff + dimension selection (1 agent)', model: 'sonnet' },
+    { title: 'Spec', detail: 'phase-1 spec-compliance dimensions, fanned out', model: 'sonnet' },
+    { title: 'Quality', detail: 'phase-2 code-quality dimensions, fanned out (gated)', model: 'sonnet' },
+    { title: 'Verify', detail: 'adversarial refutation of each deduped finding', model: 'sonnet' },
+    { title: 'Publish', detail: 'post verdict + flip label + draft PR (1 agent)', model: 'sonnet' },
   ],
 }
+
+// Every agent in this workflow runs on Sonnet — not the orchestrator's inherited
+// model. This workflow is a parallel re-implementation of the `reviewer` agent
+// (agents/reviewer.md), which is itself `model: sonnet`; pinning here keeps the
+// fan-out faithful to the single-agent reviewer it replaces (and off Opus).
+// Retune in one place by changing AGENT_MODEL.
+const AGENT_MODEL = 'sonnet'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inputs.  The orchestrator passes only what it cannot derive cheaply:
@@ -17,9 +24,15 @@ export const meta = {
 //   args.today  — YYYY-MM-DD string (Date.* is unavailable inside workflow scripts)
 // Everything else (branch, diff, touched surfaces, closed tasks) the prep agent fetches.
 // ─────────────────────────────────────────────────────────────────────────────
-const SLICE = args?.slice
-const TODAY = args?.today ?? 'unknown-date'
-if (!SLICE) throw new Error('review-slice: args.slice (the slice issue number) is required')
+// `args` should arrive as the parsed object, but a backgrounded Workflow run can
+// deliver it as the JSON string instead. Tolerate both — on a string, `args.slice`
+// would otherwise resolve to String.prototype.slice (a truthy *function*), slip past
+// a plain `if (!SLICE)`, and only blow up much later in structuredClone.
+const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
+const SLICE = input.slice
+const TODAY = input.today ?? 'unknown-date'
+if (!/^\d+$/.test(String(SLICE)))
+  throw new Error(`review-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
 // ── Dimension catalogue ──────────────────────────────────────────────────────
 // One row per pattern-reviewer-* lens. `phase` buckets it into the spec gate vs
@@ -251,7 +264,7 @@ Steps:
 7. typeScope = the conventional PR-title prefix you infer from the slice (e.g. feat(auth)). smokeHint = one short manual smoke check a reviewer would run.
 
 Return the PREP object. The worktreePath you return will be handed verbatim to every downstream dimension agent — make sure it is correct and the worktree is on the slice branch tip.`,
-  { phase: 'Prep', schema: PREP },
+  { phase: 'Prep', schema: PREP, model: AGENT_MODEL },
 )
 
 if (!prep || !prep.reviewRunningOk) {
@@ -260,7 +273,7 @@ if (!prep || !prep.reviewRunningOk) {
   // Blocked-run contract: post a diagnostic, DO NOT flip the label.
   await agent(
     `Post a single diagnostic comment on slice issue #${SLICE} explaining that the slice review could not run: "${reason}". Use \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} <body-file>\`. Do NOT add or remove ANY label — leave review:running in place for human triage.`,
-    { label: 'publish:blocked', phase: 'Publish' },
+    { label: 'publish:blocked', phase: 'Publish', model: AGENT_MODEL },
   )
   return { slice: SLICE, status: 'blocked', reason }
 }
@@ -307,7 +320,7 @@ Finding under scrutiny:
 ${f.bad}
 
 Read \`${f.file}\` (and its surroundings) in the worktree yourself before deciding. Return refuted + a one-line reason.`,
-        { label: `verify:${tag}:${f.dimension}:${lens.key}`, phase: 'Verify', schema: VERDICT },
+        { label: `verify:${tag}:${f.dimension}:${lens.key}`, phase: 'Verify', schema: VERDICT, model: AGENT_MODEL },
       ),
     )).then(votes => {
       const v = votes.filter(Boolean)
@@ -319,7 +332,7 @@ Read \`${f.file}\` (and its surroundings) in the worktree yourself before decidi
 // fan out a dimension set → flat list of findings tagged with their dimension + phase
 async function runDimensions(dims, reviewPhase, phaseTitle) {
   return (await parallel(dims.map(d => () =>
-    agent(dimensionPrompt(d), { label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS }),
+    agent(dimensionPrompt(d), { label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
   ))).filter(Boolean).flatMap(r => (r.findings || []).map(f => ({ ...f, dimension: r.dimension, reviewPhase })))
 }
 
@@ -413,7 +426,7 @@ ${publishInstr}
 --- VERDICT COMMENT BODY (verbatim, write to /tmp/review-slice-${SLICE}.md) ---
 ${body}
 --- END VERDICT COMMENT BODY ---`,
-  { label: 'publish:verdict', phase: 'Publish', schema: PUBLISH },
+  { label: 'publish:verdict', phase: 'Publish', schema: PUBLISH, model: AGENT_MODEL },
 )
 
 return {
