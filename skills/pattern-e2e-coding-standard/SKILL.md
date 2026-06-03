@@ -68,6 +68,18 @@ Never mix: a single precondition is seeded through exactly one path. Don't `INSE
 - Always isolate seeded data per test (unique slugs / emails / IDs) so concurrent specs don't collide on UNIQUE constraints. A test that hard-codes `email: "test@example.com"` will fight every other test that does the same.
 - Clean up after the spec (transaction rollback in a fixture teardown, or explicit delete) unless the harness already truncates between tests.
 
+### Route shared global-chrome interactions through one helper (biggest maintenance lever)
+
+The **global chrome** is the persistent app shell every authed flow walks through: the top nav / banner, the sidebar, the user menu, the logout control, and the authed-state indicators (signed-in email, avatar, org switcher). It is the single most cross-cutting surface in the suite — nearly every spec across every slice touches it — so a copy-pasted chrome locator is the highest-leverage duplication to eliminate.
+
+Rules:
+
+- **One module owns chrome.** Every chrome interaction or assertion that more than one spec needs lives in a single shared helper module under the E2E test root (e.g. `e2e/helpers/chrome.ts`), exported as named, intention-revealing functions: `await logout(page)`, `await expectAuthedChrome(page, email)`, `await openUserMenu(page)`. Specs call the helper; they never re-derive the chrome locator chain inline.
+- **Extract on the second copy, not the fourth.** The moment a chrome interaction (`getByRole("banner")…logout`, the authed-header assertion, etc.) appears in a *second* spec, lift it into the helper. Don't let it propagate.
+- **Why this is the biggest lever.** A chrome locator copy-pasted across N specs means a single shell change (logout button relabeled, user menu restructured, banner role changed) breaks all N specs independently, each fixed in a separate place. Centralized, the same change is one function edit — every downstream spec across every slice goes green again. This converts an N-spec ripple into a 1-edit fix.
+- **Helper owns chrome mechanics, not feature assertions.** The helper encapsulates the chrome locator + action (and chrome-state assertions like "the header shows this email"). Feature-specific, page-body interactions and assertions stay in the spec (or a page-scoped helper) — don't collapse everything into one god-helper that every spec depends on for unrelated reasons.
+- **Semantic selectors still apply inside the helper.** Centralizing the locator doesn't waive the selector discipline — `getByRole` / `getByLabel` / `getByText` over `data-testid` lives in the helper, justified in writing where a fallback is unavoidable.
+
 ### Asserting against external-service doubles
 
 When a scenario's outcome lands in an external-service double (mail catcher, queue, object store, fake gateway), assert against the double — never assume its behavior:
@@ -86,3 +98,4 @@ When a scenario's outcome lands in an external-service double (mail catcher, que
 - **Silent failures.** Seed call returns 4xx / 5xx and the spec continues. → Always assert the status matches the contract.
 - **Mixing seed paths for one precondition.** Half via API, half via DB. → Pick one path per precondition.
 - **No FK / constraint awareness.** Inserting children before parents, or omitting NOT NULL columns. → Read the data model; insert in dependency order.
+- **Copy-pasted chrome interactions.** The same `getByRole("banner")…logout` chain (or authed-header assertion) inlined in two-plus specs. → Lift it into the shared chrome helper (`logout(page)`, `expectAuthedChrome(page, email)`); a shell change must be a 1-edit fix, not an N-spec ripple.
