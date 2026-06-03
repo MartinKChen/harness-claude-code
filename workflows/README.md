@@ -20,7 +20,7 @@ Each phase fans out, **dedups, then verifies** before the next phase consumes it
 
 | Phase | What it does | Why |
 |-------|--------------|-----|
-| **Prep** | One agent: read-only worktree, diff vs `origin/main`, closed sub-issues, touched-surface flags, dimension selection inputs. | All shell/`gh` work in one place; hands a worktree path to every dimension agent. |
+| **Prep** | Two agents: a mechanical agent (read-only worktree, diff vs `origin/main`, closed sub-issues, PR-title scope, smoke hint) returns the *raw* touched paths, then a surface-classification agent turns those paths into the surface flags that drive `applies()`. | All shell/`gh` work in one place; hands a worktree path to every dimension agent. The classification is split out because it's the one judgment call here — a misclassified path silently drops a whole review dimension. |
 | **Spec** | Fan out Phase-1 dimensions (`test-coverage`, `contract`) → **dedup** → **verify**. **Barrier** — the gate needs the confirmed spec findings. | "Did this slice build what was asked?" |
 | **Gate** | Plain code: if any *verified* spec finding is `I:H`, skip Phase 2. Gating on confirmed blockers (not raw) means we never skip quality on a finding that wouldn't survive scrutiny, and keeps "Phase 2 skipped" coherent with a BLOCK verdict. | Don't audit quality on code that's about to be reworked — pure noise. |
 | **Quality** | Fan out Phase-2 dimensions selected by touched paths (security, coding-standard, …) → **dedup** → **verify**. | "Is what was built well-built?" — each in a clean context. |
@@ -29,6 +29,15 @@ Each phase fans out, **dedups, then verifies** before the next phase consumes it
 | **Publish** | One agent: write comment, `post-and-flip.sh`, and on APPROVE the idempotent `create-draft-pr.sh`. | The only writes in the workflow. |
 
 Scoring (`severity → Impact`, `(Impact, Effort) → Fix/Defer/Nit/Drop`, `verdict = BLOCK iff any surviving I:H`) is identical to `workflow-reviewer-review-task` step 5 / `workflow-reviewer-review-slice`, implemented as pure JS so it is deterministic rather than re-derived by an LLM each run.
+
+### Model tiers
+
+Agents run on **two tiers**, set by the work they do (retune in one place via `AGENT_MODEL` / `WRITER_MODEL` at the top of the script):
+
+| Tier | Agents | Why |
+|------|--------|-----|
+| `sonnet` (`AGENT_MODEL`) | Surface classification + every Spec / Quality / Verify dimension and skeptic lens | The judgment-bearing work. Pinned to match the single `reviewer` agent (`model: sonnet`) this workflow replaces. Surface classification rides this tier too — it drives `applies()`, so a weaker model misclassifying a path would silently skip a review dimension. |
+| `haiku` (`WRITER_MODEL`) | The mechanical Prep agent and the terminal Publish agent | Tool-orchestration and pure execution — no review judgment, so they don't need the stronger tier. |
 
 ### How it's wired
 

@@ -3,20 +3,26 @@ export const meta = {
   description: 'Fan-out slice review: spec-gate → quality dims → dedup → adversarial verify → one verdict comment + draft PR',
   whenToUse: 'Invoked by the /implement-feature review-slice stage in place of dispatching a single `reviewer` agent. The orchestrator has already flipped review:pending → review:running on the slice. Pass { slice, today }.',
   phases: [
-    { title: 'Prep', detail: 'worktree + diff + dimension selection (1 agent)', model: 'sonnet' },
+    { title: 'Prep', detail: 'worktree + diff + dimension selection (1 agent)', model: 'haiku' },
     { title: 'Spec', detail: 'phase-1 spec-compliance dimensions, fanned out', model: 'sonnet' },
     { title: 'Quality', detail: 'phase-2 code-quality dimensions, fanned out (gated)', model: 'sonnet' },
     { title: 'Verify', detail: 'adversarial refutation of each deduped finding', model: 'sonnet' },
-    { title: 'Publish', detail: 'post verdict + flip label + draft PR (1 agent)', model: 'sonnet' },
+    { title: 'Publish', detail: 'post verdict + flip label + draft PR (1 agent)', model: 'haiku' },
   ],
 }
 
-// Every agent in this workflow runs on Sonnet — not the orchestrator's inherited
-// model. This workflow is a parallel re-implementation of the `reviewer` agent
-// (agents/reviewer.md), which is itself `model: sonnet`; pinning here keeps the
-// fan-out faithful to the single-agent reviewer it replaces (and off Opus).
-// Retune in one place by changing AGENT_MODEL.
+// The review fan-out (Spec / Quality / Verify) runs on Sonnet — not the
+// orchestrator's inherited model. This workflow is a parallel re-implementation
+// of the `reviewer` agent (agents/reviewer.md), which is itself `model: sonnet`;
+// pinning here keeps the judgement-bearing fan-out faithful to the single-agent
+// reviewer it replaces (and off Opus). Retune in one place via AGENT_MODEL.
 const AGENT_MODEL = 'sonnet'
+
+// Prep and Publish carry no review judgement — Prep is tool-orchestration
+// (worktree, diff, surface booleans) and Publish is a pure executor (write the
+// composed body to a file, run the post-and-flip / draft-PR scripts). Both run
+// on Haiku. Retune in one place via WRITER_MODEL.
+const WRITER_MODEL = 'haiku'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inputs.  The orchestrator passes only what it cannot derive cheaply:
@@ -104,18 +110,22 @@ const PREP = {
     scopeNote:       { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
     smokeHint:       { type: 'string', description: 'one-line manual smoke for the PR test plan' },
     closedTasks:     { type: 'array', items: { type: 'object', additionalProperties: false, properties: { number: { type: 'integer' }, title: { type: 'string' } }, required: ['number', 'title'] } },
-    surfaces: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        backend: { type: 'boolean' }, frontend: { type: 'boolean' }, python: { type: 'boolean' },
-        typescript: { type: 'boolean' }, fastapi: { type: 'boolean' }, database: { type: 'boolean' },
-        container: { type: 'boolean' }, vite: { type: 'boolean' }, hasContractFiles: { type: 'boolean' },
-      },
-      required: ['backend', 'frontend', 'python', 'typescript', 'fastapi', 'database', 'container', 'vite', 'hasContractFiles'],
-    },
+    touchedPaths:    { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified — a downstream Sonnet agent derives surfaces from these' },
   },
-  required: ['reviewRunningOk', 'haltReason', 'worktreePath', 'sliceBranch', 'sliceTitle', 'typeScope', 'milestone', 'scopeNote', 'smokeHint', 'closedTasks', 'surfaces'],
+  required: ['reviewRunningOk', 'haltReason', 'worktreePath', 'sliceBranch', 'sliceTitle', 'typeScope', 'milestone', 'scopeNote', 'smokeHint', 'closedTasks', 'touchedPaths'],
+}
+// Surface classification is the one judgement call in Prep — misclassifying a path
+// silently drops a whole review dimension via `applies()`. So it runs on its own
+// Sonnet agent, fed the raw touchedPaths the Haiku prep agent returns.
+const SURFACES = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    backend: { type: 'boolean' }, frontend: { type: 'boolean' }, python: { type: 'boolean' },
+    typescript: { type: 'boolean' }, fastapi: { type: 'boolean' }, database: { type: 'boolean' },
+    container: { type: 'boolean' }, vite: { type: 'boolean' }, hasContractFiles: { type: 'boolean' },
+  },
+  required: ['backend', 'frontend', 'python', 'typescript', 'fastapi', 'database', 'container', 'vite', 'hasContractFiles'],
 }
 const VERDICT = {
   type: 'object',
@@ -260,11 +270,11 @@ Steps:
 3. Resolve the slice branch: \`bash skills/operation-git/scripts/resolve-slice-branch.sh ${SLICE}\`.
 4. Set up the read-only worktree: \`bash skills/operation-git/scripts/setup-worktree.sh <slice-branch>\` (NO --merge-main). Capture the printed worktreePath.
 5. Compute the diff vs origin/main inside the worktree: touched paths via \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
-6. Derive touched surfaces from the touched paths (booleans): backend, frontend, python (.py), typescript (.ts/.tsx), fastapi (FastAPI routes/deps/middleware/create_app), database (ORM models or alembic migrations), container (Dockerfile/compose/.dockerignore/nginx/entrypoint), vite (vite.config/vitest.config/import.meta.env), hasContractFiles (any docs/api-contract/*.yaml or docs/data-model/*.yaml exists in the repo).
+6. Return those touched paths verbatim as touchedPaths (the raw path list from step 5). Do NOT classify or interpret them — a separate step derives review surfaces from this list.
 7. typeScope = the conventional PR-title prefix you infer from the slice (e.g. feat(auth)). smokeHint = one short manual smoke check a reviewer would run.
 
 Return the PREP object. The worktreePath you return will be handed verbatim to every downstream dimension agent — make sure it is correct and the worktree is on the slice branch tip.`,
-  { phase: 'Prep', schema: PREP, model: AGENT_MODEL },
+  { phase: 'Prep', schema: PREP, model: WRITER_MODEL },
 )
 
 if (!prep || !prep.reviewRunningOk) {
@@ -273,12 +283,35 @@ if (!prep || !prep.reviewRunningOk) {
   // Blocked-run contract: post a diagnostic, DO NOT flip the label.
   await agent(
     `Post a single diagnostic comment on slice issue #${SLICE} explaining that the slice review could not run: "${reason}". Use \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} <body-file>\`. Do NOT add or remove ANY label — leave review:running in place for human triage.`,
-    { label: 'publish:blocked', phase: 'Publish', model: AGENT_MODEL },
+    { label: 'publish:blocked', phase: 'Publish', model: WRITER_MODEL },
   )
   return { slice: SLICE, status: 'blocked', reason }
 }
 
-const surfaces = prep.surfaces
+// Surface classification on Sonnet — fed the raw paths the Haiku prep agent
+// returned. This drives `applies()`, so a misclassification silently drops a
+// whole review dimension; keep the judgement on the stronger model.
+phase('Prep')
+const surfaces = await agent(
+  `Classify the touched paths of slice #${SLICE} into review surfaces. These are the files changed on the slice branch, checked out READ-ONLY at \`${prep.worktreePath}\`. Read paths (and, where the spelling is ambiguous, the file contents in the worktree) before deciding — do NOT guess from extensions alone.
+
+Touched paths:
+${prep.touchedPaths.map(p => `- ${p}`).join('\n') || '- (none)'}
+
+Return these booleans:
+- backend: server-side application code (handlers, services, domain logic).
+- frontend: client UI code.
+- python: any .py file touched.
+- typescript: any .ts/.tsx file touched.
+- fastapi: FastAPI routes/deps/middleware or create_app wiring touched.
+- database: ORM models or alembic migrations touched.
+- container: Dockerfile/compose/.dockerignore/nginx/entrypoint touched.
+- vite: vite.config/vitest.config or import.meta.env usage touched.
+- hasContractFiles: any docs/api-contract/*.yaml or docs/data-model/*.yaml exists in the repo (check with \`ls\` in the worktree — this is a repo-existence check, not a touched-path check).
+
+When a path could plausibly belong to a surface, prefer setting the boolean true: a false negative silently skips that review dimension, which is worse than running one extra lens.`,
+  { label: 'prep:surfaces', phase: 'Prep', schema: SURFACES, model: AGENT_MODEL },
+) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true }
 const diffCtx = `Review the slice branch \`${prep.sliceBranch}\` checked out READ-ONLY at \`${prep.worktreePath}\`. The diff under review is \`git -C ${prep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.`
 
 // Shared prompt builder for a single review dimension.
@@ -426,7 +459,7 @@ ${publishInstr}
 --- VERDICT COMMENT BODY (verbatim, write to /tmp/review-slice-${SLICE}.md) ---
 ${body}
 --- END VERDICT COMMENT BODY ---`,
-  { label: 'publish:verdict', phase: 'Publish', schema: PUBLISH, model: AGENT_MODEL },
+  { label: 'publish:verdict', phase: 'Publish', schema: PUBLISH, model: WRITER_MODEL },
 )
 
 return {

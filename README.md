@@ -63,7 +63,32 @@ Subagents live in [`agents/`](agents/). Each one is scoped to a single role and 
 | `architect` | opus | Designs a ship-ready architecture without over-engineering, generating an ADR, an implementation-detail document, per-entity `docs/data-model/<entity>.yaml` + `docs/api-contract/<entity>.yaml` files, and updating `CLAUDE.md` when high-level architecture shifts. Reads the locked surface inventory and models the app shell / nav container as a real C4 component. |
 | `engineer` | sonnet | Always-fullstack implementer with four modes. **Mode A** drives one assigned `type:backend` / `type:frontend` task through strict outside-in TDD. **Mode B** fixes one open draft PR for `conflict` and/or `ci` scenarios (and bails to `status:need-attention` when the CI failure needs an E2E-spec rewrite). **Mode C** addresses reviewer `need-fix` findings on a task, propagating the fix across every equivalent site found in the codebase. **Mode D** prepares a slice's draft PR — runs the slice's touched E2E specs in a worktree, fixes any production-code regressions surfaced, and either opens the draft PR (clearing `status:prepare-pr`) or flips the slice to `status:need-attention` when an E2E spec itself needs human editing. Loads the full fullstack pattern set upfront in every mode, audits Dockerfile / compose against the runtime surface before every push, and pulls per-entity architecture context (data-model, api-contract) on demand from `docs/data-model/` and `docs/api-contract/` instead of bulk-loading. |
 | `e2e-author` | sonnet | Authors and extends Playwright E2E tests for a single task issue. Self-driven from an issue ID — sets up its own slice-scoped worktree rebased onto main, writes tests, smoke-runs them, commits to the slice branch, pushes, and flips `review:pending` on the task. PR creation is owned by the `reviewer` agent on a passing slice review (and the `/implement-feature` command's close-pr stage handles the eventual squash-merge). The full Playwright suite is validated by a GitHub Actions workflow on the slice PR. |
-| `reviewer` | sonnet | Read-only one-shot reviewer for a single task issue. Picks the pattern-skill set from the task's `type:*` label — the `pattern-test-coverage` catalogue read through its `pattern-reviewer-test-coverage` lens for every `type:*`, plus `pattern-reviewer-coding-standard` and `pattern-reviewer-security` for `type:backend` / `type:frontend` (the security patterns are skipped for `type:e2e`). Builds the slug-tagged image when running security patterns, posts one structured `# Review` comment with every finding, and flips `review:running` to `review:passed` / `review:need-fix`. Fix work is delegated separately. |
+| `reviewer` | sonnet | Read-only one-shot reviewer for a single task issue. Picks the pattern-skill set from the task's `type:*` label — the `pattern-test-coverage` catalogue read through its `pattern-reviewer-test-coverage` lens for every `type:*`, plus `pattern-reviewer-coding-standard` and `pattern-reviewer-security` for `type:backend` / `type:frontend` (the security patterns are skipped for `type:e2e`). Builds the slug-tagged image when running security patterns, posts one structured `# Review` comment with every finding, and flips `review:running` to `review:passed` / `review:need-fix`. Fix work is delegated separately. **Slice-level** review no longer dispatches this single agent — it runs as the `review-slice` fan-out workflow (see [Workflows](#workflows)). |
+
+## Workflows
+
+Beyond one-shot agent dispatch, the plugin ships **deterministic multi-agent orchestration scripts** under [`workflows/`](workflows/), invoked via the `Workflow` tool. A workflow spawns every agent as a peer in one flat pool, so it can express fan-out that the two-level Agent tree forbids. They ship with the plugin and are invoked by `scriptPath` against `${CLAUDE_PLUGIN_ROOT}` (not by `name:`, which resolves in the consuming project). See [`workflows/README.md`](workflows/README.md) for the authoring + wiring contract.
+
+| Workflow | Replaces | What it does |
+| --- | --- | --- |
+| `review-slice.mjs` | the single `reviewer` agent at `/implement-feature` Stage 6 | Fans slice review out across isolated `pattern-reviewer-*` dimensions, dedups overlapping findings, adversarially verifies each one through three skeptic lenses, then posts one `# Slice Review` comment and opens the draft PR. Same external contract as the agent — read-only on code, terminal `review:running` → `review:passed` / `review:need-fix` flip, idempotent `merge:manual` draft PR on APPROVE. |
+
+### `review-slice` pipeline + model tiers
+
+```
+Prep ─► Spec (fan-out) ─ dedup ─ verify ─►[ GATE ]─► Quality (fan-out) ─ dedup ─ verify ─► compose ─► Publish
+```
+
+Each phase fans out, **dedups, then verifies** before the next consumes it — so the gate trips on *confirmed* blockers, not raw ones (a `I:H` spec finding that survives verification both skips the redundant Phase-2 quality audit and is, by construction, a BLOCK). Phases are split across **two model tiers** by the kind of work each does — retune in one place via `AGENT_MODEL` / `WRITER_MODEL` at the top of the script:
+
+| Phase | Model | Why |
+| --- | --- | --- |
+| **Prep** — read-only worktree, diff vs `origin/main`, closed sub-issues, PR-title scope, smoke hint | `haiku` | Pure tool-orchestration; carries no review judgment. |
+| **Prep · surface classification** — touched paths → the surface flags that drive which dimensions run | `sonnet` | The one judgment call in prep: a misclassified path silently drops a whole review dimension via `applies()`, so it keeps the stronger model (and is biased toward `true`). |
+| **Spec / Quality / Verify** — the `pattern-reviewer-*` dimension fan-out + 3-lens adversarial refutation | `sonnet` | The judgment-bearing review work — pinned to match the single `reviewer` agent (`model: sonnet`) it replaces. |
+| **Publish** — write the comment, `post-and-flip.sh`, idempotent `create-draft-pr.sh` on APPROVE | `haiku` | A pure executor performing the only writes in the workflow. |
+
+Scoring (`severity → Impact`, `(Impact, Effort) → Fix/Defer/Nit/Drop`, `verdict = BLOCK iff any surviving I:H`) runs as plain deterministic JS, not an LLM step, so it is identical across runs.
 
 ## Skills
 
@@ -164,6 +189,7 @@ Hooks live in [`hooks/`](hooks/) and are wired up by `hooks/hooks.json`.
 agents/                # role-based subagents
 commands/              # slash commands
 skills/                # auto-activating skills (one directory per skill)
+workflows/             # deterministic multi-agent Workflow scripts (review-slice fan-out)
 hooks/                 # PreToolUse hooks (engineer pre-push gate) + hooks.json
 ```
 

@@ -448,6 +448,7 @@
     <li><a href="#discovery-flow">Discovery: <code>/deep-dive-feature</code></a></li>
     <li><a href="#scaffold-flow">Scaffold: <code>/scaffold-project</code></a></li>
     <li><a href="#exec-flow">Execution: <code>/implement-feature</code></a></li>
+    <li><a href="#slice-review-workflow">Slice review is a workflow</a></li>
     <li><a href="#labels">Labels are the protocol</a></li>
     <li><a href="#label-flips">How labels flip</a></li>
     <li><a href="#interactions">Who talks to whom</a></li>
@@ -596,7 +597,7 @@
         <td class="role">reviewer</td>
         <td class="model">sonnet</td>
         <td><span class="badge r">read</span></td>
-        <td>One-shot reviewer for a single task (or slice). Picks pattern-skills from the task's <code>type:*</code> label and covers both code-quality and security in one pass. Posts one structured <code># Review</code> comment and flips <code>review:running</code> → <code>review:passed</code> / <code>review:need-fix</code>.</td>
+        <td>One-shot reviewer for a single <strong>task</strong>. Picks pattern-skills from the task's <code>type:*</code> label and covers both code-quality and security in one pass. Posts one structured <code># Review</code> comment and flips <code>review:running</code> → <code>review:passed</code> / <code>review:need-fix</code>. <strong>Slice</strong> review no longer dispatches this single agent — it runs as the <code>review-slice</code> fan-out workflow (<a href="#slice-review-workflow">below</a>), which tiers Sonnet for judgment and Haiku for the mechanical prep/publish agents.</td>
       </tr>
       <tr>
         <td class="role">sre</td>
@@ -803,11 +804,11 @@
     <div class="step">
       <div class="n">6</div>
       <h4>review-slice</h4>
-      <div class="who">dispatch</div>
+      <div class="who">workflow</div>
       <ul>
         <li>Picks slices with <code>review:pending</code></li>
-        <li>Dispatches <code>reviewer</code></li>
-        <li>On pass: reviewer opens the draft PR with <code>Closes #&lt;slice-#&gt;</code> body</li>
+        <li>Runs the <code>review-slice</code> fan-out workflow (<a href="#slice-review-workflow">below</a>), not a single <code>reviewer</code></li>
+        <li>On pass: workflow opens the draft PR with <code>Closes #&lt;slice-#&gt;</code> body</li>
         <li>On fail: <code>review:need-fix</code></li>
       </ul>
     </div>
@@ -858,6 +859,76 @@
       </ul>
     </div>
   </div>
+</section>
+
+<section id="slice-review-workflow">
+  <h2>Slice review is a fan-out <em>workflow</em></h2>
+  <p>
+    Stage 6 (<em>review-slice</em>) is the one stage that does <strong>not</strong>
+    dispatch a single sub-agent. It runs <code>workflows/review-slice.mjs</code> via
+    the <code>Workflow</code> tool — a deterministic script that spawns many agents as
+    peers in one flat pool, expressing a fan-out the two-level Agent tree can't. The
+    external contract is identical to a <code>reviewer</code> dispatch: read-only on
+    code, one <code># Slice Review</code> comment, the terminal
+    <code>review:running</code> → <code>review:passed</code> /
+    <code>review:need-fix</code> flip, and an idempotent <code>merge:manual</code> draft
+    PR on APPROVE. Internally it isolates each review dimension into its own context and
+    adversarially verifies every finding before it can block.
+  </p>
+  <div class="ascii">
+<pre>
+ Prep ──► Spec (fan-out) ─ dedup ─ verify ──►[ GATE ]──► Quality (fan-out) ─ dedup ─ verify ──► compose ──► Publish
+(2 agents)  pattern-reviewer-* dims         skip P2 on a   pattern-reviewer-* dims selected      (pure JS)   (1 agent)
+            + 3-lens refutation             verified I:H   by touched surface + refutation
+</pre>
+  </div>
+  <p>
+    Each phase fans out, <strong>dedups, then verifies</strong> before the next phase
+    consumes it — so the gate trips on a <em>confirmed</em> blocker, never a raw one
+    (a surviving <code>I:H</code> spec finding both skips the now-pointless quality
+    audit and is, by construction, a BLOCK). Dedup and scoring
+    (<code>severity → Impact</code>, <code>(Impact, Effort) → Fix/Defer/Nit/Drop</code>,
+    <code>verdict = BLOCK iff any surviving I:H</code>) are plain deterministic JS, not
+    LLM steps.
+  </p>
+
+  <h3>Two model tiers</h3>
+  <p>
+    The phases split across two models by the kind of work each does — judgment stays on
+    Sonnet, mechanical work drops to Haiku. Tunable in one place via
+    <code>AGENT_MODEL</code> / <code>WRITER_MODEL</code> at the top of the script.
+  </p>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:24%">Phase</th>
+        <th style="width:10%">Model</th>
+        <th>Why this tier</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="role">Prep</td>
+        <td class="model">haiku</td>
+        <td>Read-only worktree, diff vs <code>origin/main</code>, closed sub-issues, PR-title scope, smoke hint. Pure tool-orchestration — carries no review judgment.</td>
+      </tr>
+      <tr>
+        <td class="role">Prep · surfaces</td>
+        <td class="model">sonnet</td>
+        <td>Turns the raw touched paths into the surface flags that decide which dimensions run. The one judgment call in prep: a misclassified path silently drops a whole review dimension, so it keeps the stronger model (and is biased toward <code>true</code>).</td>
+      </tr>
+      <tr>
+        <td class="role">Spec / Quality / Verify</td>
+        <td class="model">sonnet</td>
+        <td>The <code>pattern-reviewer-*</code> dimension fan-out plus the 3-lens adversarial refutation — the judgment-bearing review work. Pinned to match the single <code>reviewer</code> agent (<code>model: sonnet</code>) the workflow replaces.</td>
+      </tr>
+      <tr>
+        <td class="role">Publish</td>
+        <td class="model">haiku</td>
+        <td>Writes the comment, runs <code>post-and-flip.sh</code>, and on APPROVE the idempotent <code>create-draft-pr.sh</code>. A pure executor — the only writes in the whole workflow.</td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <section id="labels">
@@ -1049,8 +1120,8 @@
       <div class="flow-state">review:pending → review:running</div>
 
       <div class="flow-arrow">
-        <span class="actor agent">reviewer</span>
-        <span class="effect">posts <code># Slice Review</code> comment</span>
+        <span class="actor agent">review-slice workflow</span>
+        <span class="effect">fan-out review; posts <code># Slice Review</code> comment</span>
       </div>
 
       <div class="flow-branch">
@@ -1085,7 +1156,7 @@
 
       <div class="flow-state start">(PR does not exist)</div>
       <div class="flow-arrow">
-        <span class="actor agent">reviewer</span>
+        <span class="actor agent">review-slice workflow</span>
         <span class="effect">opens draft PR on slice-review APPROVE; body contains <code>Closes #&lt;slice-#&gt;</code></span>
       </div>
       <div class="flow-state">draft &middot; merge:manual</div>
