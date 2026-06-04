@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # task-finder-stage-1-kickoff-slice.sh
 #
-# Discovery for Stage 1 of /implement-feature: slice issues ready to be
-# promoted. Lists open `level:slice` + `kind:feature` + `status:ready-to-implement`
-# slices with zero open `Blocked by` dependencies (closed blockers don't count,
-# via `issueDependenciesSummary.blockedBy`).
+# Discovery for Stage 1 of /implement-feature: slice issues ready to launch the
+# per-slice `implement-slice` Workflow. Lists open `kind:feature` +
+# `status:ready-to-implement` slices with zero open `Blocked by` dependencies
+# (closed blockers don't count, via `issueDependenciesSummary.blockedBy`) — and
+# NOT already locked with `status:in-progress` (a workflow is running).
 #
-# Read-only — never flips labels, never dispatches.
+# Read-only — never flips labels, never launches. The orchestrator flips the
+# `status:ready-to-implement` → `status:in-progress` lock and launches the
+# `implement-slice` Workflow for each line.
 #
 # Output: one line per eligible candidate, or `- (none)` when none survive.
 #
@@ -26,8 +29,8 @@ feature_name="$1"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 out="$(bash "$script_dir/list-issues.sh" \
-    --level slice \
     --label status:ready-to-implement \
+    --missing-label status:in-progress \
     --milestone "$feature_name" \
   | jq -c '.[]' \
   | while read -r row; do

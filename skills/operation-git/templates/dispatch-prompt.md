@@ -1,61 +1,66 @@
 # Dispatch-prompt skeleton
 
-Orchestrator skills pass a minimal prompt to dispatched sub-agents. The agent rediscovers everything (issue body, slice branch, worktree path, recent commits) on its own from the issue ID. Keep the prompt small — extra context here is hard to audit and goes stale. The orchestrator fills ONLY the placeholder number — never failure logs or diagnosis, even for fix / fix-pr dispatches.
+The inner slice lifecycle runs inside one background `implement-slice` Workflow per slice (see `workflow-implement-slice`). That workflow dispatches sub-agents at each phase with a minimal prompt: a **(slice #, task IDs)** pair, never an issue-per-task. There are no per-task issues — task tracking lives in a static-ID checklist inside the slice issue body. Each dispatched agent reads the slice body, locates its task block(s), and resumes from the checklist (an already-`[x]` task is done).
 
-## Implement / author a task
+The orchestrator (the workflow, or the outer `/loop` for `fix-pr`) fills ONLY the placeholders — never failure logs or diagnosis. Extra context here is hard to audit and goes stale.
 
-```
-Implement GitHub task issue #<task-#>.
-
-Discover the issue body, parent slice issue, slice branch, and worktree path
-yourself via `gh` and `git`. You own the lifecycle until you push and add
-`review:pending` to the task issue.
-```
-
-## Fix reviewer findings on a task
+## Author E2E for a slice's e2e tasks
 
 ```
-Fix the review feedback on GitHub task issue #<task-#>.
+Author E2E for slice #<slice-#> tasks <ids>.
 
-Read every comment posted after the last commit that carries
-`Refs #<task-#>`, then drive the fix. You own the lifecycle until you push
-and add `review:pending` to the task issue.
+Read the slice #<slice-#> body and locate the named e2e task block(s) in the
+`## Tasks` checklist. Author one Playwright spec per task's mapped Gherkin
+scenario, tick each authored task's checkbox in the slice body, post a comment
+summarizing what you authored, then commit and push. You own the lifecycle
+until your specs are pushed and the boxes are ticked.
 ```
 
-## Fix reviewer findings on a slice (engineer re-runs E2E after the fix)
+## Fix E2E coverage feedback on a slice
 
 ```
-Fix the review feedback on GitHub slice issue #<slice-#>.
+Fix E2E coverage feedback on slice #<slice-#>.
 
-Read every comment posted after the last commit that carries
-`Refs #<slice-#>`, drive the fix via TDD on production code, then
-re-validate the slice's E2E specs via testcontainers. You own the
-lifecycle until you push and add `review:pending` to the slice issue.
+Read the newest coverage-gate review comment (posted after the last commit that
+carries `Refs #<slice-#>`), then revise the E2E specs to close the gap. Commit,
+push, and post a comment summarizing the fix. You own the lifecycle until the
+revised specs are pushed.
 ```
 
-## Validate E2E test cases on a slice
+## Implement a slice's tasks
 
 ```
-Validate E2E test cases on GitHub slice issue #<slice-#>.
+Implement slice #<slice-#> tasks <ids>.
 
-Find every E2E spec created or modified on the slice branch, run them
-against the slice's stack via testcontainers, and drive TDD on production
-code only (never modify the E2E specs) until they're all green. You own
-the lifecycle until you remove `e2e:running` and add both the sticky
-`e2e:validated` marker and `review:pending` to the slice issue — or, if a
-spec fails due to a test-case constraint that
-can't be addressed via production-code changes, flip to
+Read the slice #<slice-#> body, locate the named task block(s) in the `## Tasks`
+checklist, and follow each task's spec pointer (api-contract / data-model /
+Gherkin scenario / design tokens). Drive outside-in TDD, tick each task's
+checkbox as you finish it, commit per task (one `Task: <id>` trailer each), and
+push. You own the lifecycle until the named tasks are implemented, boxed, and
+pushed.
+```
+
+## Pass E2E acceptance for a slice
+
+```
+Pass E2E acceptance for slice #<slice-#>.
+
+Find every E2E spec on the slice branch, run them against the slice's stack via
+testcontainers, and drive TDD on production code only (never modify the E2E
+specs) until they are all green, then push. You own the lifecycle until the
+suite is green and pushed — or, if a spec fails due to a test-case constraint
+that can't be addressed via production-code changes, flip the slice to
 `status:need-attention` and exit.
 ```
 
-## Review a task or slice
+## Fix reviewer findings on a slice
 
 ```
-Review GitHub <task|slice> issue #<n>.
+Fix the review feedback on slice #<slice-#>.
 
-Discover the issue body, slice branch, worktree path, and scoped commits
-yourself. You own the lifecycle until you post your verdict comment and
-flip `review:running` to its terminal state.
+Read every comment posted after the last commit that carries `Refs #<slice-#>`,
+drive the fix via TDD on production code, then commit, push, and post a comment
+summarizing the fix. You own the lifecycle until the fix is pushed.
 ```
 
 ## Fix a PR
@@ -64,16 +69,16 @@ flip `review:running` to its terminal state.
 Fix PR #<pr-#>.
 
 Determine the blockers (merge conflict, failing CI, or both) yourself.
-You own the lifecycle until you push the fix and clear `status:in-progress`
-on the PR's linked slice issue if the PR's slice carries it.
+You own the lifecycle until you push the fix and clear `status:fix-in-progress`
+on the PR.
 ```
 
 ## Placeholders
 
-| Placeholder      | Source                                              |
-|------------------|-----------------------------------------------------|
-| `<task-#>`       | The task issue number being dispatched.             |
-| `<slice-#>`      | The slice issue number being dispatched.            |
-| `<pr-#>`         | The draft PR number being dispatched.               |
+| Placeholder      | Source                                                       |
+|------------------|--------------------------------------------------------------|
+| `<slice-#>`      | The slice issue number the workflow is driving.              |
+| `<ids>`          | Comma-separated static task IDs from the slice checklist (e.g. `e2e.1,e2e.2` or `be.1`). |
+| `<pr-#>`         | The draft PR number being dispatched (`fix-pr` only).        |
 
-The orchestrator fills these in before calling `Agent`. Nothing else goes into the prompt — the dispatched agent uses the issue / PR ID as its single source of truth.
+The orchestrator fills these in before calling `Agent`. Nothing else goes into the prompt — the dispatched agent uses the slice body's checklist as its single source of truth for task state.

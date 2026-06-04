@@ -5,7 +5,7 @@
 
 [optional body]
 
-Refs #<task-#>
+Task: <static-id>
 Refs #<slice-#>
 ```
 
@@ -25,17 +25,34 @@ Refs #<slice-#>
 
 ## Trailer rules (workflow-* skills)
 
-Every commit produced inside a `workflow-*` skill MUST carry **two** `Refs` trailers:
+There are no per-task issues — task tracking lives in a static-ID checklist in
+the slice issue body. So every commit produced inside a slice-phase `workflow-*`
+skill carries a `Task:` trailer plus the slice `Refs`:
 
 ```
-Refs #<task-#>
+Task: <static-id>
 Refs #<slice-#>
 ```
 
-- `Refs #<task-#>` — the task issue the work belongs to. When the agent is fixing a PR (not a task), drop this trailer and use `Refs #<pr-#>` instead.
-- `Refs #<slice-#>` — the parent slice issue. Same value for every commit on the slice branch; lets reviewers scope by slice quickly.
+- `Task: <static-id>` — the slice-checklist task ID this commit advances (e.g.
+  `Task: be.1`). This is the commit→task mapping used for crash recovery: a
+  re-dispatched agent reads the checklist for ticked boxes and the branch log for
+  `Task:` trailers to know what already landed. A commit that advances more than
+  one task may carry more than one `Task:` trailer.
+- `Refs #<slice-#>` — the slice issue. Same value for every commit on the slice
+  branch; lets reviewers scope by slice quickly and lets the reconcile reaper
+  find a slice branch's WIP commits.
 
-Never use `Closes #<task-#>` or `Closes #<slice-#>` in commits — closure happens later in the lifecycle (reviewer closes the task on green; PR merge closes the slice via the PR body).
+**fix-pr is the exception.** A fix-PR commit is not advancing a slice task, so it
+drops the `Task:` trailer and carries two `Refs`:
+
+```
+Refs #<pr-#>
+Refs #<slice-#>
+```
+
+Never use `Closes #<slice-#>` in commits — closure happens later (PR merge closes
+the slice via the PR body's `Closes` line).
 
 **Bad**
 
@@ -53,7 +70,7 @@ git commit -m "fix(api): retry requests on 503 Service Unavailable
 The external API occasionally returns 503 errors during peak hours.
 Added exponential backoff retry logic with max 3 attempts.
 
-Refs #42
+Task: be.2
 Refs #40"
 ```
 

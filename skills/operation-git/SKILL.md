@@ -1,11 +1,11 @@
 ---
 name: operation-git
-description: "Single source of truth for every git / GitHub operation the workflow-* skills perform. Owns the shared `gh` + `git` scripts (setup-worktree, resolve-slice-branch, list-candidates-by-label, lock/unlock helpers, post-and-flip, blocker-count, slice-in-flight, draft-PR creation, PR-status check), the shared templates (commit-messages, dispatch-prompt, pr-body), the gh-command and versioning references, and the release/label-init scripts. Activate whenever the user works with git or GitHub directly (commits, branches, PRs, issues, releases, `.gitignore`), and load this skill from inside any workflow-* skill that needs to mutate GitHub state or move work to a worktree."
+description: "Single source of truth for every git / GitHub operation the workflow-* skills and the implement-slice / review-slice Workflows perform. Owns the shared `gh` + `git` scripts (setup-worktree, resolve-slice-branch, list-issues, the four task-finder stage scripts, flip-label, post-comment, post-and-flip, blocker-count, draft-PR creation, PR-status check), the shared templates (commit-messages, dispatch-prompt, pr-body), the gh-command and versioning references, and the release/label-init scripts. Activate whenever the user works with git or GitHub directly (commits, branches, PRs, issues, releases, `.gitignore`), and load this skill from inside any workflow that needs to mutate GitHub state or move work to a worktree."
 ---
 
 # operation-git
 
-Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`) and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory. (Lifecycle candidate discovery for `/implement-feature` lives entirely as scripts here too — `task-finder.sh` + the reconcile stage (0) and nine lifecycle `task-finder-stage-<n>-<name>.sh` scripts — with no agent or skill layer in between.)
+Centralized git + GitHub operations. We follow **GitHub Flow**: `main` is protected and always deployable, and all feature work happens on short-lived branches that merge back via pull request. Workflow skills (`workflow-e2e-*`, `workflow-engineer-*`, `workflow-reviewer-*`), the `implement-slice` / `review-slice` Workflow scripts, and the `/implement-feature` command never duplicate `gh` / `git` plumbing — they call the scripts under this skill's `scripts/` directory. (Outer-loop candidate discovery for `/implement-feature` lives entirely as scripts here too — `task-finder.sh` + the four stage scripts: reconcile (0), kickoff-slice (1), fix-pr (8), close-pr (9) — with no agent or skill layer in between. The inner slice cycle runs inside the per-slice `implement-slice` Workflow, not here.)
 
 ## When to activate
 
@@ -25,20 +25,16 @@ Do NOT activate when the user is asking about git internals unrelated to our wor
 
 ## Label scheme
 
-The Automated Engineer Flow drives off labels. Workflow skills key into the families below; the `init-flow-labels.sh` script creates them all idempotently.
+The Automated Engineer Flow drives off a deliberately small label set — the inner slice cycle runs inside one `implement-slice` Workflow per slice, so everything that used to round-trip through labels (per-task typing, the review gate family, the e2e markers, the level split) is now in-memory workflow state or lives in the slice body's task checklist. The `init-flow-labels.sh` script creates the survivors and DELETES the retired labels, idempotently.
 
 | Family | Labels | Owner of transitions |
 |--------|--------|---------------------|
-| `status:*` | `ready-to-review`, `ready-to-implement`, `in-progress`, `fix-in-progress`, `need-attention` | `status:ready-to-review` is the human-approval gate (set by `create-issues` on freshly-created slices; human flips to `status:ready-to-implement` to release). `status:ready-to-implement` → `status:in-progress` is the orchestrator's lock on issues. `status:fix-in-progress` is the PR-level lock for fix-pr. `status:need-attention` is set when an agent bails. |
-| `level:*` | `slice`, `task` | issue creation only |
+| `status:*` | `ready-to-review`, `ready-to-implement`, `in-progress`, `fix-in-progress`, `need-attention` | `status:ready-to-review` is the human-approval gate (set by `create-issues` on freshly-created slices; human flips to `status:ready-to-implement` to release). `status:ready-to-implement` → `status:in-progress` is the kickoff lock = "an `implement-slice` Workflow is running on this slice"; the workflow releases it when it opens the draft PR, or flips it to `status:need-attention` on halt. `status:fix-in-progress` is the PR-level lock for the outer-loop fix-pr stage. `status:need-attention` is the durable, user-owned halt. |
 | `kind:*` | `feature`, `bug`, `enhancement` | issue creation only |
-| `type:*` | `e2e`, `backend`, `frontend` (tasks only) | issue creation only |
-| `review:*` | `pending`, `running`, `passed`, `need-fix` | reviewer-review-* flips `pending`→`running`→`passed`/`need-fix`; engineer/e2e fix flips back to `pending` |
-| `e2e:*` | `running`, `validated` | prepare-slice adds `e2e:running` when the slice is ready for end-to-end validation; engineer-e2e removes `e2e:running` and adds both the sticky `e2e:validated` marker and `review:pending` on pass, or flips to `status:need-attention` on test-case constraints. `e2e:validated` is never removed once set — it records that the slice has cleared E2E once, so prepare-slice (which excludes any `e2e:*`) won't re-adopt it during the slice-level review/fix loop |
-| `merge:*` | `auto`, `manual` | reviewer-review-slice sets `manual` on draft PR creation; user opts into `auto` |
+| `merge:*` | `auto`, `manual` | `implement-slice`'s PR phase sets `manual` on draft PR creation; user opts into `auto` |
 | PR markers | `feature-lockin` | architect during deep-dive |
 
-The `review:*` family is the **only** signal a reviewer is in flight on an issue. There is one gate per issue (no separate code/security gates). Slice issues and task issues use the same `review:*` family.
+There are no `level:*`, `type:*`, `review:*`, or `e2e:*` labels — those were retired by the per-slice-Workflow redesign. Task typing and per-task done-state live in the slice body's `## Tasks` static-ID checklist; review/coverage gating is an in-memory phase of the `implement-slice` Workflow.
 
 ## References and scripts
 
@@ -57,7 +53,7 @@ When this skill is active, route to the asset that matches the task. Read refere
 |--------|---------|
 | `scripts/resolve-slice-branch.sh <issue-#>` | Given a task issue, resolve the parent slice issue and print the slice branch attached to that parent. Given a slice issue directly, print its own attached branch. Non-zero on missing parent or missing branch. |
 | `scripts/setup-worktree.sh <slice-branch> [--merge-main]` | Create-or-reuse the worktree at `/tmp/harness-claude-code/<repo>/worktrees/<slice-branch>`, fetch + hard-reset to `origin/<slice-branch>` (always — agents always enter on the latest remote tip), then optionally integrate `origin/main`. `--merge-main` merges `origin/main` INTO the slice branch with an explicit merge commit (push-safe — no history rewrite, no force-push; on conflict it leaves the conflicted worktree for the caller to resolve+commit+push and exits 3). With no flag the slice branch is left untouched (push-safe). There is deliberately no rebase-onto-main mode — rewriting slice history would require a force-push, violating the never-force-push iron rule. Prints the worktree path on stdout (even on a merge conflict, so the caller can `cd` in to resolve). |
-| `scripts/issue-body.sh <issue-#> [fields-csv]` | Wrap `gh issue view --json` to fetch the issue spec (default: `number,title,body,labels,milestone,url,state`) WITHOUT the auto-rendered comments / reactions / cross-references chrome that bare `gh issue view` injects (3–8K of noise on any issue with discussion). Use this for first-fetch in `workflow-engineer-implement-task`, `-e2e`, `workflow-e2e-author`, `workflow-reviewer-review-task`, `workflow-reviewer-review-slice`. Do NOT use in `-fix-task` / `-fix-slice` / `-fix-pr` / `-e2e-fix` workflows where the reviewer comments ARE the spec — those still call `gh issue view <n> --comments` directly. |
+| `scripts/issue-body.sh <issue-#> [fields-csv]` | Wrap `gh issue view --json` to fetch the slice spec (default: `number,title,body,labels,milestone,url,state`) WITHOUT the auto-rendered comments / reactions / cross-references chrome that bare `gh issue view` injects (3–8K of noise on any issue with discussion). Use this for first-fetch in `workflow-engineer-implement-task`, `-e2e`, `workflow-e2e-author`, `workflow-reviewer-review-slice`, and the `implement-slice` / `review-slice` workflows' Prep phase. Do NOT use in `-fix-slice` / `-fix-pr` / `-e2e-fix` workflows where the reviewer comments ARE the spec — those still call `gh issue view <n> --comments` directly. |
 
 ### Candidate listing (workflow orchestrators)
 
@@ -65,27 +61,19 @@ Each script lists open issues / PRs matching a specific workflow stage. All retu
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/list-issues.sh --level <slice\|task> [--label <l>]... [--milestone <name>] [--missing-label <l>]...` | Generic candidate listing for any orchestrator. Returns open `kind:feature` issues at the requested level with the requested labels (and confirmed absent labels). |
-| `scripts/list-slices-all-subs-closed.sh [--milestone <name>]` | List open `level:slice`+`kind:feature`+`status:in-progress` slices whose sub-issues are ALL closed (used by prepare-slice). |
+| `scripts/list-issues.sh [--label <l>]... [--milestone <name>] [--missing-label <l>]...` | Generic candidate listing for any orchestrator. Returns open `kind:feature` issues (= slices) carrying the requested labels (and confirmed absent labels), sorted by issue number. (No `--level` — every issue is a slice now.) |
 | `scripts/list-draft-prs.sh [--label <l>]... [--missing-label <l>]... [--status <green\|broken>] [--milestone <name>]` | List open draft PRs filtered by labels, milestone, and check/conflict status. Output includes the PR body so close-pr can parse `Closes #<slice-#>`. |
 | `scripts/blocker-count.sh <issue-#>` | Print the count of OPEN `Blocked by` dependencies (GraphQL `issueDependenciesSummary.blockedBy`). |
-| `scripts/slice-in-flight.sh <task-#>` | Print the count of sibling tasks on the parent slice currently being EDITED (predicate: `status:in-progress` AND no `review:*`). |
 
 ### Lifecycle discovery (driven by `/implement-feature`)
 
-Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the nine per-stage scripts against ONE GitHub-state snapshot and emits the canonical markdown report `/implement-feature` parses positionally. Each per-stage script's header comment documents its line format and gate set.
+Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the four stage scripts against ONE GitHub-state snapshot and emits the canonical markdown report `/implement-feature` parses positionally. Each stage script's header comment documents its line format and gate set. (Stages 2–7 were retired — the inner slice cycle they covered now runs inside the per-slice `implement-slice` Workflow.)
 
 | Script | Stage | Purpose |
 |--------|-------|---------|
-| `scripts/task-finder.sh <feature-name>` | — | Umbrella driver. Prechecks repo + milestone, runs the reconcile stage (0) plus the nine lifecycle stages in order, emits the canonical `# task-finder report` markdown + a summary line. Exits non-zero with a diagnostic on stderr on precheck failure or any per-stage failure. |
-| `scripts/task-finder-stage-0-reconcile.sh` | 0 | Orphaned locks — work frozen in an in-flight label state (`status:in-progress` no-`review:*` tasks, `review:running`, `e2e:running`, fix-slice `status:in-progress`+`e2e:validated` no-`review:*`, draft-PR `status:fix-in-progress`) by a sub-agent that died mid-run. Death gate (priority order): (1) the runtime-telemetry liveness heartbeat — a signal meta with `ended_at==null` whose `last_seen` is stale ≥ `RECONCILE_HEARTBEAT_STALE_MINUTES` (default = `RECONCILE_STALE_MINUTES`); a fresh `last_seen` VETOES the reap (covers engineer + reviewer); (2) GitHub-activity staleness ≥ `RECONCILE_STALE_MINUTES` (default 30; activity = `updatedAt`, plus slice-branch last commit for engineer locks) as the fallback when no telemetry record exists (e2e-author, telemetry off). Emits `release:<action>` directives the orchestrator flips to release the lock. |
-| `scripts/task-finder-stage-1-kickoff-slice.sh` | 1 | `level:slice`+`kind:feature`+`status:ready-to-implement` slices with zero open blockers. |
-| `scripts/task-finder-stage-2-implement-task.sh` | 2 | `level:task`+`kind:feature`+`status:ready-to-implement` tasks, zero open blockers, slice not in flight, single `type:*`, parent slice resolved. |
-| `scripts/task-finder-stage-3-review-task.sh` | 3 | `level:task`+`kind:feature`+`status:in-progress` tasks carrying `review:pending`. |
-| `scripts/task-finder-stage-4-fix-task.sh` | 4 | `level:task`+`kind:feature`+`status:in-progress` tasks carrying `review:need-fix`, slice not in flight, single `type:*`, parent slice resolved. |
-| `scripts/task-finder-stage-5-prepare-slice.sh` | 5 | `level:slice`+`kind:feature`+`status:in-progress` slices with every sub-issue closed and no `review:*` / `e2e:*` label yet. |
-| `scripts/task-finder-stage-6-review-slice.sh` | 6 | `level:slice`+`kind:feature`+`status:in-progress` slices carrying `review:pending`. |
-| `scripts/task-finder-stage-7-fix-slice.sh` | 7 | `level:slice`+`kind:feature`+`status:in-progress` slices carrying `review:need-fix`. |
+| `scripts/task-finder.sh <feature-name>` | — | Umbrella driver. Prechecks repo + milestone, runs the four stages (0, 1, 8, 9) in order, emits the canonical `# task-finder report` markdown + a summary line. Exits non-zero with a diagnostic on stderr on precheck failure or any per-stage failure. |
+| `scripts/task-finder-stage-0-reconcile.sh` | 0 | Orphaned locks — a slice `status:in-progress` whose `implement-slice` Workflow died mid-run, or a draft-PR `status:fix-in-progress` whose fix-pr engineer died. Death gate (priority order): (1) the runtime-telemetry liveness heartbeat — a signal meta with `ended_at==null` whose `last_seen` is stale ≥ `RECONCILE_HEARTBEAT_STALE_MINUTES` (default = `RECONCILE_STALE_MINUTES`); a fresh `last_seen` (any of the workflow's child engineer/reviewer agents) VETOES the reap; (2) GitHub-activity staleness ≥ `RECONCILE_STALE_MINUTES` (default 30; activity = `updatedAt` + slice-branch last commit) as the fallback. Emits `release:<action>` directives the orchestrator flips to release the lock. |
+| `scripts/task-finder-stage-1-kickoff-slice.sh` | 1 | `kind:feature`+`status:ready-to-implement` slices with zero open blockers and NOT already `status:in-progress` (the orchestrator flips the lock and launches the `implement-slice` Workflow). |
 | `scripts/task-finder-stage-8-fix-pr.sh` | 8 | Draft PRs with a merge-blocking signal (CI failure or merge conflict), no `status:fix-in-progress` / `status:need-attention`, slice resolved from `Closes #<n>`. |
 | `scripts/task-finder-stage-9-close-pr.sh` | 9 | Draft PRs MERGEABLE with every check rollup SUCCESS / NEUTRAL / SKIPPED, tagged `merge:<auto\|manual>`, slice resolved from `Closes #<n>`. |
 
@@ -100,9 +88,9 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the ni
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/post-comment.sh <issue-or-pr-#> <body-file>` | Post a single comment from a file (avoids quoting issues). |
-| `scripts/post-and-flip.sh <issue-#> <body-file> [--remove <l>]... [--add <l>]...` | Atomic-ish: post the comment, then flip the labels. Terminal action for reviewer-review-task / reviewer-review-slice. |
-| `scripts/create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]... [--milestone <m>]` | Create a draft PR from the slice branch against `main`. Prints the PR number. `--milestone` attaches a milestone (name or number) at creation. |
+| `scripts/post-comment.sh <issue-or-pr-#> <body-file>` | Post a single comment from a file (avoids quoting issues). The reviewer / `review-slice` workflow's terminal write (it posts the verdict comment and returns the verdict — no label flip). |
+| `scripts/post-and-flip.sh <issue-#> <body-file> [--remove <l>]... [--add <l>]...` | Atomic-ish: post the comment, then flip the labels. A general comment-plus-flip helper (the reviewer no longer flips labels, but this stays available for any post+label operation). |
+| `scripts/create-draft-pr.sh <slice-branch> <title> <body-file> [--label <l>]... [--milestone <m>]` | Create a draft PR from the slice branch against `main`. Prints the PR number. `--milestone` attaches a milestone (name or number) at creation. Called by `implement-slice`'s terminal PR phase. |
 | `scripts/check-pr.sh <pr-#>` | Print a JSON object: `{mergeable, checksStatus, isDraft, labels, headRefName, lastCommitSha, lastCommitDate}`. |
 
 ### Release / repo setup
@@ -110,15 +98,15 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the ni
 | Script | Purpose |
 |--------|---------|
 | `scripts/create-release.sh <version> [--prerelease] [--notes-file <path>]` | Tag `main` and publish a GitHub release (after the `chore(release): vX.Y.Z` commit is in). |
-| `scripts/init-flow-labels.sh [--repo <owner>/<name>]` | One-time repo setup. Creates every `status:` / `level:` / `kind:` / `type:` / `review:` / `merge:` / PR-marker label. Idempotent. |
+| `scripts/init-flow-labels.sh [--repo <owner>/<name>]` | One-time repo setup. Creates the surviving `status:` / `kind:` / `merge:` / PR-marker labels and DELETES the retired `level:` / `type:` / `review:` / `e2e:` labels. Idempotent. |
 
 ### Templates
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/commit-messages.md` | Conventional Commits format. Subject line + body + trailer rules. Every commit produced by a workflow skill MUST include `Refs #<task-#>` AND `Refs #<slice-#>` trailers so each commit is traceable to both its task and its slice. |
-| `templates/dispatch-prompt.md` | Skeleton an orchestrator skill fills before passing to `Agent`'s `prompt`. One line: dispatch verb + issue ID. Everything else the agent discovers from the issue. |
-| `templates/pr-body.md` | Draft-PR body skeleton for reviewer-review-slice. First line: `Closes #<slice-#>`. |
+| `templates/commit-messages.md` | Conventional Commits format. Subject line + body + trailer rules. Every commit produced by a slice-phase workflow skill carries a `Task: <static-id>` trailer + `Refs #<slice-#>` (fix-pr drops `Task:` and uses `Refs #<pr-#>` + `Refs #<slice-#>`). |
+| `templates/dispatch-prompt.md` | Skeleton the `implement-slice` Workflow (and the outer loop, for fix-pr) fills before passing to `Agent`'s `prompt`. One line: dispatch verb + slice # + task IDs. Everything else the agent discovers from the slice body's checklist. |
+| `templates/pr-body.md` | Draft-PR body skeleton (`Closes #<slice-#>`) — the shape `implement-slice`'s terminal PR phase builds. |
 
 ## Pattern
 

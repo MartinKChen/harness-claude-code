@@ -1,28 +1,35 @@
 #!/usr/bin/env bash
 # task-finder.sh
 #
-# Read-only candidate discovery for the /implement-feature lifecycle. Runs the
-# reconcile stage (Stage 0) plus the nine lifecycle stages against ONE snapshot
-# of GitHub state for a given milestone and emits ONE structured markdown
-# report. Never flips labels, never creates tasks, never dispatches agents —
-# every mutation is owned by /implement-feature.
+# Read-only candidate discovery for the /implement-feature lifecycle. Since the
+# per-slice-Workflow redesign the inner slice cycle (author E2E → coverage gate →
+# implement → pass E2E → review → fix → open PR) runs entirely inside ONE
+# background `implement-slice` Workflow per slice, so the outer /loop only owns
+# four stages: reconcile dead-workflow locks (0), launch a workflow for an
+# eligible slice (1), and the two external-wait PR stages (8 fix-pr, 9 close-pr).
+# This script runs those four stages against ONE snapshot of GitHub state for a
+# given milestone and emits ONE structured markdown report. Never flips labels,
+# never launches workflows, never dispatches agents — every mutation is owned by
+# /implement-feature.
 #
 # Stage 0 (reconcile) is discovery for orphaned locks — work frozen in an
 # in-flight label state by a sub-agent that died mid-run. It emits release
 # directives; the orchestrator flips the lock back so the next pass re-dispatches.
 #
-# Replaces the former `task-finder` agent + nine `workflow-task-finder-*` skills:
-# the per-stage logic is pure shell, so the LLM round-trip and Skill prompt-include
-# loads are unnecessary overhead.
+# Replaces the former `task-finder` agent: the per-stage logic is pure shell, so
+# the LLM round-trip and Skill prompt-include loads are unnecessary overhead.
 #
 # Usage:
 #   task-finder.sh <feature-name>
 #
 # Output: a markdown report shaped exactly:
 #   # task-finder report — <feature-name>
+#   ## Stage 0: reconcile
+#   <stage 0 stdout>
 #   ## Stage 1: kickoff-slice
 #   <stage 1 stdout>
-#   …
+#   ## Stage 8: fix-pr
+#   <stage 8 stdout>
 #   ## Stage 9: close-pr
 #   <stage 9 stdout>
 #   ## Summary
@@ -61,12 +68,6 @@ fi
 stages=(
   "0:reconcile"
   "1:kickoff-slice"
-  "2:implement-task"
-  "3:review-task"
-  "4:fix-task"
-  "5:prepare-slice"
-  "6:review-slice"
-  "7:fix-slice"
   "8:fix-pr"
   "9:close-pr"
 )

@@ -16,7 +16,7 @@ Activate this skill whenever:
 - The dispatch prompt opens with `Fix PR #<pr-#>` and the PR carries `status:fix-in-progress`.
 - The user types `/workflow-engineer-fix-pr`, or phrases like "fix the failing CI on PR #<n>", "resolve the merge conflict on this PR".
 
-Do NOT activate to merge a clean PR (the `/implement-feature` command's close-pr stage handles that), to review code (reviewer's lane), or to fix issue-level reviewer findings (use `workflow-engineer-fix-task`).
+Do NOT activate to merge a clean PR (the `/implement-feature` command's close-pr stage handles that), to review code (reviewer's lane), or to fix slice-level reviewer findings (use `workflow-engineer-fix-slice`).
 
 ## Workflow
 
