@@ -186,8 +186,8 @@ while read -r row; do
   title="$(printf '%s' "$row" | jq -r .title)"
   branch="$(printf '%s' "$row" | jq -r '.headRefName // empty')"
   body="$(printf '%s' "$row" | jq -r '.body // empty')"
-  # Linked issue: feature/<n>- or fix/<n>- branch prefix, else the body's Closes #.
-  issue="$(printf '%s' "$branch" | sed -n -E 's#^(feature|fix)/([0-9]+)-.*#\2#p')"
+  # Linked issue: feature/<n>- | enhancement/<n>- | fix/<n>- branch prefix, else the body's Closes #.
+  issue="$(printf '%s' "$branch" | sed -n -E 's#^(feature|enhancement|fix)/([0-9]+)-.*#\2#p')"
   [[ -n "$issue" ]] || issue="$(printf '%s' "$body" | grep -oiE 'closes[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+')"
   [[ -n "$issue" ]] || issue="?"
   act="$(max_epoch "$(branch_last_commit_epoch "$branch")")"
