@@ -5,7 +5,7 @@ description: "Address slice-review findings on one slice. Read the slice body an
 
 # workflow-engineer-fix-slice
 
-Address slice-review findings on a single slice. Dispatched after the slice review (the `review-slice` fan-out) returns a BLOCK verdict. Scope is read from the most recent slice-review comment on the slice (newer than the slice branch's last `Refs #<slice#>` commit), with user directives in the same window overriding.
+Address slice-review findings on a single slice. Dispatched after the slice review (the `runReviewSlice()` fan-out in `implement-slice`) returns a BLOCK verdict. Scope is read from the most recent slice-review comment on the slice (newer than the slice branch's last `Refs #<slice#>` commit), with user directives in the same window overriding.
 
 In the new model, E2E passing is a separate earlier phase (`workflow-engineer-e2e`); this fix loop only addresses the reviewer's findings. The calling workflow re-runs the slice review after the fix — this skill does no re-validation and flips no labels.
 

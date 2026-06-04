@@ -1,11 +1,11 @@
 ---
 name: workflow-reviewer-review-slice
-description: "Single-agent reviewer FALLBACK for a slice (the real fan-out lives in workflows/review-slice.mjs). Read the slice body and parse its `## Tasks` checklist, set up the slice worktree (read-only), run the loaded reviewer pattern set, compose one `# Slice Review` comment, post it, and RETURN the verdict — flip no label, open no PR. Runs in a `coverage` scope (spec/test-coverage dimensions over authored E2E specs) or a `full` scope (all dimensions over implemented code). Activate when dispatched with `Review slice #<n>` or '/workflow-reviewer-review-slice'."
+description: "Single-context reviewer FALLBACK for a slice (the real fan-out is `runReviewSlice()` inside workflows/implement-slice.mjs, which spawns one `axis-reviewer` agent per pattern). Read the slice body and parse its `## Tasks` checklist, set up the slice worktree (read-only), run the loaded reviewer pattern set, compose one `# Slice Review` comment, post it, and RETURN the verdict — flip no label, open no PR. Runs in a `test-coverage` scope (spec/test-coverage dimensions over authored E2E specs) or a `production-code` scope (all dimensions over implemented code). Activate when dispatched with `Review slice #<n>` or '/workflow-reviewer-review-slice'."
 ---
 
 # workflow-reviewer-review-slice
 
-The single-agent reviewer **fallback** for a slice. The production path is the fan-out child workflow `workflows/review-slice.mjs`, which the `implement-slice` workflow calls for both the coverage gate (Phase B) and the slice review (Phase F). This skill documents the same review substance for when a single reviewer agent runs it directly — it reviews the slice (cross-task integration, contract coverage, seams between tasks), composes one structured `# Slice Review` comment, posts it, and **returns the verdict**. It flips no label and opens no PR.
+The single-context reviewer **fallback** for a slice. The production path is the inlined fan-out `runReviewSlice()` inside `workflows/implement-slice.mjs` — it spawns one `axis-reviewer` agent per applicable pattern and runs for both the coverage gate (Phase B) and the slice review (Phase F). This skill documents the same review substance for when a single reviewer agent runs it directly (applying every applicable pattern in one context) — it reviews the slice (cross-task integration, contract coverage, seams between tasks), composes one structured `# Slice Review` comment, posts it, and **returns the verdict**. It flips no label and opens no PR.
 
 The reviewer agent loads its own pattern set at kickoff. This skill owns workflow primitives only.
 
@@ -16,7 +16,7 @@ Activate this skill whenever:
 - The dispatch prompt opens with `Review slice #<n>`.
 - The user types `/workflow-reviewer-review-slice`.
 
-A `scope` qualifier in the dispatch (or the default `full`) selects the review mode — see below.
+A `scope` qualifier in the dispatch (or the default `production-code`) selects the review mode — see below.
 
 ## Input contract
 
@@ -24,8 +24,8 @@ Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is
 
 ## Scope (one skill, two modes)
 
-- **`coverage`** — runs pre-implementation, judging the **authored E2E specs** against the slice AC + pattern-mandated non-happy-paths. Run only the Spec-phase dimensions (test-coverage, and contract if a sibling contract exists). Skip the Code-quality phase — there is no production code yet. **Wrinkle:** the dimension prompt's usual "test files are out of scope" rule *inverts* here — the E2E specs ARE the deliverable under review, so coverage mode explicitly targets them.
-- **`full`** (default) — the two-phase walk (Spec compliance → Code quality) against the implemented code, as below.
+- **`test-coverage`** — runs pre-implementation, judging the **authored E2E specs** against the slice AC + pattern-mandated non-happy-paths. Run only the Spec-phase dimensions (test-coverage, and contract if a sibling contract exists). Skip the Code-quality phase — there is no production code yet. **Wrinkle:** the dimension prompt's usual "test files are out of scope" rule *inverts* here — the E2E specs ARE the deliverable under review, so coverage mode explicitly targets them.
+- **`production-code`** (default) — the two-phase walk (Spec compliance → Code quality) against the implemented code, as below.
 
 ## Workflow
 
@@ -39,9 +39,9 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 ### 3. Walk the loaded reviewer pattern set
 
-**In `coverage` scope:** walk only the Spec-phase dimensions — the test-coverage gate (the shared `pattern-test-coverage` catalogue through the `pattern-reviewer-test-coverage` lens) plus `pattern-reviewer-contract` if a sibling contract file exists — targeting the **authored E2E specs**. Judge whether the specs cover every AC and every pattern-mandated non-happy-path. Skip Phase 2. Then jump to step 4.
+**In `test-coverage` scope:** walk only the Spec-phase dimensions — the test-coverage gate (the shared `pattern-test-coverage` catalogue through the `pattern-reviewer-test-coverage` lens) plus `pattern-reviewer-contract` if a sibling contract file exists — targeting the **authored E2E specs**. Judge whether the specs cover every AC and every pattern-mandated non-happy-path. Skip Phase 2. Then jump to step 4.
 
-**In `full` scope:** walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
+**In `production-code` scope:** walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
 
 - **Phase 1 — Spec compliance**: the test-coverage gate — `pattern-test-coverage` read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks the slice AC + Gherkin scenarios against the diff) — and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These answer *"did this slice build what was asked?"* — missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model.
 - **Phase 2 — Code quality**: every other loaded pattern (coding standard, observability, security, language- and framework-specific patterns, container, database). These answer *"is what was built well-built?"* — quality, security, and maintainability issues regardless of whether the spec was met.
@@ -76,7 +76,7 @@ Compose, in order:
 1. **Summary matrix** — a 3×3 count of `(Impact, Effort)` cells over all reported findings (Drop excluded).
 2. **Disposition line** — `Fix now: <n>  •  Deferred: <n>  •  Nits: <n>`.
 3. **Phase 1 — Spec compliance findings** (subhead). Print every Phase 1 finding with the bracketed prefix `### [<class> · I:<x>/E:<y>] <title>` followed by `**Impact (<x>):**`, `**Effort/Risk (<y>):**`, `**Fix:**`, and the BAD / GOOD snippets per the pattern's template. If none, write `_No spec-compliance findings._`
-4. **Phase 2 — Code quality findings** (subhead). Same format. In `coverage` scope OR when Phase 2 was skipped per step 3a, replace this section with the matching note (`_Phase 2 (code quality) skipped: coverage scope — no production code yet._` or `_Phase 2 (code quality) skipped: Phase 1 produced at least one I:H finding. Re-review will run both phases after the engineer fix._`). If Phase 2 ran but produced no findings, write `_No code-quality findings._`
+4. **Phase 2 — Code quality findings** (subhead). Same format. In `test-coverage` scope OR when Phase 2 was skipped per step 3a, replace this section with the matching note (`_Phase 2 (code quality) skipped: coverage scope — no production code yet._` or `_Phase 2 (code quality) skipped: Phase 1 produced at least one I:H finding. Re-review will run both phases after the engineer fix._`). If Phase 2 ran but produced no findings, write `_No code-quality findings._`
 5. **Verdict** line.
 
 Verdict is computed from Impact alone — Effort never blocks:
@@ -105,6 +105,6 @@ If something prevents the review (worktree setup failed, slice branch missing), 
 - **Parse the checklist from the slice body** for the implemented set — never list closed sub-issues (there are none; tasks live in the checklist).
 - **Every finding carries `(I:<x>, E:<y>, <class>)`.** Impact is derived mechanically from pattern severity; Effort is the reviewer's judgement; class is the matrix projection onto Fix / Defer / Nit / Drop. `Drop` findings never reach the comment.
 - **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE.
-- **`coverage` scope inverts the test-files rule.** The authored E2E specs are the deliverable under review in coverage mode — target them, judge them against the slice AC + non-happy-paths, and skip the code-quality phase.
+- **`test-coverage` scope inverts the test-files rule.** The authored E2E specs are the deliverable under review in coverage mode — target them, judge them against the slice AC + non-happy-paths, and skip the code-quality phase.
 - **The reviewer pattern set is owned by the agent.**
 - **GitHub + the returned verdict are the outputs.** The verdict comment is the only GitHub write; the returned verdict object is the caller's signal.
