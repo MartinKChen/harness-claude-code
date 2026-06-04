@@ -7,14 +7,17 @@ description: The per-slice Workflow that drives ONE slice through its entire inn
 
 The slice-level orchestration unit. Unlike the other `workflow-*` skills (which are
 procedures an *agent* loads), this one is realized as a **`Workflow` script** —
-`workflows/implement-slice.mjs` — because it must fan out child agents and call a
-child workflow, which a single agent cannot do. It is the TOP of a strictly
-two-layer architecture; see `workflows/README.md` for the full picture.
+`workflows/implement-slice.mjs` — because it must fan out child agents (the review
+runs one `axis-reviewer` agent per pattern), which a single agent cannot do. It
+is the only workflow in the slice lifecycle: the review fan-out is inlined as the
+`runReviewSlice()` function rather than a separate child workflow. See
+`workflows/README.md` for the full picture.
 
 ## What it owns
 
-One background run per slice. It owns the entire inner cycle that the old 9-stage
-label-driven `/implement-feature` used to round-trip through GitHub labels:
+One background run per slice. It owns the entire inner cycle — including the
+fan-out review (coverage gate + slice review) — that the old 9-stage label-driven
+`/implement-feature` used to round-trip through GitHub labels:
 
 ```
 Prep → Author E2E → Coverage gate → Plan → Implement → Pass E2E → Slice review → PR
@@ -32,20 +35,26 @@ agent ticks its boxes as it finishes.
 |-------|-------------|-------|
 | Prep | `agent()` | Read the slice body, parse the checklist (the resume source), resolve branch + PR metadata. |
 | Author E2E | `agent({agentType: e2e-author})` | One dispatch for every not-yet-`[x]` e2e task. Skipped if no e2e tasks. |
-| Coverage gate | `workflow({scriptPath:reviewScriptPath}, {scope:'coverage'})` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Cap `FIX_CAP`. |
+| Coverage gate | `runReviewSlice('test-coverage')` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Loops to APPROVE (no round cap). |
 | Plan | `agent()` | Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group). |
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
 | Pass E2E | `agent({agentType: engineer})` | Run specs vs booted stack, drive production code to GREEN. `need-attention` → halt. |
-| Slice review | `workflow({scriptPath:reviewScriptPath}, {scope:'full'})` + `engineer` fix loop | Cap `FIX_CAP`. |
+| Slice review | `runReviewSlice('production-code')` + `engineer` fix loop | Loops to APPROVE (no round cap). |
 | PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
 
 ## Contract
 
 - **Serial within a slice.** All tasks share one branch/worktree, so two authors
   can't run at once. Parallelism is **across** slices (multiple launches).
-- **`FIX_CAP`** (default 4) caps each fix loop — the circuit breaker that replaced
-  the deleted engineer budget gate's "stop runaway" role. The gate's "bound the
-  context" role is covered by the planner's ≤3-tasks-per-group size cap.
+- **No convergence cap.** Each fix loop (coverage gate, implement re-dispatch,
+  slice review) runs until it reaches confidence to pass — review `APPROVE`, or
+  every task ticked `[x]` — not a fixed number of rounds. Aggressive `axis-reviewer`
+  recall + the fan-out's adversarial verify keep the loops convergent: only a
+  finding that survives refutation holds a gate open, and `production-code` review blocks on
+  `I:H` alone. An infra failure inside `runReviewSlice()` (e.g. the worktree won't
+  set up) returns `{ error }` and halts, so the uncapped loop can't spin on it. The
+  deleted budget gate's "bound the context" role is covered by the planner's
+  ≤3-tasks-per-group size cap.
 - **`halt()`** flips `status:in-progress` → `status:need-attention` and posts a
   comment — the only path to a human. `/implement-feature` never recovers it.
 - **Resume.** A cold restart re-reads the checklist (ticked `[x]` = done, skipped)
@@ -62,17 +71,12 @@ Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs",
   args: {
     slice: <slice-#>,
-    today: "<YYYY-MM-DD>",
-    reviewScriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs"
+    today: "<YYYY-MM-DD>"
   }
 })
 ```
 
-`today` is required — the workflow runtime has no clock. `reviewScriptPath` is
-**also required**: the child `review-slice` is resolved by **scriptPath, not
-name** — a plugin-shipped workflow is not registered as a resolvable `name:`
-(`workflow('review-slice')` throws *no workflow with that name*), and a workflow
-script has no filesystem access to derive its own directory. `implement-slice`
-calls `workflow({ scriptPath: args.reviewScriptPath }, { slice, scope })`. If the
-path is missing, `implement-slice` halts the slice to `status:need-attention` at
-Prep rather than crashing uncaught at the gate.
+`today` is required — the workflow runtime has no clock. There is no longer a
+`reviewScriptPath`: the review fan-out is inlined as `runReviewSlice()`, so there
+is no child workflow to resolve by path (and none of the v0.40 scriptPath-passing
+fragility).
