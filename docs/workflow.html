@@ -432,10 +432,19 @@
   <p class="eyebrow">harness-claude-code · workflow guide</p>
   <h1>How the workflow works</h1>
   <p class="lede">
-    A walkthrough of the three top-level commands, the eight role-based agents,
+    A walkthrough of the three top-level commands, the role-based agents,
     and the GitHub-issue lifecycle they drive together — including who talks to
     whom, where the user sits in the loop, and how every state transition is
-    recoverable because the source of truth lives on issues and labels.
+    recoverable because the source of truth lives on issues, labels, and a
+    per-slice task checklist.
+  </p>
+  <p class="lede" style="margin-top:14px">
+    <strong style="color:var(--accent)">New in v0.40</strong> — the inner slice
+    cycle (author E2E → coverage gate → implement → pass E2E → review → fix → PR)
+    no longer round-trips through GitHub labels stage by stage. It now runs
+    end-to-end inside <strong>one background <code>implement-slice</code> Workflow
+    per slice</strong>. <code>/implement-feature</code> shrank from nine stages to
+    four. See <a href="#whats-new">what changed</a>.
   </p>
 </header>
 
@@ -443,12 +452,13 @@
   <strong>Contents</strong>
   <ol>
     <li><a href="#big-picture">The big picture</a></li>
+    <li><a href="#whats-new">What changed: 0.39 → 0.40</a></li>
     <li><a href="#phases">Discovery vs. execution</a></li>
     <li><a href="#agents">The agents</a></li>
     <li><a href="#discovery-flow">Discovery: <code>/deep-dive-feature</code></a></li>
     <li><a href="#scaffold-flow">Scaffold: <code>/scaffold-project</code></a></li>
     <li><a href="#exec-flow">Execution: <code>/implement-feature</code></a></li>
-    <li><a href="#slice-review-workflow">Slice review is a workflow</a></li>
+    <li><a href="#slice-workflow">The slice runs as a workflow</a></li>
     <li><a href="#labels">Labels are the protocol</a></li>
     <li><a href="#label-flips">How labels flip</a></li>
     <li><a href="#interactions">Who talks to whom</a></li>
@@ -459,14 +469,16 @@
 <section id="big-picture">
   <h2>The big picture</h2>
   <p>
-    The harness has <strong>three top-level commands</strong> and <strong>eight role-based agents</strong>. Commands
-    are <em>orchestrators</em>: they don't write code themselves; they bring agents
-    onto a team, brief them, route messages, and dispatch one-shot sub-agents
-    against GitHub-issue state — backed by pure-shell discovery scripts
-    (<code>task-finder.sh</code> + nine per-stage helpers) that decide what's
-    eligible each pass. Every meaningful state transition is recorded as a
-    GitHub issue label flip, which means the loop can be stopped, resumed, or
-    re-run without losing track of where work is.
+    The harness has <strong>three top-level commands</strong> and a set of
+    role-based agents. Commands are <em>orchestrators</em>: they don't write code
+    themselves; they bring agents onto a team, brief them, route messages, and —
+    in execution — launch a <strong>background <code>implement-slice</code>
+    Workflow per slice</strong> against GitHub-issue state, backed by a pure-shell
+    discovery script (<code>task-finder.sh</code> + four per-stage helpers) that
+    decides what's eligible each pass. Durable state lives in three places: the
+    GitHub slice issue and its labels, the slice <em>body's</em> task checklist,
+    and the slice branch's commits — which means the loop can be stopped, resumed,
+    or re-run without losing track of where work is.
   </p>
   <div class="ascii">
 <pre>
@@ -478,19 +490,129 @@
             ┌────────────┐         ┌────────────┐                ┌──────────────┐
             │ product-   │         │ scaffold-  │                │ orchestrator │
             │  owner →   │         │  project   │                │ (task-finder │
-            │ design-    │         │ (templates │                │  .sh + agent │
-            │  lead →    │         │ + seeds    │                │  dispatch)   │
+            │ design-    │         │ (templates │                │  .sh · 4     │
+            │  lead →    │         │ + seeds    │                │  stages)     │
             │ architect  │         │  locked    │                └──────┬───────┘
-            │ + writers  │         │  tokens)   │                       │
-            └─────┬──────┘         └─────┬──────┘                       │
-                  │                      │                              │
-                  ▼                      ▼                              ▼
-       PRD + design system + ADRs   bootable stack + tokens    GitHub issues + labels
-       + surfaces + contracts       (compose up; PR opened)    drive engineer / e2e /
-       (committed on feature                                   reviewer dispatches
-        branch; PR opened)
+            │ + writers  │         │  tokens)   │                       │ Stage 1: launch
+            └─────┬──────┘         └─────┬──────┘                       ▼ (one per slice)
+                  │                      │                  ┌────────────────────────┐
+                  ▼                      ▼                  │ implement-slice Workflow│
+       PRD + design system + ADRs   bootable stack + tokens │ author E2E → coverage  │
+       + surfaces + contracts       (compose up; PR opened) │ gate → plan → implement│
+       (committed on feature                                │ → pass E2E → review →  │
+        branch; PR opened)                                  │ fix → open draft PR    │
+                                                            └───────────┬────────────┘
+                                                                        ▼
+                                                            draft PR → fix-pr / close-pr
+                                                            (the outer loop's other stages)
 </pre>
   </div>
+</section>
+
+<section id="whats-new">
+  <h2>What changed: 0.39 → 0.40</h2>
+  <p>
+    Everything in discovery (<code>/deep-dive-feature</code>,
+    <code>/scaffold-project</code>) is unchanged. The whole shift is in
+    <strong>execution</strong>. Through 0.39, <code>/implement-feature</code> was a
+    nine-stage state machine: each step of a slice's life — implement a task,
+    review it, fix it, validate E2E, review the slice, fix the slice — was its own
+    label-driven stage that dispatched a one-shot agent and then ended the pass,
+    handing control back to GitHub labels until the next pass re-discovered the
+    work. In 0.40 that entire inner cycle collapses into <strong>one background
+    <code>implement-slice</code> Workflow per slice</strong>, and the outer command
+    keeps only the four stages that genuinely need to live outside a single run.
+  </p>
+
+  <div class="phase-grid">
+    <div class="phase discovery">
+      <h3>0.39 — nine label-driven stages <span class="tag">before</span></h3>
+      <ul>
+        <li>One issue per <strong>slice</strong> + one sub-issue per <strong>task</strong>, each carrying <code>level:*</code> / <code>type:*</code> / <code>review:*</code> / <code>e2e:*</code> labels</li>
+        <li><code>task-finder.sh</code> ran <strong>nine</strong> per-stage scripts; the orchestrator round-tripped each task and slice through GitHub one stage per pass</li>
+        <li>Each lifecycle step (implement-task, review-task, fix-task, prepare-slice, review-slice, fix-slice…) was a separate orchestrator-driven dispatch</li>
+        <li>Crash recovery leaned on <strong>engineer handoff docs</strong> (a budget-gate hook + a precompact hook wrote <code>/tmp</code> handoff files)</li>
+        <li>Task state was the set of open/closed task sub-issues and their labels</li>
+        <li><code>review-slice</code> (added in 0.39.26) flipped the <code>review:*</code> label and opened the PR itself</li>
+      </ul>
+    </div>
+    <div class="phase exec">
+      <h3>0.40 — one Workflow per slice <span class="tag">after</span></h3>
+      <ul>
+        <li>One issue per <strong>slice</strong> only; tasks live as a static-ID <strong>checklist in the slice body</strong>. The retired label families are deleted</li>
+        <li><code>task-finder.sh</code> runs <strong>four</strong> stages: reconcile (0), kickoff-launch (1), fix-pr (8), close-pr (9)</li>
+        <li>Stage 1 <strong>launches <code>implement-slice.mjs</code></strong>; that one run owns author E2E → coverage gate → plan → implement → pass E2E → slice review → fix → open draft PR</li>
+        <li>Crash recovery is the slice branch's WIP commits + the durable checklist + the Workflow resume journal. A <code>FIX_CAP</code> circuit breaker replaces the budget gate; handoff docs are gone</li>
+        <li>Task state is the <code>[ ]</code>/<code>[x]</code> checklist; commit trailers carry <code>Task: &lt;static-id&gt;</code> (not <code>Refs #&lt;task#&gt;</code>)</li>
+        <li><code>review-slice</code> now <strong>posts its comment and returns the verdict</strong> — it flips no label and opens no PR; the parent <code>implement-slice</code> owns those</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>The differences that matter</h3>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:20%">Dimension</th>
+        <th style="width:38%">0.39</th>
+        <th>0.40</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="role">outer loop</td>
+        <td>9 stages, all owned by <code>/implement-feature</code></td>
+        <td>4 stages — reconcile / kickoff-launch / fix-pr / close-pr. The inner cycle is no longer the command's concern.</td>
+      </tr>
+      <tr>
+        <td class="role">inner slice cycle</td>
+        <td>spread across stages 2–7, one dispatch + label flip per pass per step</td>
+        <td>one background <code>implement-slice</code> Workflow that runs the whole cycle serially in a single run</td>
+      </tr>
+      <tr>
+        <td class="role">issues created</td>
+        <td>slice issue <em>plus</em> a typed task sub-issue per task (e2e/backend/frontend)</td>
+        <td>slice issue <strong>only</strong>; the task breakdown is an inline static-ID checklist in the slice body</td>
+      </tr>
+      <tr>
+        <td class="role">task identity</td>
+        <td>GitHub issue number; commits trail <code>Refs #&lt;task#&gt;</code></td>
+        <td>permanent static ID (<code>s42.be.1</code>); commits trail <code>Task: &lt;id&gt;</code> — never translated to an issue number</td>
+      </tr>
+      <tr>
+        <td class="role">labels</td>
+        <td><code>level:*</code>, <code>type:*</code>, <code>review:*</code>, <code>e2e:*</code> + status/merge</td>
+        <td>those four families <strong>deleted</strong>; GitHub keeps only the slice issue, the <code>status:in-progress</code> lock, the <code>status:need-attention</code> halt, and the PR / <code>merge:*</code></td>
+      </tr>
+      <tr>
+        <td class="role">E2E coverage</td>
+        <td>specs authored, then validated against a stack (no pre-implementation gate)</td>
+        <td>new <strong>coverage gate</strong> — <code>review-slice</code> scope <code>coverage</code> reviews the authored specs <em>before</em> any production code is written</td>
+      </tr>
+      <tr>
+        <td class="role">review-slice contract</td>
+        <td>flips <code>review:running</code> → <code>review:passed</code>/<code>need-fix</code> and opens the PR</td>
+        <td>posts the comment and <strong>returns</strong> the verdict; gains a <code>scope</code> arg (<code>coverage</code> | <code>full</code>); the parent owns the lock + PR</td>
+      </tr>
+      <tr>
+        <td class="role">crash recovery</td>
+        <td>engineer handoff docs (budget-gate + precompact hooks)</td>
+        <td>WIP commits + durable checklist + Workflow resume journal; <code>FIX_CAP</code> bounds runaway fix loops. Handoff hooks/skill deleted.</td>
+      </tr>
+      <tr>
+        <td class="role">reviewer agent</td>
+        <td>the primary task reviewer, dispatched per task</td>
+        <td>a single-agent <strong>fallback</strong> only, used when <code>Workflow</code> is unavailable</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px">
+    <strong>What did <em>not</em> change:</strong> labels are still the cross-pass
+    protocol for the durable state that remains; every state transition is still
+    recoverable from GitHub + git; the orchestrator still never writes code or
+    diagnoses failures (detect-and-dispatch); and <code>/loop /implement-feature
+    &lt;feature-name&gt;</code> is still the way to ship a feature unattended.
+  </p>
 </section>
 
 <section id="phases">
@@ -514,7 +636,7 @@
         titled <code>feature-lockin</code>.
       </p>
       <ul>
-        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + design system + surface/nav inventory + ADRs + implement-detail + per-entity api-contract / data-model files</li>
+        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + design system + surface/nav inventory + ADRs + implement-detail + per-entity api-contract / data-model files + runbooks</li>
         <li><code>/scaffold-project</code> — greenfield only; reads the ADRs and brings up a bootable stack, seeding the locked design tokens</li>
       </ul>
     </div>
@@ -523,16 +645,17 @@
       <p>
         Run repeatedly per feature, idempotently, against GitHub-issue state.
         The orchestrator runs <code>task-finder.sh</code> once per pass — pure
-        shell, no LLM — to find every eligible candidate across nine stages,
-        then processes the report top-to-bottom, dispatching one-shot
-        sub-agents per stage. Each stage is self-skipping and label-scoped, so
-        a single pass safely advances whatever is ready. Wrap with
-        <code>/loop</code> for unattended end-to-end shipping.
+        shell, no LLM — to find candidates across <strong>four</strong> outer
+        stages, then processes the report. Stage 1 <strong>launches one
+        background <code>implement-slice</code> Workflow per eligible slice</strong>;
+        that run owns the whole inner cycle. The other three stages reconcile
+        dead runs and handle the PR. Wrap with <code>/loop</code> for unattended
+        end-to-end shipping.
       </p>
       <ul>
-        <li><code>/implement-feature &lt;feature-name&gt;</code> drives task → slice → PR lanes</li>
-        <li>Dispatches background agents — <code>engineer</code>, <code>e2e-author</code>, <code>reviewer</code></li>
-        <li>Every dispatch is a one-shot sub-agent; nothing is held in memory between passes</li>
+        <li><code>/implement-feature &lt;feature-name&gt;</code> drives reconcile → kickoff → fix-pr → close-pr</li>
+        <li>Launches the <code>implement-slice</code> Workflow, which dispatches <code>e2e-author</code> / <code>engineer</code> and calls the <code>review-slice</code> child workflow</li>
+        <li>Across slices work runs in parallel; <em>within</em> a slice everything is serial inside its one workflow</li>
       </ul>
     </div>
   </div>
@@ -541,11 +664,15 @@
 <section id="agents">
   <h2>The agents</h2>
   <p>
-    Eight role-based subagents under <code>agents/</code>. Each one is briefed
-    by a command or a workflow skill, never by the user directly. Roles are
-    sharp on purpose: <code>product-owner</code> never writes architecture;
+    Role-based subagents under <code>agents/</code>. Each one is briefed by a
+    command, a workflow, or a workflow skill — never by the user directly. Roles
+    are sharp on purpose: <code>product-owner</code> never writes architecture;
     <code>design-lead</code> never writes code; <code>engineer</code> never
-    writes E2E specs; <code>reviewer</code> is read-only on production code.
+    writes E2E specs; <code>reviewer</code> is read-only on production code. In
+    execution the agents are no longer dispatched by <code>/implement-feature</code>
+    directly — they are dispatched <strong>by the <code>implement-slice</code>
+    Workflow</strong> (the lone exception is the <code>fix-pr</code> engineer, an
+    external-wait stage the outer loop still owns).
   </p>
   <table class="matrix">
     <thead>
@@ -573,31 +700,31 @@
         <td class="role">architect</td>
         <td class="model">opus</td>
         <td><span class="badge r">read</span></td>
-        <td>Interviews the user about technical decisions. Reads the locked surface inventory and models the app shell / nav container as a real C4 component. Composes four scoped dispatch prompts (implement-detail, ADR, api-contract, data-model). Reads PRD; never writes files.</td>
+        <td>Interviews the user about technical decisions. Reads the locked surface inventory and models the app shell / nav container as a real C4 component. Composes five scoped dispatch prompts (implement-detail, ADR, api-contract, data-model, runbooks). Reads PRD; never writes files.</td>
       </tr>
       <tr>
         <td class="role">doc-writer</td>
         <td class="model">sonnet</td>
         <td><span class="badge w">write</span></td>
-        <td>Six named instances: <code>requirement-writer</code> (Phase 1), <code>design-writer</code> (Phase 1.5), then <code>implement-detail-writer</code>, <code>adr-writer</code>, <code>api-contract-writer</code>, <code>data-model-writer</code> (Phase 2). Each writer pulls its scoped payload from the matching interviewer via <code>SendMessage</code>, then commits its artifacts.</td>
+        <td>Seven named instances: <code>requirement-writer</code> (Phase 1), <code>design-writer</code> (Phase 1.5), then <code>implement-detail-writer</code>, <code>adr-writer</code>, <code>api-contract-writer</code>, <code>data-model-writer</code>, <code>runbook-writer</code> (Phase 2). Each writer pulls its scoped payload from the matching interviewer via <code>SendMessage</code>, then commits its artifacts.</td>
       </tr>
       <tr>
         <td class="role">engineer</td>
         <td class="model">sonnet</td>
         <td><span class="badge w">write</span></td>
-        <td>Fullstack implementer. Routes by dispatch verb: <strong>implement-task</strong> (new work), <strong>fix-task</strong> / <strong>fix-slice</strong> (reviewer findings), <strong>fix-pr</strong> (CI / merge conflict). Strict outside-in TDD. Refuses <code>type:e2e</code> dispatches.</td>
+        <td>Fullstack implementer. Dispatched by the <code>implement-slice</code> Workflow with a <strong>(slice #, task IDs)</strong> pair, routed by verb: <strong>implement</strong> (named backend/frontend checklist tasks), <strong>pass-E2E</strong> (drive production code to green against a booted stack), <strong>fix-slice</strong> (review findings), <strong>fix-pr</strong> (CI / merge conflict). Reads the slice body's <code>## Tasks</code> checklist as the ledger, resumes from ticked boxes + <code>Task: &lt;id&gt;</code> WIP commits. Strict outside-in TDD. Never writes E2E specs.</td>
       </tr>
       <tr>
         <td class="role">e2e-author</td>
         <td class="model">sonnet</td>
         <td><span class="badge w">write</span></td>
-        <td>Authors and fixes Playwright E2E specs for <code>type:e2e</code> tasks. Sets up its own slice worktree, smoke-runs each touched spec, commits and pushes, flips <code>review:pending</code>.</td>
+        <td>Authors and fixes Playwright E2E specs for a slice's <strong>e2e checklist tasks</strong>, dispatched by the <code>implement-slice</code> Workflow with a (slice #, task IDs) pair. Sets up its own slice worktree, smoke-runs each touched spec, commits with <code>Task: &lt;id&gt;</code> trailers and pushes, ticks the authored boxes, posts a summary comment.</td>
       </tr>
       <tr>
         <td class="role">reviewer</td>
         <td class="model">sonnet</td>
         <td><span class="badge r">read</span></td>
-        <td>One-shot reviewer for a single <strong>task</strong>. Picks pattern-skills from the task's <code>type:*</code> label and covers both code-quality and security in one pass. Posts one structured <code># Review</code> comment and flips <code>review:running</code> → <code>review:passed</code> / <code>review:need-fix</code>. <strong>Slice</strong> review no longer dispatches this single agent — it runs as the <code>review-slice</code> fan-out workflow (<a href="#slice-review-workflow">below</a>), which tiers Sonnet for judgment and Haiku for the mechanical prep/publish agents.</td>
+        <td>Single-agent <strong>fallback</strong> reviewer for one slice — used only when the <code>review-slice</code> fan-out Workflow is unavailable in the running harness. Layers the touched-path <code>pattern-reviewer-*</code> set on the always-on <code>pattern-test-coverage</code> gate, posts one <code># Slice Review</code> comment, and <strong>returns</strong> the verdict (it flips no label and opens no PR — the calling workflow owns those). The primary path is the <code>review-slice</code> fan-out workflow (<a href="#slice-workflow">below</a>).</td>
       </tr>
       <tr>
         <td class="role">sre</td>
@@ -659,17 +786,17 @@
         <li>Orchestrator invites <code>architect</code></li>
         <li>User talks to <code>architect</code> directly</li>
         <li>User "locks decisions" explicitly</li>
-        <li>Architect composes four scoped dispatch prompts</li>
+        <li>Architect composes five scoped dispatch prompts</li>
       </ul>
     </div>
     <div class="step">
       <div class="n">STEP 10</div>
       <h4>Phase 2 publish</h4>
-      <div class="who">orchestrator + 4 writers</div>
+      <div class="who">orchestrator + 5 writers</div>
       <ul>
-        <li>Orchestrator invites four <code>doc-writer</code> instances</li>
+        <li>Orchestrator invites five <code>doc-writer</code> instances</li>
         <li>Each writer pulls its scope-appropriate payload from <code>architect</code></li>
-        <li>Implement-detail, ADRs, api-contracts, data-models are committed</li>
+        <li>Implement-detail, ADRs, api-contracts, data-models, runbooks are committed</li>
       </ul>
     </div>
     <div class="step">
@@ -722,118 +849,63 @@
 <section id="exec-flow">
   <h2>Execution — <code>/implement-feature &lt;feature-name&gt;</code></h2>
   <p>
-    One sweep through nine lifecycle stages, in order. The orchestrator runs
+    One sweep through <strong>four</strong> outer stages, in order. The
+    orchestrator runs
     <code>skills/operation-git/scripts/task-finder.sh &lt;feature-name&gt;</code>
-    once — pure shell, no LLM — to discover every eligible candidate across
-    all nine stages against ONE GitHub-state snapshot, then walks the report
-    top-to-bottom. Each stage is <strong>milestone-scoped</strong> (the script
-    filters by feature name on every <code>gh</code> query),
-    <strong>label-driven</strong> (picks up whatever has the right labels
-    right now), and <strong>self-skipping</strong> (the stage's report
+    once — pure shell, no LLM — to discover every eligible candidate across the
+    four stages against ONE GitHub-state snapshot, then walks the report
+    top-to-bottom. Each stage is <strong>milestone-scoped</strong>,
+    <strong>label-driven</strong>, and <strong>self-skipping</strong> (its report
     section reads <code>- (none)</code> when there's nothing to do). One
-    invocation = one pass — wrap with <code>/loop</code> to keep advancing
-    until the feature ships.
+    invocation = one pass — wrap with <code>/loop</code> to keep advancing until
+    the feature ships.
   </p>
   <p>
-    The orchestrator <em>does not</em> wait for backgrounded agents. Once a
-    stage dispatches its agents, the orchestrator moves on; the agents push
-    commits and flip labels asynchronously, and the next pass picks them up.
+    The command's whole job is now: <strong>reconcile</strong> dead-run locks,
+    <strong>launch</strong> a slice's Workflow, and shepherd the resulting
+    <strong>PR</strong>. The inner slice cycle — author E2E, coverage gate,
+    implement, pass E2E, review, fix — is no longer the command's concern; it
+    runs entirely inside the <code>implement-slice</code> Workflow that Stage 1
+    launches (<a href="#slice-workflow">next section</a>). The orchestrator never
+    waits for backgrounded work <em>within</em> a pass: once it launches a
+    workflow or dispatches the <code>fix-pr</code> engineer, it ends the pass; a
+    finished run re-invokes it (event-driven) and the next pass picks up what
+    moved.
   </p>
 
-  <h3>Task lane</h3>
+  <h3>The four outer stages</h3>
   <div class="lifecycle">
+    <div class="step">
+      <div class="n">0</div>
+      <h4>reconcile</h4>
+      <div class="who">lock release</div>
+      <ul>
+        <li>Runs <strong>first</strong>; launches nothing</li>
+        <li>Finds orphaned locks: a slice <code>status:in-progress</code> whose <code>implement-slice</code> Workflow died, or a draft PR <code>status:fix-in-progress</code> whose <code>fix-pr</code> engineer died</li>
+        <li>Gated by a runtime-telemetry liveness heartbeat (a fresh <code>last_seen</code> vetoes the reap) with GitHub-activity staleness as fallback</li>
+        <li>Releases the lock so a <em>fresh</em> run relaunches next pass from durable state (WIP commits + checklist + resume journal)</li>
+      </ul>
+    </div>
     <div class="step">
       <div class="n">1</div>
       <h4>kickoff-slice</h4>
-      <div class="who">label flip</div>
+      <div class="who">lock + launch</div>
       <ul>
-        <li>Picks slices with <code>level:slice</code> + <code>kind:feature</code> + <code>status:ready-to-implement</code></li>
-        <li>Skips any with open <code>Blocked by</code></li>
-        <li>Flips slice → <code>status:in-progress</code></li>
-        <li>Adds <code>status:ready-to-implement</code> on every task sub-issue</li>
+        <li>Picks <code>kind:feature</code> + <code>status:ready-to-implement</code> slices with zero open <code>Blocked by</code> and not already locked</li>
+        <li>Flips <code>status:ready-to-implement</code> → <code>status:in-progress</code> (the lock that hides the slice from the next pass)</li>
+        <li><strong>Launches <code>implement-slice.mjs</code></strong> in the background, one per slice, via the <code>Workflow</code> tool</li>
+        <li>That run owns the entire inner cycle; the orchestrator moves on</li>
       </ul>
     </div>
-    <div class="step">
-      <div class="n">2</div>
-      <h4>implement-task</h4>
-      <div class="who">dispatch</div>
-      <ul>
-        <li>Picks unblocked tasks with <code>status:ready-to-implement</code></li>
-        <li>Locks each with <code>status:in-progress</code></li>
-        <li>Dispatches <code>engineer</code> (Mode A) or <code>e2e-author</code> by <code>type:*</code></li>
-        <li>Agent commits, pushes, adds <code>review:pending</code></li>
-      </ul>
-    </div>
-    <div class="step">
-      <div class="n">3</div>
-      <h4>review-task</h4>
-      <div class="who">dispatch</div>
-      <ul>
-        <li>Picks tasks with <code>review:pending</code></li>
-        <li>Flips the gate to <code>review:running</code></li>
-        <li>Dispatches a one-shot <code>reviewer</code> per task</li>
-        <li>On <code>review:passed</code> the reviewer also closes the task; on <code>review:need-fix</code> the verdict stays</li>
-      </ul>
-    </div>
-    <div class="step">
-      <div class="n">4</div>
-      <h4>fix-task</h4>
-      <div class="who">dispatch</div>
-      <ul>
-        <li>Picks tasks with <code>review:need-fix</code> (gate not <code>review:running</code>)</li>
-        <li>Strips the <code>need-fix</code> label (the lock)</li>
-        <li>Dispatches <code>engineer</code> (Mode C) or <code>e2e-author</code></li>
-        <li>Agent fixes, pushes, re-adds <code>review:pending</code></li>
-      </ul>
-    </div>
-  </div>
-
-  <h3>Slice lane</h3>
-  <div class="lifecycle">
-    <div class="step">
-      <div class="n">5</div>
-      <h4>prepare-slice</h4>
-      <div class="who">dispatch</div>
-      <ul>
-        <li>Picks slices whose task sub-issues have all closed and have no <code>review:*</code> / <code>e2e:*</code> yet</li>
-        <li>Locks slice with <code>e2e:running</code></li>
-        <li>Dispatches <code>engineer</code> (Mode D) to run the slice's E2E specs against a live stack</li>
-        <li>On green: removes <code>e2e:running</code>, adds sticky <code>e2e:validated</code> + <code>review:pending</code> on the slice. On test-case constraint: <code>status:need-attention</code></li>
-      </ul>
-    </div>
-    <div class="step">
-      <div class="n">6</div>
-      <h4>review-slice</h4>
-      <div class="who">workflow</div>
-      <ul>
-        <li>Picks slices with <code>review:pending</code></li>
-        <li>Runs the <code>review-slice</code> fan-out workflow (<a href="#slice-review-workflow">below</a>), not a single <code>reviewer</code></li>
-        <li>On pass: workflow opens the draft PR with <code>Closes #&lt;slice-#&gt;</code> body</li>
-        <li>On fail: <code>review:need-fix</code></li>
-      </ul>
-    </div>
-    <div class="step">
-      <div class="n">7</div>
-      <h4>fix-slice</h4>
-      <div class="who">dispatch</div>
-      <ul>
-        <li>Picks slices with <code>review:need-fix</code></li>
-        <li>Dispatches <code>engineer</code> to fix findings + re-validate E2E</li>
-        <li>Re-adds <code>review:pending</code> on success</li>
-      </ul>
-    </div>
-  </div>
-
-  <h3>PR lane</h3>
-  <div class="lifecycle">
     <div class="step">
       <div class="n">8</div>
       <h4>fix-pr</h4>
       <div class="who">dispatch</div>
       <ul>
-        <li>Picks draft PRs with failing CI and/or merge conflicts (no in-flight lock)</li>
+        <li>External-wait stage: picks draft PRs with failing CI and/or merge conflicts (no in-flight lock)</li>
         <li>Locks with <code>status:fix-in-progress</code></li>
-        <li>Dispatches <code>engineer</code> (Mode B) with the scenario set</li>
+        <li>Dispatches the <code>engineer</code> (fix-pr verb) — the <em>only</em> agent the outer loop dispatches directly</li>
+        <li>Agent resolves conflict / fixes CI, pushes, strips the lock</li>
       </ul>
     </div>
     <div class="step">
@@ -841,55 +913,193 @@
       <h4>close-pr</h4>
       <div class="who">merge</div>
       <ul>
-        <li>Picks <code>MERGEABLE</code> draft PRs with all CI green and <code>merge:auto</code></li>
-        <li>Promotes draft → ready, squash-merges, deletes the branch</li>
-        <li>GitHub auto-closes the slice via the <code>Closes #&lt;slice-#&gt;</code> body</li>
-        <li><code>merge:manual</code> PRs are left for the user to merge</li>
+        <li>Processed <strong>sequentially</strong> (concurrent merges race the base branch)</li>
+        <li>Re-checks live <code>mergeable</code> + check rollup as a go/no-go gate</li>
+        <li>Promotes every mergeable draft → ready; squash-merges + deletes branch only when <code>merge:auto</code></li>
+        <li>GitHub auto-closes the slice via the PR body's <code>Closes #&lt;slice-#&gt;</code> line; <code>merge:manual</code> PRs are left for the user</li>
       </ul>
     </div>
+  </div>
+  <p style="margin-top:8px; color:var(--muted); font-size:0.9rem">
+    Stage numbers are non-contiguous (0, 1, 8, 9) on purpose — they preserve the
+    identity of the surviving stages from the old nine-stage scheme. Stages 2–7
+    (implement-task, review-task, fix-task, prepare-slice, review-slice,
+    fix-slice) were retired: their work now lives inside the slice workflow.
+  </p>
+
+  <h3>Keep advancing</h3>
+  <div class="lifecycle">
     <div class="step">
       <div class="n">LOOP</div>
-      <h4>Wrap to keep advancing</h4>
+      <h4>Event-driven, with a backstop</h4>
       <div class="who">recommended</div>
       <ul>
         <li><code>/loop /implement-feature &lt;feature-name&gt;</code></li>
-        <li>Each pass picks up whatever moved since the last pass</li>
-        <li>Backgrounded agents finish on their own schedule; a finished agent re-invokes the orchestrator, which closes that agent's tracking task by <code>owner</code> at pass entry</li>
-        <li>Resumable: the loop survives interrupts because labels are the state</li>
+        <li>A finished <code>implement-slice</code> / <code>fix-pr</code> run re-invokes the orchestrator (fast path); its tracking task is closed by <code>owner</code> at pass entry</li>
+        <li>A long <code>ScheduleWakeup</code> (≈1800s) is the backstop for dead runs, merge-driven <code>Blocked by</code> cascades, and lost sessions — not a poll</li>
+        <li>Stops only on <strong>quiescence</strong>: a pass that dispatches nothing AND has zero open tracking tasks</li>
+      </ul>
+    </div>
+    <div class="step">
+      <div class="n">HALT</div>
+      <h4><code>status:need-attention</code></h4>
+      <div class="who">user-owned</div>
+      <ul>
+        <li>The slice workflow flips this when it can't proceed without a human (e.g. an E2E spec needs rewriting, or a fix loop hits <code>FIX_CAP</code>)</li>
+        <li>The orchestrator never recovers it — never asks, never blocks, never flips it back</li>
+        <li><code>task-finder.sh</code> drops it from every stage</li>
+        <li>The user comments, then flips it back to <code>status:ready-to-implement</code> so kickoff relaunches a fresh run</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section id="slice-review-workflow">
-  <h2>Slice review is a fan-out <em>workflow</em></h2>
+<section id="slice-workflow">
+  <h2>The slice runs as a <em>workflow</em></h2>
   <p>
-    Stage 6 (<em>review-slice</em>) is the one stage that does <strong>not</strong>
-    dispatch a single sub-agent. It runs <code>workflows/review-slice.mjs</code> via
-    the <code>Workflow</code> tool — a deterministic script that spawns many agents as
-    peers in one flat pool, expressing a fan-out the two-level Agent tree can't. The
-    external contract is identical to a <code>reviewer</code> dispatch: read-only on
-    code, one <code># Slice Review</code> comment, the terminal
-    <code>review:running</code> → <code>review:passed</code> /
-    <code>review:need-fix</code> flip, and an idempotent <code>merge:manual</code> draft
-    PR on APPROVE. Internally it isolates each review dimension into its own context and
-    adversarially verifies every finding before it can block.
+    The heart of v0.40. The slice lifecycle is exactly <strong>two workflow
+    layers</strong> (<code>Workflow</code> nesting is one level deep — a child
+    calling <code>workflow()</code> throws). A workflow script spawns every
+    <code>agent()</code> as a peer in one flat pool, expressing fan-out the
+    two-level Agent tree can't. Both scripts ship with the plugin under
+    <code>workflows/</code> and are invoked by <code>scriptPath</code> against
+    <code>${CLAUDE_PLUGIN_ROOT}</code>.
   </p>
   <div class="ascii">
 <pre>
- Prep ──► Spec (fan-out) ─ dedup ─ verify ──►[ GATE ]──► Quality (fan-out) ─ dedup ─ verify ──► compose ──► Publish
-(2 agents)  pattern-reviewer-* dims         skip P2 on a   pattern-reviewer-* dims selected      (pure JS)   (1 agent)
-            + 3-lens refutation             verified I:H   by touched surface + refutation
+/loop /implement-feature &lt;feature&gt;        (outer driver: reconcile / kickoff / fix-pr / close-pr)
+  └─ Stage 1 LAUNCHES (background, one per slice):
+       implement-slice.mjs                ← TOP: owns author → implement → review → fix → PR
+          ├─ agent()  e2e-author / engineer          (generative, serial — shared worktree)
+          └─ workflow('review-slice', …)  ← CHILD: assessment fan-out (coverage gate + slice review)
+                └─ agent() ×N             (one per pattern-reviewer dimension + adversarial verify)
 </pre>
   </div>
   <p>
-    Each phase fans out, <strong>dedups, then verifies</strong> before the next phase
-    consumes it — so the gate trips on a <em>confirmed</em> blocker, never a raw one
-    (a surviving <code>I:H</code> spec finding both skips the now-pointless quality
-    audit and is, by construction, a BLOCK). Dedup and scoring
-    (<code>severity → Impact</code>, <code>(Impact, Effort) → Fix/Defer/Nit/Drop</code>,
-    <code>verdict = BLOCK iff any surviving I:H</code>) are plain deterministic JS, not
-    LLM steps.
+    The split rule: <strong>assessment work that is parallel-decomposable → a
+    fan-out child workflow; generative work that is sequential → a single
+    agent.</strong> Only the reviewer stages qualify as workflows — the author /
+    implement / pass-E2E / fix stages are TDD chains on one shared slice worktree,
+    so they can't parallelize and stay single <code>agent()</code> dispatches.
+  </p>
+
+  <h3><code>implement-slice.mjs</code> — the per-slice cycle <span style="color:var(--muted);font-size:0.8rem">(TOP)</span></h3>
+  <p>
+    One background run per slice. It owns the entire inner cycle that the old
+    nine-stage <code>/implement-feature</code> used to round-trip through GitHub
+    labels. GitHub keeps only durable, human-relevant state: the slice issue, the
+    <code>status:in-progress</code> lock (held for the whole run), the
+    <code>status:need-attention</code> halt, and the final draft PR. Task tracking
+    lives in the slice body's <code>## Tasks</code> static-ID checklist — Prep
+    parses it, and each dispatched agent ticks its boxes as it finishes.
+  </p>
+  <table class="matrix">
+    <thead>
+      <tr>
+        <th style="width:18%">Phase</th>
+        <th style="width:30%">Realization</th>
+        <th>What it does</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="role">Prep</td>
+        <td class="model">agent()</td>
+        <td>Read the slice body, parse the checklist (the resume source), resolve branch + PR metadata.</td>
+      </tr>
+      <tr>
+        <td class="role">Author E2E</td>
+        <td class="model">agent · e2e-author</td>
+        <td>One dispatch for every not-yet-<code>[x]</code> e2e task. Skipped if the slice has no e2e tasks.</td>
+      </tr>
+      <tr>
+        <td class="role">Coverage gate</td>
+        <td class="model">workflow('review-slice', coverage)</td>
+        <td><strong>New in 0.40.</strong> Static review of the authored specs vs the slice AC + non-happy-paths, <em>before</em> any production code. Loops to an <code>e2e-author</code> fix until covered. Cap <code>FIX_CAP</code>.</td>
+      </tr>
+      <tr>
+        <td class="role">Plan</td>
+        <td class="model">agent()</td>
+        <td>Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group — the size cap that replaces the deleted budget gate's "bound the context" role).</td>
+      </tr>
+      <tr>
+        <td class="role">Implement</td>
+        <td class="model">agent · engineer</td>
+        <td>Groups run <strong>serially</strong> (shared worktree). Done groups skipped (resume).</td>
+      </tr>
+      <tr>
+        <td class="role">Pass E2E</td>
+        <td class="model">agent · engineer</td>
+        <td>Run specs vs a booted stack, drive production code to GREEN. A test-case constraint → <code>halt()</code>.</td>
+      </tr>
+      <tr>
+        <td class="role">Slice review</td>
+        <td class="model">workflow('review-slice', full)</td>
+        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE. Cap <code>FIX_CAP</code>.</td>
+      </tr>
+      <tr>
+        <td class="role">PR</td>
+        <td class="model">agent()</td>
+        <td>Open the idempotent <code>merge:manual</code> draft PR (<code>Closes #&lt;slice&gt;</code>) and release the slice lock.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px">
+    <strong><code>FIX_CAP</code></strong> (default 4) caps each fix loop — the
+    circuit breaker that replaced the deleted engineer budget gate's "stop a
+    runaway loop" role. <strong><code>halt()</code></strong> flips
+    <code>status:in-progress</code> → <code>status:need-attention</code> and posts
+    a comment — the only path to a human; the outer loop never recovers it.
+    <strong>Resume</strong> is the slice branch's WIP commits (each carrying
+    <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
+    checklist + the <code>Workflow</code> resume journal. There are no handoff
+    docs.
+  </p>
+
+  <h3><code>review-slice.mjs</code> — fan-out review <span style="color:var(--muted);font-size:0.8rem">(CHILD)</span></h3>
+  <p>
+    Called inline by <code>implement-slice</code> for <strong>both</strong> the
+    pre-implementation coverage gate (<code>scope:'coverage'</code>) and the
+    post-implementation slice review (<code>scope:'full'</code>). It isolates each
+    review dimension into its own context and adversarially verifies every finding
+    before it can block.
+  </p>
+  <p>
+    <strong>The new boundary (changed in 0.40):</strong> it <strong>posts the
+    verdict comment and RETURNS the verdict object</strong> — it flips
+    <strong>no</strong> label and opens <strong>no</strong> PR. The parent
+    <code>implement-slice</code> owns the lock and the terminal draft PR.
+    Previously, when the outer <code>/loop</code> called it directly at Stage 6, it
+    flipped <code>review:running</code> → <code>review:passed</code>/<code>need-fix</code>
+    and opened the PR itself; that boundary moved up into the parent.
+  </p>
+  <div class="ascii">
+<pre>
+                          ┌─ dedup ─ verify ─┐                ┌─ dedup ─ verify ─┐
+ Prep ─► Spec (fan-out) ──┤                  ├─►[ GATE ]─► Quality (fan-out) ──┤                  ├─► compose ─► Publish
+(1–2 ag.)                 └──────────────────┘  skip-P2?                       └──────────────────┘   (code)    (1 agent)
+          pattern-reviewer-* dims              on verified  pattern-reviewer-* dims selected
+          + 3-lens refutation                  I:H spec     by touched surface + refutation
+</pre>
+  </div>
+  <p>
+    Each phase fans out, <strong>dedups, then verifies</strong> before the next
+    consumes it — so the gate decides on a <em>confirmed</em> blocker, never a raw
+    one. Dedup and scoring (<code>severity → Impact</code>, <code>(Impact, Effort)
+    → Fix/Defer/Nit/Drop</code>, <code>full verdict = BLOCK iff any surviving
+    I:H</code>) are plain deterministic JS, not LLM steps. Each dimension agent
+    reads exactly one <code>pattern-reviewer-*</code> skill <em>and</em> applies
+    that skill's per-project <code>.claude/memory/patterns/&lt;skill&gt;.md</code>
+    overlay — so dreamed rules reach the fan-out the same way they reach the
+    single-agent fallback.
+  </p>
+  <p>
+    <strong>Scope <code>coverage</code></strong> runs only the Spec-phase
+    <code>test-coverage</code> dimension over the <em>authored E2E specs</em>,
+    pre-implementation: the usual "test files are out of scope" rule
+    <strong>inverts</strong> (the specs are the deliverable), the verdict is BLOCK
+    on <em>any</em> confirmed coverage gap (not just <code>I:H</code>), and Quality
+    is skipped entirely.
   </p>
 
   <h3>Two model tiers</h3>
@@ -910,22 +1120,22 @@
       <tr>
         <td class="role">Prep</td>
         <td class="model">haiku</td>
-        <td>Read-only worktree, diff vs <code>origin/main</code>, closed sub-issues, PR-title scope, smoke hint. Pure tool-orchestration — carries no review judgment.</td>
+        <td>Read-only worktree, diff vs <code>origin/main</code>. Pure tool-orchestration — carries no review judgment.</td>
       </tr>
       <tr>
         <td class="role">Prep · surfaces</td>
         <td class="model">sonnet</td>
-        <td>Turns the raw touched paths into the surface flags that decide which dimensions run. The one judgment call in prep: a misclassified path silently drops a whole review dimension, so it keeps the stronger model (and is biased toward <code>true</code>).</td>
+        <td>Turns the raw touched paths into the surface flags that decide which dimensions run (full scope only). The one judgment call in prep: a misclassified path silently drops a whole review dimension, so it keeps the stronger model (and is biased toward <code>true</code>).</td>
       </tr>
       <tr>
         <td class="role">Spec / Quality / Verify</td>
         <td class="model">sonnet</td>
-        <td>The <code>pattern-reviewer-*</code> dimension fan-out plus the 3-lens adversarial refutation — the judgment-bearing review work. Pinned to match the single <code>reviewer</code> agent (<code>model: sonnet</code>) the workflow replaces.</td>
+        <td>The <code>pattern-reviewer-*</code> dimension fan-out plus the 3-lens adversarial refutation — the judgment-bearing review work. Pinned to match the single <code>reviewer</code> fallback agent (<code>model: sonnet</code>).</td>
       </tr>
       <tr>
         <td class="role">Publish</td>
         <td class="model">haiku</td>
-        <td>Writes the comment, runs <code>post-and-flip.sh</code>, and on APPROVE the idempotent <code>create-draft-pr.sh</code>. A pure executor — the only writes in the whole workflow.</td>
+        <td>Writes the comment, runs <code>post-comment.sh</code>, returns the verdict. A pure executor — the only write in the whole workflow.</td>
       </tr>
     </tbody>
   </table>
@@ -934,61 +1144,56 @@
 <section id="labels">
   <h2>Labels are the protocol</h2>
   <p>
-    Agents don't share memory. They share GitHub labels. Every dispatch is
-    keyed on a label combination; every terminal action is a label flip.
-    That's why the lifecycle survives crashes, context limits, and user
-    interruptions — the next pass just reads the labels and re-derives where
-    work is.
+    Agents don't share memory. They share GitHub state. The
+    <strong>cross-pass</strong> protocol is a small set of labels; the
+    <strong>within-slice</strong> task ledger is the slice body's checklist. That's
+    why the lifecycle survives crashes, context limits, and user interruptions —
+    the next pass just reads the state and re-derives where work is.
+  </p>
+  <p>
+    v0.40 deleted four whole label families. The inner slice cycle no longer
+    round-trips through labels — it runs inside one workflow — so the labels that
+    drove each inner step are gone:
+    <span class="pill level" style="text-decoration:line-through">level:*</span>
+    <span class="pill type" style="text-decoration:line-through">type:*</span>
+    <span class="pill review" style="text-decoration:line-through">review:*</span>
+    <span class="pill status" style="text-decoration:line-through">e2e:*</span>.
+    <code>level:*</code> is moot (one issue per slice now), <code>type:*</code>
+    lives in the checklist's per-task type, and <code>review:*</code> /
+    <code>e2e:*</code> became in-memory state inside the workflow.
   </p>
   <div class="labels">
     <div class="lbl-fam">
-      <h4>level:*</h4>
-      <ul>
-        <li><span class="pill level">level:slice</span> — a vertical user-visible increment</li>
-        <li><span class="pill level">level:task</span> — a single typed unit of work</li>
-      </ul>
-    </div>
-    <div class="lbl-fam">
       <h4>kind:*</h4>
       <ul>
-        <li><span class="pill kind">kind:feature</span> — full lifecycle today</li>
+        <li><span class="pill kind">kind:feature</span> — full per-slice-Workflow lifecycle today</li>
         <li><span class="pill kind">kind:bug</span> / <span class="pill kind">kind:enhancement</span> — issue-tracked but not yet looped</li>
-      </ul>
-    </div>
-    <div class="lbl-fam">
-      <h4>type:* (tasks)</h4>
-      <ul>
-        <li><span class="pill type">type:e2e</span> — Playwright, owned by <code>e2e-author</code></li>
-        <li><span class="pill type">type:backend</span> / <span class="pill type">type:frontend</span> — owned by <code>engineer</code></li>
       </ul>
     </div>
     <div class="lbl-fam">
       <h4>status:*</h4>
       <ul>
-        <li><span class="pill status">status:ready-to-review</span> — human approval gate</li>
-        <li><span class="pill status">status:ready-to-implement</span> — orchestrator picks this up</li>
-        <li><span class="pill status">status:in-progress</span> — orchestrator's lock</li>
-        <li><span class="pill status">status:fix-in-progress</span> — PR-level lock</li>
-        <li><span class="pill status">status:need-attention</span> — agent bailed; human owns the next move</li>
+        <li><span class="pill status">status:ready-to-review</span> — human approval gate on a new slice</li>
+        <li><span class="pill status">status:ready-to-implement</span> — kickoff picks this up</li>
+        <li><span class="pill status">status:in-progress</span> — the slice lock; held for the whole workflow run</li>
+        <li><span class="pill status">status:fix-in-progress</span> — PR-level lock (fix-pr)</li>
+        <li><span class="pill status">status:need-attention</span> — workflow halted; the human owns the next move</li>
       </ul>
     </div>
     <div class="lbl-fam">
-      <h4>review:*</h4>
+      <h4>merge:* / feature-lockin</h4>
       <ul>
-        <li>One gate per issue (task or slice) — covers code + security in one pass</li>
-        <li><span class="pill review">review:pending</span> — reviewer dispatch armed</li>
-        <li><span class="pill review">review:running</span> — reviewer in flight</li>
-        <li><span class="pill review">review:passed</span> / <span class="pill review">review:need-fix</span> — verdicts</li>
-        <li>fix-* skills only fire when the gate is not <code>review:running</code></li>
+        <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior (workflow opens drafts <code>merge:manual</code>)</li>
+        <li><span class="pill kind">feature-lockin</span> — the discovery PR from <code>/deep-dive-feature</code></li>
       </ul>
     </div>
     <div class="lbl-fam">
-      <h4>merge:* / e2e:* / lockin</h4>
+      <h4>The task checklist (not a label)</h4>
       <ul>
-        <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior</li>
-        <li><span class="pill status">e2e:running</span> — prepare-slice lock</li>
-        <li><span class="pill status">e2e:validated</span> — sticky; set on E2E pass, keeps prepare-slice from re-adopting</li>
-        <li><span class="pill kind">feature-lockin</span> — the discovery PR</li>
+        <li>The slice body's <code>## Tasks</code> section is the durable task ledger</li>
+        <li>Static IDs (<code>e2e.1</code>, <code>be.1</code>, <code>fe.2</code>) are permanent — never translated to issue numbers</li>
+        <li><code>[ ]</code> → <code>[x]</code> as each agent finishes; this is the resume source</li>
+        <li>Commit trailers carry <code>Task: s&lt;slice#&gt;.&lt;id&gt;</code> + <code>Refs #&lt;slice#&gt;</code></li>
       </ul>
     </div>
   </div>
@@ -997,91 +1202,32 @@
 <section id="label-flips">
   <h2>How labels flip</h2>
   <p>
-    Each lifecycle below is a state machine over GitHub labels. Read top to
-    bottom for the happy path; the orange call-outs mark the failure loops.
-    The pill on each arrow is the actor that performs the flip — an
-    orchestrator skill, a sub-agent, the human, or GitHub itself.
+    Two of the three lanes below are state machines over GitHub labels (the slice
+    issue and the draft PR). The middle lane is different: the inner cycle that
+    used to be a label machine is now a <strong>phase progression inside one
+    workflow run</strong> — no labels flip between its phases. Read top to bottom
+    for the happy path; the orange call-outs mark the failure loops. The pill on
+    each arrow is the actor that performs the step.
   </p>
   <div class="actor-legend">
     <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-issues</code>)</span>
-    <span><span class="actor agent">agent</span> dispatched sub-agent</span>
+    <span><span class="actor agent">agent</span> the <code>implement-slice</code> Workflow or a dispatched sub-agent</span>
     <span><span class="actor human">human</span> the user</span>
     <span><span class="actor github">github</span> GitHub automation (PR merge auto-closes linked issues)</span>
   </div>
 
   <div class="flows">
 
-    <!-- ============================== TASK ISSUE ============================== -->
-    <div class="flow-lane">
-      <h3>Task issue</h3>
-
-      <div class="flow-state start">(issue does not exist)</div>
-      <div class="flow-arrow">
-        <span class="actor skill">create-issues</span>
-        <span class="effect">opens issue with <code>level:task</code> + <code>kind:feature</code> + <code>type:*</code></span>
-      </div>
-      <div class="flow-state">level:task &middot; kind:feature &middot; type:{e2e|backend|frontend}</div>
-
-      <div class="flow-arrow">
-        <span class="actor skill">/implement-feature (stage 1)</span>
-        <span class="effect">parent slice promoted → cascades label to every task sub-issue</span>
-      </div>
-      <div class="flow-state">+ status:ready-to-implement</div>
-
-      <div class="flow-arrow">
-        <span class="actor skill">/implement-feature (stage 2)</span>
-        <span class="effect">picks unblocked task; dispatches <code>engineer</code> Mode A or <code>e2e-author</code></span>
-      </div>
-      <div class="flow-state">status:ready-to-implement → status:in-progress</div>
-
-      <div class="flow-arrow">
-        <span class="actor agent">engineer / e2e-author</span>
-        <span class="effect">commits + pushes; terminal step adds <code>review:pending</code></span>
-      </div>
-      <div class="flow-state">+ review:pending</div>
-
-      <div class="flow-arrow">
-        <span class="actor skill">/implement-feature (stage 3)</span>
-        <span class="effect">dispatches <code>reviewer</code></span>
-      </div>
-      <div class="flow-state">review:pending → review:running</div>
-
-      <div class="flow-arrow">
-        <span class="actor agent">reviewer</span>
-        <span class="effect">posts <code># Review</code> comment; verdict APPROVE or BLOCK</span>
-      </div>
-
-      <div class="flow-branch">
-        <div class="col approve">
-          <h5>APPROVE</h5>
-          <div class="flow-state terminal">review:passed + issue closed</div>
-        </div>
-        <div class="col block">
-          <h5>BLOCK</h5>
-          <div class="flow-state">review:running → review:need-fix</div>
-        </div>
-      </div>
-
-      <div class="flow-loop">
-        <strong>need-fix loop:</strong>
-        <span class="actor skill">/implement-feature (stage 4)</span>
-        strips <code>review:need-fix</code> and dispatches
-        <span class="actor agent">engineer Mode C / e2e-author</span>
-        to fix. After push the agent re-adds <code>review:pending</code>, looping back to
-        <em>review-task</em>.
-      </div>
-    </div>
-
     <!-- ============================== SLICE ISSUE ============================== -->
     <div class="flow-lane">
-      <h3>Slice issue</h3>
+      <h3>Slice issue (labels)</h3>
 
       <div class="flow-state start">(issue does not exist)</div>
       <div class="flow-arrow">
         <span class="actor skill">create-issues</span>
-        <span class="effect">opens issue + attaches slice branch</span>
+        <span class="effect">opens ONE issue (inline task checklist in body) + attaches slice branch</span>
       </div>
-      <div class="flow-state">level:slice &middot; kind:feature &middot; status:ready-to-review</div>
+      <div class="flow-state">kind:feature &middot; status:ready-to-review</div>
 
       <div class="flow-arrow">
         <span class="actor human">human</span>
@@ -1091,47 +1237,23 @@
 
       <div class="flow-arrow">
         <span class="actor skill">/implement-feature (stage 1)</span>
-        <span class="effect">skips if any open <code>Blocked by</code>; otherwise locks</span>
+        <span class="effect">skips if any open <code>Blocked by</code>; otherwise locks + LAUNCHES the workflow</span>
       </div>
       <div class="flow-state">status:ready-to-implement → status:in-progress</div>
 
       <div class="flow-arrow">
-        <span class="actor github">github</span>
-        <span class="effect">every task sub-issue closes (see task lane)</span>
-      </div>
-      <div class="flow-state">(all task sub-issues closed)</div>
-
-      <div class="flow-arrow">
-        <span class="actor skill">/implement-feature (stage 5)</span>
-        <span class="effect">dispatches <code>engineer</code> Mode D to run touched E2E specs</span>
-      </div>
-      <div class="flow-state">+ e2e:running</div>
-
-      <div class="flow-arrow">
-        <span class="actor agent">engineer (Mode D)</span>
-        <span class="effect">strips <code>e2e:running</code>; adds sticky <code>e2e:validated</code> + <code>review:pending</code> on green</span>
-      </div>
-      <div class="flow-state">e2e:running → e2e:validated + review:pending</div>
-
-      <div class="flow-arrow">
-        <span class="actor skill">/implement-feature (stage 6)</span>
-        <span class="effect">dispatches <code>reviewer</code></span>
-      </div>
-      <div class="flow-state">review:pending → review:running</div>
-
-      <div class="flow-arrow">
-        <span class="actor agent">review-slice workflow</span>
-        <span class="effect">fan-out review; posts <code># Slice Review</code> comment</span>
+        <span class="actor agent">implement-slice workflow</span>
+        <span class="effect">runs the whole inner cycle (middle lane) — no labels flip during it</span>
       </div>
 
       <div class="flow-branch">
         <div class="col approve">
-          <h5>APPROVE</h5>
-          <div class="flow-state">review:passed + draft PR opened (<code>merge:manual</code>)</div>
+          <h5>cycle SUCCEEDS</h5>
+          <div class="flow-state">status:in-progress removed + draft PR opened</div>
         </div>
         <div class="col block">
-          <h5>BLOCK</h5>
-          <div class="flow-state">review:running → review:need-fix</div>
+          <h5>cycle HALTS</h5>
+          <div class="flow-state attention">status:in-progress → status:need-attention</div>
         </div>
       </div>
 
@@ -1142,22 +1264,75 @@
       <div class="flow-state terminal">issue closed (slice shipped)</div>
 
       <div class="flow-loop">
-        <strong>need-fix loop:</strong>
-        <span class="actor skill">/implement-feature (stage 7)</span>
-        dispatches <span class="actor agent">engineer</span> to fix findings + re-validate the E2E suite.
-        On green the engineer re-adds <code>review:pending</code>; on test-case constraints it bails to
-        <code>status:need-attention</code> for the human to edit the spec.
+        <strong>halt recovery:</strong> <code>status:need-attention</code> is a
+        user-owned halt. The orchestrator never touches it; the human comments,
+        fixes the blocker (e.g. edits an E2E spec), then flips
+        <code>status:need-attention</code> → <code>status:ready-to-implement</code>
+        so kickoff relaunches a fresh run from the checklist + WIP commits.
+      </div>
+    </div>
+
+    <!-- ============================== INNER CYCLE ============================== -->
+    <div class="flow-lane">
+      <h3>Inside the workflow (phases)</h3>
+
+      <div class="flow-state start">launched by stage 1 (slice already locked)</div>
+      <div class="flow-arrow">
+        <span class="actor agent">Prep</span>
+        <span class="effect">parse the slice body's <code>## Tasks</code> checklist (the resume source)</span>
+      </div>
+      <div class="flow-state">Author E2E &mdash; e2e-author per e2e task</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">Coverage gate</span>
+        <span class="effect">review-slice (scope coverage) over the authored specs; fix loop ≤ <code>FIX_CAP</code></span>
+      </div>
+      <div class="flow-state">Plan &mdash; group impl tasks (≤3 / group, DAG)</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">Implement</span>
+        <span class="effect">engineer per group, <strong>serial</strong> (shared worktree); done groups skipped</span>
+      </div>
+      <div class="flow-state">Pass E2E &mdash; engineer drives specs to GREEN</div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">Slice review</span>
+        <span class="effect">review-slice (scope full); fix loop ≤ <code>FIX_CAP</code></span>
+      </div>
+
+      <div class="flow-branch">
+        <div class="col approve">
+          <h5>APPROVE</h5>
+          <div class="flow-state">PR phase → open draft PR</div>
+        </div>
+        <div class="col block">
+          <h5>can't proceed</h5>
+          <div class="flow-state attention">halt() → status:need-attention</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <span class="actor agent">PR</span>
+        <span class="effect">idempotent <code>merge:manual</code> draft (<code>Closes #&lt;slice&gt;</code>); release the lock</span>
+      </div>
+      <div class="flow-state terminal">draft PR open · lock released · run ends</div>
+
+      <div class="flow-loop">
+        <strong>resume:</strong> a SIGKILL leaves the lock set but the run gone.
+        Stage 0 reconcile releases it; the next pass relaunches a fresh workflow
+        that re-reads the checklist (ticked boxes skipped) and replays its
+        <code>agent()</code> prefix from the resume journal — no handoff docs.
       </div>
     </div>
 
     <!-- ============================== DRAFT PR ============================== -->
     <div class="flow-lane">
-      <h3>Draft slice PR</h3>
+      <h3>Draft slice PR (labels)</h3>
 
       <div class="flow-state start">(PR does not exist)</div>
       <div class="flow-arrow">
-        <span class="actor agent">review-slice workflow</span>
-        <span class="effect">opens draft PR on slice-review APPROVE; body contains <code>Closes #&lt;slice-#&gt;</code></span>
+        <span class="actor agent">implement-slice (PR phase)</span>
+        <span class="effect">opens draft PR on cycle success; body contains <code>Closes #&lt;slice-#&gt;</code></span>
       </div>
       <div class="flow-state">draft &middot; merge:manual</div>
 
@@ -1185,19 +1360,19 @@
 
       <div class="flow-arrow">
         <span class="actor skill">/implement-feature (stage 8)</span>
-        <span class="effect">locks the red PR and dispatches <code>engineer</code> Mode B</span>
+        <span class="effect">locks the red PR and dispatches <code>engineer</code> (fix-pr)</span>
       </div>
       <div class="flow-state">+ status:fix-in-progress</div>
 
       <div class="flow-arrow">
-        <span class="actor agent">engineer (Mode B)</span>
+        <span class="actor agent">engineer (fix-pr)</span>
         <span class="effect">resolves conflict / fixes CI; strips lock on success</span>
       </div>
       <div class="flow-state">status:fix-in-progress → (removed)</div>
 
       <div class="flow-arrow">
         <span class="actor skill">/implement-feature (stage 9)</span>
-        <span class="effect">scope: <code>merge:auto</code> + green + MERGEABLE</span>
+        <span class="effect">scope: green + MERGEABLE → ready; squash-merge only if <code>merge:auto</code></span>
       </div>
       <div class="flow-state terminal">draft → ready → squash-merged + branch deleted</div>
 
@@ -1213,13 +1388,12 @@
 
   <p style="margin-top:28px">
     Two cross-cutting rules emerge from the diagrams. (1) <strong>The
-    presence of a <code>review:running</code> or <code>e2e:running</code>
-    label is the in-flight lock</strong> — fix skills refuse to dispatch
-    while a reviewer or validator is still working. (2) <strong>The
-    absence of any <code>review:*</code> label is what unblocks
-    <code>fix-task</code> / <code>fix-slice</code></strong> after they
-    strip <code>need-fix</code> — the agent re-adding
-    <code>review:pending</code> is what re-enters the review loop.
+    <code>status:in-progress</code> label is the slice lock</strong> — held for the
+    entire workflow run, it hides the slice from the next kickoff pass and is what
+    the reconcile reaper releases when a run dies. (2) <strong>The inner cycle no
+    longer flips labels</strong> — review verdicts, E2E validation, and fix loops
+    are in-memory phase transitions inside one run; only the four durable
+    transitions (lock, halt, draft PR, merge) touch GitHub.
   </p>
 </section>
 
@@ -1229,9 +1403,11 @@
     Two distinct channels: a <strong>Team</strong>-shared channel for the
     interactive discovery agents (<code>product-owner</code>,
     <code>design-lead</code>, <code>architect</code>, <code>doc-writer</code>
-    instances) and a <strong>one-shot dispatch</strong> channel for the
+    instances) and a <strong>workflow dispatch</strong> channel for the
     lifecycle agents (<code>engineer</code>, <code>e2e-author</code>,
-    <code>reviewer</code>).
+    <code>review-slice</code> dimension agents) — almost all of which are now
+    dispatched <em>by the <code>implement-slice</code> Workflow</em>, not the
+    command directly.
   </p>
   <div class="lanes">
     <div class="lane">
@@ -1250,24 +1426,25 @@
         <li><code>design-lead</code> ↔ user (direct)</li>
         <li><code>design-lead</code> ↔ <code>design-writer</code> (pull payload)</li>
         <li><code>architect</code> ↔ user (direct)</li>
-        <li><code>architect</code> ↔ 4 writers (pull scoped payloads)</li>
+        <li><code>architect</code> ↔ 5 writers (pull scoped payloads)</li>
       </ul>
     </div>
     <div class="lane">
       <h4>Dispatch mode</h4>
-      <div class="when">execution (<code>/implement-feature</code> stages 1–9)</div>
+      <div class="when">execution (4-stage outer loop + the slice workflow)</div>
       <p>
-        <code>/implement-feature</code> runs <code>task-finder.sh</code> once
-        per pass to discover candidates, then issues one <code>Agent</code>
-        call per eligible unit of work. The agent runs to completion in the
-        background, makes its commits, pushes, and flips its terminal label.
-        No shared memory; no back-and-forth conversation.
+        <code>/implement-feature</code> runs <code>task-finder.sh</code> once per
+        pass, then at Stage 1 <strong>launches one <code>implement-slice</code>
+        Workflow per slice</strong>. That workflow dispatches every inner-cycle
+        agent as a background peer; the outer loop dispatches only the
+        <code>fix-pr</code> engineer. Agents run to completion, commit, push, tick
+        their checklist boxes. No shared memory.
       </p>
       <ul>
-        <li>Skill → <code>engineer</code> (one-shot, per task / slice / PR)</li>
-        <li>Skill → <code>e2e-author</code> (one-shot, per E2E task)</li>
-        <li>Skill → <code>reviewer</code> (one-shot, per task or slice)</li>
-        <li>Agent → GitHub (commits, comments, label flips)</li>
+        <li>Skill → <code>implement-slice</code> Workflow (one per slice)</li>
+        <li>Workflow → <code>e2e-author</code> / <code>engineer</code> (per task group)</li>
+        <li>Workflow → <code>review-slice</code> child workflow → N dimension agents</li>
+        <li>Skill → <code>engineer</code> fix-pr (the lone outer-loop dispatch)</li>
       </ul>
     </div>
     <div class="lane">
@@ -1307,6 +1484,7 @@
                    │  • implement-detail-writer       │ on the feature
                    │  • api-contract-writer           │ branch
                    │  • data-model-writer             │
+                   │  • runbook-writer                │
 </pre>
   </div>
 </section>
@@ -1329,12 +1507,12 @@
       </tr>
       <tr>
         <td class="role">PR review</td>
-        <td>Every workflow ends with a PR. Discovery PRs (<code>feature-lockin</code>) and scaffold PRs require a human merge. <code>merge:manual</code> slice PRs (reviewer's default) too.</td>
+        <td>Every workflow ends with a PR. Discovery PRs (<code>feature-lockin</code>) and scaffold PRs require a human merge. <code>merge:manual</code> slice PRs (the <code>implement-slice</code> workflow's default) too.</td>
         <td>Reviews, requests changes via comments, merges manually — or relabels to <code>merge:auto</code> to let <code>close-pr</code> land it.</td>
       </tr>
       <tr>
         <td class="role"><code>status:need-attention</code></td>
-        <td>Agents bail rather than guess when an E2E spec rewrite is needed or scope is ambiguous. The lifecycle stops on that slice / PR until the human clears the label.</td>
+        <td>The <code>implement-slice</code> workflow calls <code>halt()</code> rather than guess when an E2E spec rewrite is needed, scope is ambiguous, or a fix loop hits <code>FIX_CAP</code>. The lifecycle stops on that slice / PR until the human clears the label.</td>
         <td>Edits the spec / clarifies scope / removes the label so the next pass picks the work up.</td>
       </tr>
     </tbody>
