@@ -34,10 +34,15 @@ const REVIEW_SCRIPT = input.reviewScriptPath
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
-// FIX_CAP is the circuit breaker that replaces the deleted engineer budget gate's
-// "stop a runaway loop" role: each gate/review fix loop gets at most this many
-// rounds before the slice halts to a human.
-const FIX_CAP = 4
+// No convergence cap. Each gate / review / implement loop runs until it reaches
+// confidence to pass (a review APPROVE, or every task ticked [x]) rather than
+// halting to a human after a fixed number of rounds. The only halts left are
+// genuine infra failures (a child workflow that can't launch, a verdict that
+// never posted) — never "didn't converge fast enough". The reviewer fan-out is
+// tuned to surface findings aggressively, and its adversarial verify phase is what
+// keeps these loops from chasing phantom findings forever: only a finding that
+// survives refutation can hold the gate open, and `full` review blocks on I:H
+// alone, so once the real blockers are fixed the loop converges.
 
 // Subagent types — the plugin's real agents (each loads its own skill stack and
 // resumes from the slice checklist), not the default workflow dimension agent.
@@ -226,8 +231,7 @@ if (pendingE2E.length) {
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Coverage gate')
 if (e2eTasks.length && !allE2EAlreadyDone) {
-  let passed = false
-  for (let i = 0; i < FIX_CAP; i++) {
+  for (let round = 1; ; round++) {
     const r = await reviewSlice('coverage')
     if (r?.error) return halt(`E2E coverage gate could not run review-slice: ${r.error}`)
     // A set publishError means the verdict comment never reached GitHub (e.g. the
@@ -235,14 +239,13 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
     // post-comment.sh). The gate's findings would then be invisible to the fix loop —
     // halt to a human rather than loop blind or APPROVE on an unposted verdict.
     if (r?.publishError) return halt(`E2E coverage gate verdict was not posted to #${SLICE}: ${r.publishError}`)
-    if (r?.verdict === 'APPROVE') { passed = true; break }
-    if (i === FIX_CAP - 1) break
+    if (r?.verdict === 'APPROVE') break
+    log(`Coverage gate: round ${round} returned BLOCK — dispatching an e2e-author fix and re-gating.`)
     await agent(
       `Fix E2E coverage feedback on slice #${SLICE}.`,
-      { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: `coverage-fix:${i + 1}` },
+      { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: `coverage-fix:${round}` },
     )
   }
-  if (!passed) return halt(`E2E coverage gate did not converge within ${FIX_CAP} rounds`)
 } else {
   log(e2eTasks.length
     ? 'Coverage gate: all e2e tasks already marked done on entry — skipping.'
@@ -284,22 +287,22 @@ Return { groups: [{ groupId, taskIds: [...] }] } in dependency order (earliest-f
 // into Pass E2E / review (and Pass E2E is skipped entirely on e2e-less slices,
 // leaving no net). The engineer's own done-signal is the ticked `## Tasks` box,
 // so re-reading those boxes is the completion proof. A re-dispatch resumes from
-// the slice branch's WIP commits, so retrying an interrupted group is cheap.
-// FIX_CAP bounds the retries (same circuit breaker the gate / review loops use);
-// a group still unticked after that halts to a human. (A mid-run kill that throws
-// instead of returning crashes the whole run — recovered separately by the
-// reconcile reaper relaunching implement-slice, whose Prep re-reads the live
-// checklist. This loop covers the silent partial-completion case.)
+// the slice branch's WIP commits, so retrying an interrupted group is cheap, and
+// the loop re-dispatches until every task in the group is ticked — no retry cap.
+// (A mid-run kill that throws instead of returning crashes the whole run —
+// recovered separately by the reconcile reaper relaunching implement-slice, whose
+// Prep re-reads the live checklist. This loop covers the silent partial-completion
+// case.)
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Implement')
 for (const g of groups) {
   let todo = g.taskIds.filter(id => !done.has(id))
   if (!todo.length) { log(`Implement: group ${g.groupId} already done — skipping.`); continue }
-  for (let attempt = 0; attempt < FIX_CAP; attempt++) {
+  for (let attempt = 1; todo.length; attempt++) {
     const ids = todo.join(',')
     await agent(
       `Implement slice #${SLICE} tasks ${ids}.`,
-      { agentType: ENGINEER, phase: 'Implement', label: attempt ? `implement:${ids}:retry${attempt}` : `implement:${ids}` },
+      { agentType: ENGINEER, phase: 'Implement', label: attempt > 1 ? `implement:${ids}:retry${attempt - 1}` : `implement:${ids}` },
     )
     const check = await agent(
       `Read slice #${SLICE} and report which of these tasks are NOT yet done. Do NOT edit code, push, or flip labels.
@@ -314,11 +317,9 @@ Return openIds = the subset of [${ids}] whose checkbox is still \`[ ]\` (empty a
     const open = check ? todo.filter(id => check.openIds.includes(id)) : todo
     todo.filter(id => !open.includes(id)).forEach(id => done.add(id))
     todo = open
-    if (!todo.length) break
-    log(`Implement: group ${g.groupId} left ${todo.join(',')} unticked after dispatch ${attempt + 1}/${FIX_CAP} — re-dispatching the remainder.`)
+    if (todo.length)
+      log(`Implement: group ${g.groupId} left ${todo.join(',')} unticked after dispatch ${attempt} — re-dispatching the remainder.`)
   }
-  if (todo.length)
-    return halt(`Implement: group ${g.groupId} tasks ${todo.join(',')} never reached [x] after ${FIX_CAP} engineer dispatches — likely repeated mid-run termination (memory pressure). A human should inspect the slice branch's WIP commits and finish or re-scope these tasks.`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,22 +343,20 @@ if (e2eTasks.length) {
 // to an engineer fix-slice until APPROVE.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Slice review')
-let reviewPassed = false
-for (let i = 0; i < FIX_CAP; i++) {
+for (let round = 1; ; round++) {
   const r = await reviewSlice('full')
   if (r?.error) return halt(`slice review could not run review-slice: ${r.error}`)
   // Unposted verdict (see the coverage-gate note above): the findings never reached
   // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
   // "see the # Slice Review comment" body points at a comment that doesn't exist.
   if (r?.publishError) return halt(`slice review verdict was not posted to #${SLICE}: ${r.publishError}`)
-  if (r?.verdict === 'APPROVE') { reviewPassed = true; break }
-  if (i === FIX_CAP - 1) break
+  if (r?.verdict === 'APPROVE') break
+  log(`Slice review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
   await agent(
     `Fix the review feedback on slice #${SLICE}.`,
-    { agentType: ENGINEER, phase: 'Slice review', label: `fix:${i + 1}` },
+    { agentType: ENGINEER, phase: 'Slice review', label: `fix:${round}` },
   )
 }
-if (!reviewPassed) return halt(`slice review did not converge within ${FIX_CAP} rounds`)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE G (terminal): open the idempotent draft PR and RELEASE the slice lock.

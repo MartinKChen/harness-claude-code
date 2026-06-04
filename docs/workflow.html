@@ -542,7 +542,7 @@
         <li>One issue per <strong>slice</strong> only; tasks live as a static-ID <strong>checklist in the slice body</strong>. The retired label families are deleted</li>
         <li><code>task-finder.sh</code> runs <strong>four</strong> stages: reconcile (0), kickoff-launch (1), fix-pr (8), close-pr (9)</li>
         <li>Stage 1 <strong>launches <code>implement-slice.mjs</code></strong>; that one run owns author E2E → coverage gate → plan → implement → pass E2E → slice review → fix → open draft PR</li>
-        <li>Crash recovery is the slice branch's WIP commits + the durable checklist + the Workflow resume journal. A <code>FIX_CAP</code> circuit breaker replaces the budget gate; handoff docs are gone</li>
+        <li>Crash recovery is the slice branch's WIP commits + the durable checklist + the Workflow resume journal. Fix loops are uncapped (loop to confidence-to-pass); the budget gate and handoff docs are gone</li>
         <li>Task state is the <code>[ ]</code>/<code>[x]</code> checklist; commit trailers carry <code>Task: &lt;static-id&gt;</code> (not <code>Refs #&lt;task#&gt;</code>)</li>
         <li><code>review-slice</code> now <strong>posts its comment and returns the verdict</strong> — it flips no label and opens no PR; the parent <code>implement-slice</code> owns those</li>
       </ul>
@@ -597,7 +597,7 @@
       <tr>
         <td class="role">crash recovery</td>
         <td>engineer handoff docs (budget-gate + precompact hooks)</td>
-        <td>WIP commits + durable checklist + Workflow resume journal; <code>FIX_CAP</code> bounds runaway fix loops. Handoff hooks/skill deleted.</td>
+        <td>WIP commits + durable checklist + Workflow resume journal; fix loops are uncapped (loop to confidence-to-pass), kept convergent by aggressive-recall review + adversarial verify. Handoff hooks/skill deleted.</td>
       </tr>
       <tr>
         <td class="role">reviewer agent</td>
@@ -945,7 +945,7 @@
       <h4><code>status:need-attention</code></h4>
       <div class="who">user-owned</div>
       <ul>
-        <li>The slice workflow flips this when it can't proceed without a human (e.g. an E2E spec needs rewriting, or a fix loop hits <code>FIX_CAP</code>)</li>
+        <li>The slice workflow flips this when it can't proceed without a human (e.g. an E2E spec needs rewriting, or a child review-slice workflow / verdict post fails to run)</li>
         <li>The orchestrator never recovers it — never asks, never blocks, never flips it back</li>
         <li><code>task-finder.sh</code> drops it from every stage</li>
         <li>The user comments, then flips it back to <code>status:ready-to-implement</code> so kickoff relaunches a fresh run</li>
@@ -1015,7 +1015,7 @@
       <tr>
         <td class="role">Coverage gate</td>
         <td class="model">workflow('review-slice', coverage)</td>
-        <td><strong>New in 0.40.</strong> Static review of the authored specs vs the slice AC + non-happy-paths, <em>before</em> any production code. Loops to an <code>e2e-author</code> fix until covered. Cap <code>FIX_CAP</code>.</td>
+        <td><strong>New in 0.40.</strong> Static review of the authored specs vs the slice AC + non-happy-paths, <em>before</em> any production code. Loops to an <code>e2e-author</code> fix until covered (no round cap).</td>
       </tr>
       <tr>
         <td class="role">Plan</td>
@@ -1035,7 +1035,7 @@
       <tr>
         <td class="role">Slice review</td>
         <td class="model">workflow('review-slice', full)</td>
-        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE. Cap <code>FIX_CAP</code>.</td>
+        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE (no round cap).</td>
       </tr>
       <tr>
         <td class="role">PR</td>
@@ -1045,9 +1045,13 @@
     </tbody>
   </table>
   <p style="margin-top:12px">
-    <strong><code>FIX_CAP</code></strong> (default 4) caps each fix loop — the
-    circuit breaker that replaced the deleted engineer budget gate's "stop a
-    runaway loop" role. <strong><code>halt()</code></strong> flips
+    <strong>Fix loops are uncapped</strong> — each (coverage gate, implement
+    re-dispatch, slice review) loops until it reaches confidence to pass (review
+    <code>APPROVE</code>, or every task ticked <code>[x]</code>). Aggressive
+    reviewer recall plus the fan-out's adversarial verify keep them convergent:
+    only a finding that survives refutation holds a gate open, and a
+    <code>full</code> review blocks on <code>I:H</code> alone.
+    <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
     a comment — the only path to a human; the outer loop never recovers it.
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
@@ -1285,7 +1289,7 @@
 
       <div class="flow-arrow">
         <span class="actor agent">Coverage gate</span>
-        <span class="effect">review-slice (scope coverage) over the authored specs; fix loop ≤ <code>FIX_CAP</code></span>
+        <span class="effect">review-slice (scope coverage) over the authored specs; fix loop to APPROVE (uncapped)</span>
       </div>
       <div class="flow-state">Plan &mdash; group impl tasks (≤3 / group, DAG)</div>
 
@@ -1297,7 +1301,7 @@
 
       <div class="flow-arrow">
         <span class="actor agent">Slice review</span>
-        <span class="effect">review-slice (scope full); fix loop ≤ <code>FIX_CAP</code></span>
+        <span class="effect">review-slice (scope full); fix loop to APPROVE (uncapped)</span>
       </div>
 
       <div class="flow-branch">
@@ -1512,7 +1516,7 @@
       </tr>
       <tr>
         <td class="role"><code>status:need-attention</code></td>
-        <td>The <code>implement-slice</code> workflow calls <code>halt()</code> rather than guess when an E2E spec rewrite is needed, scope is ambiguous, or a fix loop hits <code>FIX_CAP</code>. The lifecycle stops on that slice / PR until the human clears the label.</td>
+        <td>The <code>implement-slice</code> workflow calls <code>halt()</code> rather than guess when an E2E spec rewrite is needed, scope is ambiguous, or an infra step fails (a child review-slice workflow can't launch, or a verdict can't be posted). Fix loops themselves are uncapped — they loop to confidence-to-pass rather than halting. The lifecycle stops on that slice / PR until the human clears the label.</td>
         <td>Edits the spec / clarifies scope / removes the label so the next pass picks the work up.</td>
       </tr>
     </tbody>

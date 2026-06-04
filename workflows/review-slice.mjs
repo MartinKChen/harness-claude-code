@@ -338,7 +338,7 @@ const diffCtx = `Review the slice branch \`${prep.sliceBranch}\` checked out REA
 // BEFORE any production code exists — so the usual "test files are out of scope"
 // rule inverts. The gate judges whether the specs cover every slice AC + the
 // pattern-mandated non-happy-paths, not implemented behavior.
-const COVERAGE_FRAMING = `This is a PRE-IMPLEMENTATION E2E coverage gate. The E2E spec files authored on this branch ARE the artifact under review — they are IN scope (the usual "test files are out of scope" rule is INVERTED here). There is no production code yet; do NOT report on implementation. Judge ONLY whether the authored specs cover, through the UI, every Acceptance Criterion (EARS) and Gherkin scenario in the slice #${SLICE} body, PLUS the non-happy-paths the catalogue mandates (boundary, validation error, empty, auth/permission, idempotency where applicable). A "finding" is a MISSING or INADEQUATE scenario — cite the spec file:line (or note its absence) and name the uncovered AC/scenario.`
+const COVERAGE_FRAMING = `This is a PRE-IMPLEMENTATION E2E coverage gate. The E2E spec files authored on this branch ARE the artifact under review — they are IN scope (the usual "test files are out of scope" rule is INVERTED here). There is no production code yet; do NOT report on implementation. Judge ONLY whether the authored specs cover, through the UI, every Acceptance Criterion (EARS) and Gherkin scenario in the slice #${SLICE} body, PLUS the non-happy-paths the catalogue mandates (boundary, validation error, empty, auth/permission, idempotency where applicable). A "finding" is a MISSING or INADEQUATE scenario — cite the spec file:line (or note its absence) and name the uncovered AC/scenario. Be exhaustive: enumerate EVERY uncovered or weakly-covered AC and non-happy-path, not just the first gap you spot — maximum recall is the goal.`
 
 // Shared prompt builder for a single review dimension.
 function dimensionPrompt(dim) {
@@ -355,12 +355,12 @@ function dimensionPrompt(dim) {
   const overlayRule = ` **Memory overlay.** Before grading, check whether \`.claude/memory/patterns/<skill>.md\` exists in the repo for ${overlaySkills.map(s => `\`${s}\``).join(' or ')}. If any does, also read \`skills/memory-convention/SKILL.md\` and apply that overlay additively on top of the baseline catalogue (sharpened triggers, project-specific carve-outs, new rules, pinned BAD/GOOD) per the precedence rules there. If none exists, skip — there is nothing to apply.`
   const scopeRule = SCOPE === 'coverage'
     ? `\n\n${COVERAGE_FRAMING}`
-    : ` Zero findings is a valid and common result — never invent findings to look thorough. Test files are out of scope where the skill says so.`
+    : ` Be AGGRESSIVE and exhaustive: walk the ENTIRE catalogue against EVERY changed hunk and surface every genuine issue you can find — do not stop at the first few, do not self-censor a borderline call. Maximum recall is the goal this run. But recall is not invention: if after an exhaustive pass the diff is genuinely clean, zero findings is a valid and correct result — never manufacture findings to look thorough. Test files are out of scope where the skill says so.`
   return `${diffCtx}
 
 You are applying ONE review dimension and nothing else. Read \`skills/${dim.skill}/SKILL.md\` and apply ONLY that catalogue to the diff.${extra}${overlayRule}
 
-Honor that skill's Pre-Report Gate and confidence bar (>80% confidence; cite exact file:line; describe the concrete failure mode; read surrounding context before reporting; do not inflate severity).${scopeRule}
+Keep that skill's reporting SHAPE — cite an exact file:line, describe the concrete failure mode, read the surrounding context before reporting, and set severity strictly by the catalogue (never inflate). But LOWER the reporting threshold: a separate adversarial verifier independently refutes every finding downstream and drops anything unproven, so your job here is recall, not precision. Report any plausible, evidence-backed issue rather than suppressing it to stay above a confidence bar — when genuinely in doubt, REPORT it and let verification decide. The only hard rule is honesty: every finding must point at code that actually exists; cite real file:line and a real failure mode, never fabricate.${scopeRule}
 
 For each real finding return: title (one line, NO leading #N), severity (CRITICAL/HIGH/MEDIUM/LOW per the catalogue), effort (L/M/H — your judgement of cost-to-fix-now), file (path:line), impactStatement, effortStatement, fix, lang, and BAD/GOOD snippets. Set dimension="${dim.key}".`
 }

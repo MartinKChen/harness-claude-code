@@ -32,20 +32,24 @@ agent ticks its boxes as it finishes.
 |-------|-------------|-------|
 | Prep | `agent()` | Read the slice body, parse the checklist (the resume source), resolve branch + PR metadata. |
 | Author E2E | `agent({agentType: e2e-author})` | One dispatch for every not-yet-`[x]` e2e task. Skipped if no e2e tasks. |
-| Coverage gate | `workflow({scriptPath:reviewScriptPath}, {scope:'coverage'})` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Cap `FIX_CAP`. |
+| Coverage gate | `workflow({scriptPath:reviewScriptPath}, {scope:'coverage'})` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Loops to APPROVE (no round cap). |
 | Plan | `agent()` | Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group). |
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
 | Pass E2E | `agent({agentType: engineer})` | Run specs vs booted stack, drive production code to GREEN. `need-attention` → halt. |
-| Slice review | `workflow({scriptPath:reviewScriptPath}, {scope:'full'})` + `engineer` fix loop | Cap `FIX_CAP`. |
+| Slice review | `workflow({scriptPath:reviewScriptPath}, {scope:'full'})` + `engineer` fix loop | Loops to APPROVE (no round cap). |
 | PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
 
 ## Contract
 
 - **Serial within a slice.** All tasks share one branch/worktree, so two authors
   can't run at once. Parallelism is **across** slices (multiple launches).
-- **`FIX_CAP`** (default 4) caps each fix loop — the circuit breaker that replaced
-  the deleted engineer budget gate's "stop runaway" role. The gate's "bound the
-  context" role is covered by the planner's ≤3-tasks-per-group size cap.
+- **No convergence cap.** Each fix loop (coverage gate, implement re-dispatch,
+  slice review) runs until it reaches confidence to pass — review `APPROVE`, or
+  every task ticked `[x]` — not a fixed number of rounds. Aggressive reviewer
+  recall + the fan-out's adversarial verify keep the loops convergent: only a
+  finding that survives refutation holds a gate open, and `full` review blocks on
+  `I:H` alone. The deleted budget gate's "bound the context" role is covered by the
+  planner's ≤3-tasks-per-group size cap.
 - **`halt()`** flips `status:in-progress` → `status:need-attention` and posts a
   comment — the only path to a human. `/implement-feature` never recovers it.
 - **Resume.** A cold restart re-reads the checklist (ticked `[x]` = done, skipped)

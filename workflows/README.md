@@ -29,14 +29,14 @@ One background run per slice, launched by `/implement-feature` Stage 1 after it 
 |-------|--------------|-------------|
 | **Prep** | One agent reads the slice body, parses the `## Tasks` checklist (the durable task ledger), resolves the branch + PR metadata. | `agent()` |
 | **Author E2E** | One `e2e-author` dispatch for every not-yet-`[x]` e2e task. | `agent({agentType: e2e-author})` |
-| **Coverage gate** | `review-slice` (scope `coverage`) over the authored specs, looping to an `e2e-author` fix until the specs cover every AC + non-happy-path. Cap `FIX_CAP`. | `workflow({scriptPath})` + `agent()` |
+| **Coverage gate** | `review-slice` (scope `coverage`) over the authored specs, looping to an `e2e-author` fix until the specs cover every AC + non-happy-path. No round cap — loops to APPROVE. | `workflow({scriptPath})` + `agent()` |
 | **Plan** | One planner groups the implementation tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks / group). | `agent()` |
 | **Implement** | Groups run **serially** (shared worktree); each is one `engineer` dispatch. Done groups are skipped (resume). | `agent({agentType: engineer})` |
 | **Pass E2E** | One `engineer` runs the E2E specs vs a booted stack and drives production code to GREEN. `need-attention` → halt. | `agent({agentType: engineer})` |
-| **Slice review** | `review-slice` (scope `full`) looping to an `engineer` fix-slice until APPROVE. Cap `FIX_CAP`. | `workflow({scriptPath})` + `agent()` |
+| **Slice review** | `review-slice` (scope `full`) looping to an `engineer` fix-slice until APPROVE. No round cap. | `workflow({scriptPath})` + `agent()` |
 | **PR** | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). The slice stays locked until the PR merges. | `agent()` |
 
-- **`FIX_CAP`** (default 4) is the circuit breaker that replaces the deleted engineer budget gate's "stop a runaway loop" role. The deleted gate's "bound the context" role is covered by the planner's ≤3-tasks-per-group size cap + small-task scoping.
+- **No convergence cap.** Every fix loop (coverage gate, implement re-dispatch, slice review) runs until it reaches confidence to pass — review `APPROVE`, or every task ticked `[x]` — rather than halting after a fixed number of rounds. The reviewer fan-out is tuned for aggressive recall, and its adversarial verify phase is what keeps the loops convergent: only a finding that survives refutation holds a gate open, and `full` review blocks on `I:H` alone, so once the real blockers are fixed the loop ends. The deleted engineer budget gate's "bound the context" role is covered by the planner's ≤3-tasks-per-group size cap + small-task scoping.
 - **`halt()`** flips `status:in-progress` → `status:need-attention` and posts a comment — the only path to a human. The outer `/loop` never recovers it; the user does.
 - **Resume.** A cold restart re-reads the checklist (durable: ticked `[x]` boxes = done tasks, skipped) in Prep, and the `Workflow` resume journal replays unchanged `agent()` prefixes. No handoff docs.
 
@@ -100,5 +100,5 @@ Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs", ar
 
 ### Tuning knobs (top of the scripts)
 
-- `implement-slice.mjs`: `FIX_CAP` (gate/review fix-loop rounds before halt) and the planner's ≤3-tasks-per-group size cap (in the Plan prompt).
+- `implement-slice.mjs`: the planner's ≤3-tasks-per-group size cap (in the Plan prompt). Fix loops are uncapped (loop to APPROVE / all-ticked); only infra failures `halt()`.
 - `review-slice.mjs`: `DIMENSIONS` (the catalogue; each row's `phase` + `applies(surfaces)`), `VERIFY_LENSES` (skeptic lenses + survival threshold `>= 2`), and the dedup `jaccard >= 0.5` threshold.
