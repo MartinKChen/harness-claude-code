@@ -113,6 +113,17 @@ const SIDE_EFFECT = {
   properties: { ok: { type: 'boolean' }, prNumber: { type: ['integer', 'null'] }, error: { type: ['string', 'null'] } },
   required: ['ok', 'prNumber', 'error'],
 }
+// Returned by the post-Implement completion check: the queried task ids whose
+// `## Tasks` checkbox is still `[ ]` (an engineer killed mid-run leaves its tasks
+// only partially ticked). Empty array = the whole group is done.
+const COMPLETION = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    openIds: { type: 'array', items: { type: 'string' }, description: 'subset of the queried ids whose checkbox is still [ ] (not yet [x])' },
+  },
+  required: ['openIds'],
+}
 
 // ── halt(): the only path to a human ────────────────────────────────────────────
 // Flip the slice to status:need-attention (the durable, user-owned halt) and post
@@ -252,17 +263,49 @@ Return { groups: [{ groupId, taskIds: [...] }] } in dependency order (earliest-f
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE D: Implement — groups run SERIALLY (all tasks share one slice worktree,
 // so two authors can't run at once). Skip a group whose tasks are all done.
+//
+// Dispatch → VERIFY against the durable checklist → re-dispatch the remainder.
+// An engineer killed mid-run (memory pressure) returns control here with its
+// tasks only partially ticked; an `await agent()` that simply RETURNS is not
+// proof the work finished — trusting it blindly would carry an unfinished slice
+// into Pass E2E / review (and Pass E2E is skipped entirely on e2e-less slices,
+// leaving no net). The engineer's own done-signal is the ticked `## Tasks` box,
+// so re-reading those boxes is the completion proof. A re-dispatch resumes from
+// the slice branch's WIP commits, so retrying an interrupted group is cheap.
+// FIX_CAP bounds the retries (same circuit breaker the gate / review loops use);
+// a group still unticked after that halts to a human. (A mid-run kill that throws
+// instead of returning crashes the whole run — recovered separately by the
+// reconcile reaper relaunching implement-slice, whose Prep re-reads the live
+// checklist. This loop covers the silent partial-completion case.)
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Implement')
 for (const g of groups) {
-  const todo = g.taskIds.filter(id => !done.has(id))
+  let todo = g.taskIds.filter(id => !done.has(id))
   if (!todo.length) { log(`Implement: group ${g.groupId} already done — skipping.`); continue }
-  const ids = todo.join(',')
-  await agent(
-    `Implement slice #${SLICE} tasks ${ids}.`,
-    { agentType: ENGINEER, phase: 'Implement', label: `implement:${ids}` },
-  )
-  todo.forEach(id => done.add(id))
+  for (let attempt = 0; attempt < FIX_CAP; attempt++) {
+    const ids = todo.join(',')
+    await agent(
+      `Implement slice #${SLICE} tasks ${ids}.`,
+      { agentType: ENGINEER, phase: 'Implement', label: attempt ? `implement:${ids}:retry${attempt}` : `implement:${ids}` },
+    )
+    const check = await agent(
+      `Read slice #${SLICE} and report which of these tasks are NOT yet done. Do NOT edit code, push, or flip labels.
+Steps:
+1. \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,body\`.
+2. Parse the \`## Tasks\` checklist. For each id in [${ids}], a box ticked \`[x]\` is DONE; \`[ ]\` is still open.
+Return openIds = the subset of [${ids}] whose checkbox is still \`[ ]\` (empty array if every one is ticked).`,
+      { phase: 'Implement', label: `verify:${ids}`, schema: COMPLETION, model: 'haiku' },
+    )
+    // A missing / garbled verification keeps the whole group open (re-dispatch)
+    // rather than falsely advancing on an unconfirmed result.
+    const open = check ? todo.filter(id => check.openIds.includes(id)) : todo
+    todo.filter(id => !open.includes(id)).forEach(id => done.add(id))
+    todo = open
+    if (!todo.length) break
+    log(`Implement: group ${g.groupId} left ${todo.join(',')} unticked after dispatch ${attempt + 1}/${FIX_CAP} — re-dispatching the remainder.`)
+  }
+  if (todo.length)
+    return halt(`Implement: group ${g.groupId} tasks ${todo.join(',')} never reached [x] after ${FIX_CAP} engineer dispatches — likely repeated mid-run termination (memory pressure). A human should inspect the slice branch's WIP commits and finish or re-scope these tasks.`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
