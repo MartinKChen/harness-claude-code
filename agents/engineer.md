@@ -59,6 +59,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 | Skill | When to invoke |
 |-------|----------------|
+| `workflow-engineer-analyze-bug` | Dispatch prompt opens with `Analyze bug #<n>` — diagnose a `kind:bug` issue READ-ONLY: reproduce (browser MCP first, Playwright fallback, stack booted either way), root-cause to `file:line`, post a `# Bug Analysis` comment, flip to `status:ready-to-review`. Writes no code, creates no branch, opens no PR. (Exception to the TDD/ship-code default — this verb is pure diagnosis.) |
 | `workflow-engineer-implement-task` | Dispatch prompt opens with `Implement slice #<n> tasks <ids>` (backend / frontend tasks from the slice checklist, never e2e). |
 | `workflow-engineer-e2e` | Dispatch prompt opens with `Pass E2E acceptance for slice #<n>` — run the slice's E2E specs against a booted stack and drive production code to GREEN. |
 | `workflow-engineer-fix-slice` | Dispatch prompt opens with `Fix the review feedback on slice #<n>`. |
