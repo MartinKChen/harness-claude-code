@@ -192,6 +192,16 @@ const done = new Set(prep.tasks.filter(t => t.done).map(t => t.id))
 const e2eTasks = prep.tasks.filter(t => t.type === 'e2e')
 const implTasks = prep.tasks.filter(t => t.type !== 'e2e')
 
+// Snapshot the E2E coverage state from the durable checklist BEFORE Phase A
+// authoring mutates `done`. The coverage gate (Phase B) is bypassed when EITHER:
+//   1. the slice has no e2e tasks (nothing to cover), or
+//   2. every e2e task was already ticked [x] on entry — a prior run already
+//      authored the specs AND passed the gate, so re-gating is redundant.
+// Computed here (not inline at Phase B) because Phase A adds freshly-authored
+// ids to `done`; reading it there would make condition 2 spuriously true the
+// moment brand-new specs are written, skipping the gate that should vet them.
+const allE2EAlreadyDone = e2eTasks.length > 0 && e2eTasks.every(t => done.has(t.id))
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE A: Author E2E — one e2e-author dispatch for every not-yet-authored e2e task.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,10 +221,11 @@ if (pendingE2E.length) {
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE B: Coverage gate — review-slice (scope:coverage) as a CHILD workflow,
 // looping to an e2e-author fix until the specs cover every AC + non-happy-path.
-// Skipped when the slice has no e2e tasks (nothing to gate).
+// Bypassed when the slice has no e2e tasks (nothing to gate) OR every e2e task
+// was already marked done on entry (a prior run already passed this gate).
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Coverage gate')
-if (e2eTasks.length) {
+if (e2eTasks.length && !allE2EAlreadyDone) {
   let passed = false
   for (let i = 0; i < FIX_CAP; i++) {
     const r = await reviewSlice('coverage')
@@ -233,7 +244,9 @@ if (e2eTasks.length) {
   }
   if (!passed) return halt(`E2E coverage gate did not converge within ${FIX_CAP} rounds`)
 } else {
-  log('Coverage gate: no e2e tasks — skipping.')
+  log(e2eTasks.length
+    ? 'Coverage gate: all e2e tasks already marked done on entry — skipping.'
+    : 'Coverage gate: no e2e tasks — skipping.')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
