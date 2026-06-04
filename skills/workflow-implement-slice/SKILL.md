@@ -32,11 +32,11 @@ agent ticks its boxes as it finishes.
 |-------|-------------|-------|
 | Prep | `agent()` | Read the slice body, parse the checklist (the resume source), resolve branch + PR metadata. |
 | Author E2E | `agent({agentType: e2e-author})` | One dispatch for every not-yet-`[x]` e2e task. Skipped if no e2e tasks. |
-| Coverage gate | `workflow('review-slice', {scope:'coverage'})` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Cap `FIX_CAP`. |
+| Coverage gate | `workflow({scriptPath:reviewScriptPath}, {scope:'coverage'})` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Cap `FIX_CAP`. |
 | Plan | `agent()` | Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group). |
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
 | Pass E2E | `agent({agentType: engineer})` | Run specs vs booted stack, drive production code to GREEN. `need-attention` → halt. |
-| Slice review | `workflow('review-slice', {scope:'full'})` + `engineer` fix loop | Cap `FIX_CAP`. |
+| Slice review | `workflow({scriptPath:reviewScriptPath}, {scope:'full'})` + `engineer` fix loop | Cap `FIX_CAP`. |
 | PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
 
 ## Contract
@@ -60,9 +60,19 @@ agent ticks its boxes as it finishes.
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs",
-  args: { slice: <slice-#>, today: "<YYYY-MM-DD>" }
+  args: {
+    slice: <slice-#>,
+    today: "<YYYY-MM-DD>",
+    reviewScriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs"
+  }
 })
 ```
 
-`today` is required — the workflow runtime has no clock. The child
-`workflow('review-slice', …)` is resolved by `name:` within the same run.
+`today` is required — the workflow runtime has no clock. `reviewScriptPath` is
+**also required**: the child `review-slice` is resolved by **scriptPath, not
+name** — a plugin-shipped workflow is not registered as a resolvable `name:`
+(`workflow('review-slice')` throws *no workflow with that name*), and a workflow
+script has no filesystem access to derive its own directory. `implement-slice`
+calls `workflow({ scriptPath: args.reviewScriptPath }, { slice, scope })`. If the
+path is missing, `implement-slice` halts the slice to `status:need-attention` at
+Prep rather than crashing uncaught at the gate.

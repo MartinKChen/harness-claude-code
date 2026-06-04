@@ -106,7 +106,9 @@ For each eligible slice `#<slice-#>` (line format: `- #<slice-#> | "<title>"`):
 3. **`Workflow` + `TaskUpdate(owner)` in the same batched response**:
    - **Tool**: `Workflow`
    - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs` (plugin-shipped, not a consuming-project `.claude/workflows/` entry — resolve `$CLAUDE_PLUGIN_ROOT` from the environment the same way the plugin's hooks do, then pass the absolute path)
-   - `args`: `{ "slice": <slice-#>, "today": "<YYYY-MM-DD>" }` (pass today's date explicitly — the workflow runtime has no clock; it stamps the PR body's review-verdict line)
+   - `args`: `{ "slice": <slice-#>, "today": "<YYYY-MM-DD>", "reviewScriptPath": "${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs" }`
+     - `today` — pass today's date explicitly; the workflow runtime has no clock and stamps the PR body's review-verdict line.
+     - `reviewScriptPath` — the absolute path to the sibling `review-slice.mjs` (resolve `$CLAUDE_PLUGIN_ROOT` the same way as above). `implement-slice` runs `review-slice` as a CHILD workflow at the coverage gate and the slice review, and the harness can only resolve a plugin-shipped child workflow **by scriptPath** — it is not registered as a resolvable name (`Workflow({ name: "review-slice" })` / `workflow('review-slice')` throws *no workflow with that name*), and a workflow script has no filesystem access to derive its own directory. Omitting this makes `implement-slice` halt the slice to `status:need-attention` at Prep.
    - Pair with `TaskUpdate({ taskId, owner: "implement-slice-<slice-#>" })` in the same batched response.
 
    The workflow runs in the background, returns a task id immediately, and notifies on completion — the same lifecycle as a backgrounded agent, so the loop-continuation accounting in Step 4 is unchanged (it keys off the `implement-slice-<slice-#>` tracking owner). The workflow owns everything internally; it flips `status:in-progress` → `status:need-attention` on halt, or releases the lock and opens the draft PR on success.

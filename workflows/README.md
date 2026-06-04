@@ -13,13 +13,13 @@ The slice lifecycle is exactly **two workflow layers** (`Workflow` nesting is on
   └─ Stage 1 LAUNCHES (background, one per slice):
        implement-slice.mjs            ← TOP workflow: owns author→implement→review→fix→PR
           ├─ agent()  e2e-author / engineer        (generative, sequential — shared worktree)
-          └─ workflow('review-slice') ← CHILD workflow: assessment fan-out (coverage gate + slice review)
+          └─ workflow({scriptPath:'…/review-slice.mjs'}) ← CHILD workflow: assessment fan-out (coverage gate + slice review)
                 └─ agent() ×N         (one per pattern-reviewer dimension + adversarial verify)
 ```
 
 The split rule: **assessment work that is parallel-decomposable → a fan-out child workflow; generative work that is sequential → a single agent.** Only the reviewer stages qualify as workflows — the author / implement / pass-E2E / fix stages are TDD chains on one shared slice worktree, so they can't parallelize and stay single `agent()` dispatches.
 
-`review-slice` is a *separate file* (not inlined) only because workflow scripts can't `import` shared modules — `workflow('review-slice', …)` is the reuse mechanism, and it keeps the reviewer independently runnable. The call is an **inline subroutine**: the child runs in the same run (shared concurrency cap, agent counter, token budget, resume journal) and returns its verdict object; control comes straight back to `implement-slice`. No re-launch between phases, no label round-trip.
+`review-slice` is a *separate file* (not inlined) only because workflow scripts can't `import` shared modules — `workflow({scriptPath}, …)` is the reuse mechanism, and it keeps the reviewer independently runnable. The call is an **inline subroutine**: the child runs in the same run (shared concurrency cap, agent counter, token budget, resume journal) and returns its verdict object; control comes straight back to `implement-slice`. No re-launch between phases, no label round-trip. The child is resolved by **scriptPath, not name** — a plugin-shipped workflow is not registered as a resolvable `name:`, so the orchestrator passes `review-slice.mjs`'s absolute path into `implement-slice` via `args.reviewScriptPath` (see the kickoff contract below).
 
 ## `implement-slice.mjs` — the per-slice cycle (TOP)
 
@@ -29,11 +29,11 @@ One background run per slice, launched by `/implement-feature` Stage 1 after it 
 |-------|--------------|-------------|
 | **Prep** | One agent reads the slice body, parses the `## Tasks` checklist (the durable task ledger), resolves the branch + PR metadata. | `agent()` |
 | **Author E2E** | One `e2e-author` dispatch for every not-yet-`[x]` e2e task. | `agent({agentType: e2e-author})` |
-| **Coverage gate** | `review-slice` (scope `coverage`) over the authored specs, looping to an `e2e-author` fix until the specs cover every AC + non-happy-path. Cap `FIX_CAP`. | `workflow('review-slice')` + `agent()` |
+| **Coverage gate** | `review-slice` (scope `coverage`) over the authored specs, looping to an `e2e-author` fix until the specs cover every AC + non-happy-path. Cap `FIX_CAP`. | `workflow({scriptPath})` + `agent()` |
 | **Plan** | One planner groups the implementation tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks / group). | `agent()` |
 | **Implement** | Groups run **serially** (shared worktree); each is one `engineer` dispatch. Done groups are skipped (resume). | `agent({agentType: engineer})` |
 | **Pass E2E** | One `engineer` runs the E2E specs vs a booted stack and drives production code to GREEN. `need-attention` → halt. | `agent({agentType: engineer})` |
-| **Slice review** | `review-slice` (scope `full`) looping to an `engineer` fix-slice until APPROVE. Cap `FIX_CAP`. | `workflow('review-slice')` + `agent()` |
+| **Slice review** | `review-slice` (scope `full`) looping to an `engineer` fix-slice until APPROVE. Cap `FIX_CAP`. | `workflow({scriptPath})` + `agent()` |
 | **PR** | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). The slice stays locked until the PR merges. | `agent()` |
 
 - **`FIX_CAP`** (default 4) is the circuit breaker that replaces the deleted engineer budget gate's "stop a runaway loop" role. The deleted gate's "bound the context" role is covered by the planner's ≤3-tasks-per-group size cap + small-task scoping.
@@ -84,15 +84,15 @@ Agents run on **two tiers** (retune via `AGENT_MODEL` / `WRITER_MODEL` at the to
 `/implement-feature` Stage 1 launches the top workflow per eligible slice:
 
 ```
-Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs", args: { slice: <n>, today: "<YYYY-MM-DD>" } })
+Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs", args: { slice: <n>, today: "<YYYY-MM-DD>", reviewScriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs" } })
 ```
 
-`implement-slice` calls `workflow('review-slice', { slice, scope })` inline for the coverage gate and the slice review. The per-dimension catalogues are still the `pattern-reviewer-*` skills — each dimension agent reads exactly one (staying anonymous keeps its context clean), and also applies that skill's per-project `.claude/memory/patterns/<skill>.md` overlay via `memory-convention` when one exists, so dreamed rules reach the fan-out the same way they reach the single-agent `reviewer`. The generative dispatches load the re-pointed `workflow-e2e-author` / `workflow-engineer-implement-task` / `workflow-engineer-e2e` / `workflow-engineer-fix-slice` skills via their trigger phrases.
+`implement-slice` calls `workflow({ scriptPath: args.reviewScriptPath }, { slice, scope })` inline for the coverage gate and the slice review. The per-dimension catalogues are still the `pattern-reviewer-*` skills — each dimension agent reads exactly one (staying anonymous keeps its context clean), and also applies that skill's per-project `.claude/memory/patterns/<skill>.md` overlay via `memory-convention` when one exists, so dreamed rules reach the fan-out the same way they reach the single-agent `reviewer`. The generative dispatches load the re-pointed `workflow-e2e-author` / `workflow-engineer-implement-task` / `workflow-engineer-e2e` / `workflow-engineer-fix-slice` skills via their trigger phrases.
 
 ### Assumptions to verify before trusting it in production
 
 1. **`Workflow` availability.** It is an Opus-4.8 main-loop tool. If the running harness lacks it, the slice cycle can't run as designed — there is no single-agent fallback for the *whole* cycle (the old per-stage label dispatch was removed). The `workflow-reviewer-review-slice` skill is retained as a single-agent reviewer fallback for the review step only.
-2. **`scriptPath` resolution (the linchpin).** Stage 1 passes `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs`. Confirm the orchestrator can resolve `$CLAUDE_PLUGIN_ROOT` to an absolute path at invocation time and that `Workflow`'s `scriptPath` accepts it. The child `workflow('review-slice', …)` is resolved by `name:` within the same run, so it does not need a path.
+2. **`scriptPath` resolution (the linchpin) — for BOTH workflows.** Stage 1 passes `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs` as the top scriptPath. Confirm the orchestrator can resolve `$CLAUDE_PLUGIN_ROOT` to an absolute path at invocation time and that `Workflow`'s `scriptPath` accepts it. The child `review-slice` is resolved the **same way — by scriptPath, not name**: a plugin-shipped workflow is NOT registered as a resolvable `name:` (calling `workflow('review-slice')` throws *no workflow with that name*), and a workflow script has no filesystem/env access to derive its own directory. So Stage 1 must ALSO pass `args.reviewScriptPath = ${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs`, and `implement-slice` calls `workflow({ scriptPath: args.reviewScriptPath }, …)`. If the path is missing, `implement-slice` halts the slice to `status:need-attention` at Prep (it no longer crashes uncaught at the gate — the v0.40.0 regression).
 3. **`agentType` resolution.** `implement-slice` dispatches `harness-claude-code:e2e-author` / `harness-claude-code:engineer`. Confirm the namespaced plugin agent types resolve from the workflow's `agent()` registry (the same registry the `Agent` tool uses); fall back to the bare names if the harness strips the namespace.
 4. **operation-git script path resolution.** Agents invoke `bash skills/operation-git/scripts/<name>.sh …` — confirm those paths resolve from the workflow agents' working directory in a *consuming* project; adjust to an absolute plugin-root path if not.
 5. **Cross-workflow concurrency cap.** The per-workflow cap is `min(16, cores-2)`. Multiple `implement-slice` runs (one per slice, launched across passes) share the host — confirm whether the cap is global or per-run and pace launches accordingly.

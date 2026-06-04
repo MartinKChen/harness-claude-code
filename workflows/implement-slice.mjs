@@ -19,11 +19,18 @@ export const meta = {
 //   args.slice — the slice issue number (status:in-progress lock already set)
 //   args.today — YYYY-MM-DD (Date.* is unavailable inside workflow scripts; used
 //                only to stamp the draft-PR body's review-verdict line)
+//   args.reviewScriptPath — absolute path to the sibling review-slice.mjs. The
+//                harness resolves a CHILD workflow by scriptPath; a plugin-shipped
+//                workflow is NOT registered as a resolvable name (calling
+//                workflow('review-slice') throws "no workflow with that name"),
+//                and a workflow script has no filesystem/env access to derive its
+//                own directory — so the orchestrator must pass the path in.
 // `args` may arrive as a parsed object or, on a backgrounded run, the JSON string.
 // ─────────────────────────────────────────────────────────────────────────────
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const SLICE = input.slice
 const TODAY = input.today ?? 'unknown-date'
+const REVIEW_SCRIPT = input.reviewScriptPath
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
@@ -123,6 +130,21 @@ Return ok=true (or error set on failure). prNumber=null.`,
   return { slice: SLICE, status: 'need-attention', reason }
 }
 
+// ── reviewSlice(): run review-slice.mjs as a CHILD workflow ──────────────────────
+// review-slice is plugin-shipped, so the harness can only resolve it by scriptPath
+// (not by name) — the orchestrator hands us its absolute path in REVIEW_SCRIPT.
+// Any launch/resolution failure is caught and surfaced as { error } so the caller
+// can halt() to a human; an uncaught throw here would kill the whole run before
+// halt() could fire (the v0.40.0 coverage-gate crash). On success this returns
+// review-slice's verdict object: { verdict: 'APPROVE'|'BLOCK', ... }.
+async function reviewSlice(scope) {
+  try {
+    return await workflow({ scriptPath: REVIEW_SCRIPT }, { slice: SLICE, scope })
+  } catch (e) {
+    return { error: `review-slice child workflow failed to launch: ${e?.message || String(e)}` }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE: Prep — one agent reads the slice body, parses the `## Tasks` checklist
 // (the durable task ledger), and returns the resume state. A ticked `[x]` box is
@@ -144,6 +166,13 @@ Return the PREP object.`,
   { phase: 'Prep', schema: PREP },
 )
 if (!prep || !prep.ok) return halt(prep?.haltReason || 'prep could not read the slice body')
+
+// review-slice runs at the coverage gate (Phase B) and the slice review (Phase F),
+// so it is always needed. Bail to a human NOW — before the expensive author /
+// implement phases — if the orchestrator did not pass its path, rather than
+// authoring specs and crashing ~7 min later at the gate.
+if (!REVIEW_SCRIPT)
+  return halt('args.reviewScriptPath was not provided by the /implement-feature Stage-1 kickoff — implement-slice cannot locate review-slice.mjs to run the coverage gate / slice review. Update the kickoff to pass `reviewScriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/review-slice.mjs"`.')
 
 // In-memory done-tracking, seeded from the durable checklist and updated as each
 // dispatch completes. (Agents also tick the boxes in the body — the durable copy
@@ -177,7 +206,8 @@ phase('Coverage gate')
 if (e2eTasks.length) {
   let passed = false
   for (let i = 0; i < FIX_CAP; i++) {
-    const r = await workflow('review-slice', { slice: SLICE, scope: 'coverage' })
+    const r = await reviewSlice('coverage')
+    if (r?.error) return halt(`E2E coverage gate could not run review-slice: ${r.error}`)
     if (r?.verdict === 'APPROVE') { passed = true; break }
     if (i === FIX_CAP - 1) break
     await agent(
@@ -253,7 +283,8 @@ if (e2eTasks.length) {
 phase('Slice review')
 let reviewPassed = false
 for (let i = 0; i < FIX_CAP; i++) {
-  const r = await workflow('review-slice', { slice: SLICE, scope: 'full' })
+  const r = await reviewSlice('full')
+  if (r?.error) return halt(`slice review could not run review-slice: ${r.error}`)
   if (r?.verdict === 'APPROVE') { reviewPassed = true; break }
   if (i === FIX_CAP - 1) break
   await agent(
