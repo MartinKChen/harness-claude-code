@@ -41,7 +41,7 @@ A test fails this lens when it:
 
 ## Catalogue — what a complete test set covers
 
-The spec is the **issue body**: the `## Done criteria (EARS)` block (AC1, AC2, …), the `### Scenarios (Gherkin)` block, and — for data-model work — the `### Migration scenarios (Gherkin)` block. For `type:e2e` work the canonical scenario text lives in the **parent slice issue** body.
+The spec is the **slice issue body** plus each task's checklist pointer. The slice body carries the `## Acceptance criteria (EARS)` block (AC1, AC2, …) and its `### Scenarios (Gherkin)` block — the single AC ceremony for the whole slice. Per task, the `## Tasks` checklist entry adds the unit spec via its pointer: a `backend` task points at `docs/api-contract/<entity>.yaml` (+ `docs/data-model/<entity>.yaml`, whose migration scenarios apply when it introduces an entity); an `e2e` / `frontend` task points at the mapped slice Gherkin scenario (`covers:`); a contract-less utility task carries a one-line `done:` criterion. For `e2e` work the canonical scenario text is the slice's own Gherkin.
 
 ### 1. Acceptance-criteria coverage (every `type:*`)
 

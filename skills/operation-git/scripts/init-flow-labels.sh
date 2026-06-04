@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 # Prepare a repo to follow the Automated Engineer Flow by creating the labels
-# that the workflow-* skills key off: status lifecycle, hierarchy, kind, task
-# type, the single review gate family, the merge-policy markers, plus the
-# feature-lockin PR marker.
+# the lifecycle keys off, and DELETING the labels the per-slice-Workflow redesign
+# retired. The inner slice cycle (author E2E → coverage gate → implement → pass
+# E2E → review → fix → PR) now runs entirely inside one background `implement-slice`
+# Workflow per slice; GitHub keeps only durable, human-relevant state. So the
+# surviving label families are small:
 #
-# Idempotent: uses `gh label create --force` so re-running updates the color
-# of any existing label with the same name instead of erroring.
+#   status:ready-to-review     — create-issues sets this; the human design-approval gate
+#   status:ready-to-implement  — human flips ready-to-review → this to release the slice
+#   status:in-progress         — REPURPOSED: the slice lock ("a workflow is running"). Name
+#                                kept to limit churn; it is no longer a per-task state.
+#   status:need-attention      — the durable, human-owned halt (the only path to a human)
+#   status:fix-in-progress     — the fix-PR lock owned by the outer /loop's fix-pr stage
+#   kind:* / merge:* / feature-lockin — unchanged
+#
+# Everything the inner cycle used to round-trip through labels (per-task typing,
+# the review:* gate family, the e2e:* markers, level:slice/level:task) is now
+# in-memory workflow phase state or lives in the slice body's task checklist, so
+# those labels are DELETED here to keep the repo's label set honest.
+#
+# Idempotent: `gh label create --force` updates an existing label's color instead
+# of erroring; `gh label delete --yes` on a missing label is treated as benign.
 #
 # Usage:
 #   init-flow-labels.sh [--repo <owner>/<name>]
@@ -19,7 +34,7 @@ repo_args=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo_args=(--repo "$2"); shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "unexpected arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -30,6 +45,16 @@ create() {
   echo "  ✓ $name"
 }
 
+# Delete a retired label. A 404 (already gone / never existed) is benign.
+remove() {
+  local name="$1"
+  if gh label delete "$name" --yes "${repo_args[@]}" >/dev/null 2>&1; then
+    echo "  ✗ $name (deleted)"
+  else
+    echo "  · $name (absent)"
+  fi
+}
+
 echo "status:"
 create "status:ready-to-review"     FBCA04
 create "status:ready-to-implement"  0E8A16
@@ -37,29 +62,10 @@ create "status:in-progress"         1D76DB
 create "status:fix-in-progress"     5319E7
 create "status:need-attention"      D93F0B
 
-echo "level:"
-create "level:slice"                24292E
-create "level:task"                 959DA5
-
 echo "kind:"
 create "kind:feature"               0075CA
 create "kind:bug"                   D73A4A
 create "kind:enhancement"           A2EEEF
-
-echo "type:"
-create "type:e2e"                   BFD4F2
-create "type:backend"               F9D0C4
-create "type:frontend"              D4C5F9
-
-echo "review:"
-create "review:pending"             FEF2C0
-create "review:running"             1D76DB
-create "review:passed"              0E8A16
-create "review:need-fix"            D73A4A
-
-echo "e2e:"
-create "e2e:running"                1D76DB
-create "e2e:validated"              0E8A16
 
 echo "merge:"
 create "merge:auto"                 0E8A16
@@ -67,6 +73,19 @@ create "merge:manual"               FBCA04
 
 echo "PR markers:"
 create "feature-lockin"             000000
+
+echo "retired by the per-slice-Workflow redesign:"
+remove "level:slice"
+remove "level:task"
+remove "type:e2e"
+remove "type:backend"
+remove "type:frontend"
+remove "review:pending"
+remove "review:running"
+remove "review:passed"
+remove "review:need-fix"
+remove "e2e:running"
+remove "e2e:validated"
 
 echo
 echo "done."
