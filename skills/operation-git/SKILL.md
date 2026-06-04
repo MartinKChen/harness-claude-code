@@ -61,7 +61,7 @@ Each script lists open issues / PRs matching a specific workflow stage. All retu
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/list-issues.sh [--label <l>]... [--milestone <name>] [--missing-label <l>]...` | Generic candidate listing for any orchestrator. Returns open `kind:feature` issues (= slices) carrying the requested labels (and confirmed absent labels), sorted by issue number. (No `--level` — every issue is a slice now.) |
+| `scripts/list-issues.sh [--kind <k>]... [--label <l>]... [--milestone <name>] [--missing-label <l>]...` | Generic candidate listing for any orchestrator. Returns open issues of the requested `kind:*` (OR semantics across kinds; default `kind:feature` for backward compatibility) carrying the requested labels (and confirmed absent labels), sorted by issue number. The kind filter is applied in jq because `gh --label` ANDs. |
 | `scripts/list-draft-prs.sh [--label <l>]... [--missing-label <l>]... [--status <green\|broken>] [--milestone <name>]` | List open draft PRs filtered by labels, milestone, and check/conflict status. Output includes the PR body so close-pr can parse `Closes #<slice-#>`. |
 | `scripts/blocker-count.sh <issue-#>` | Print the count of OPEN `Blocked by` dependencies (GraphQL `issueDependenciesSummary.blockedBy`). |
 
@@ -76,6 +76,19 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the fo
 | `scripts/task-finder-stage-1-kickoff-slice.sh` | 1 | `kind:feature`+`status:ready-to-implement` slices with zero open blockers and NOT already `status:in-progress` (the orchestrator flips the lock and launches the `implement-slice` Workflow). |
 | `scripts/task-finder-stage-8-fix-pr.sh` | 8 | Draft PRs with a merge-blocking signal (CI failure or merge conflict), no `status:fix-in-progress` / `status:need-attention`, slice resolved from `Closes #<n>`. |
 | `scripts/task-finder-stage-9-close-pr.sh` | 9 | Draft PRs MERGEABLE with every check rollup SUCCESS / NEUTRAL / SKIPPED, tagged `merge:<auto\|manual>`, slice resolved from `Closes #<n>`. |
+
+### Lifecycle discovery (driven by `/ship` — all three kinds)
+
+Pure shell, same shape as the `task-finder` family but covering **feature + enhancement + bug** with an **optional** milestone (omit it for the repo-wide maintenance lane). `ship-finder.sh` runs five named stages against ONE snapshot and emits a `# ship-finder report` the `/ship` command parses by stage name. The `/implement-feature` `task-finder` family above is left intact as a feature-only fallback.
+
+| Script | Stage | Purpose |
+|--------|-------|---------|
+| `scripts/ship-finder.sh [milestone]` | — | Umbrella. Prechecks repo (+ milestone only when named), runs the five stages in order, emits the report + summary. Milestone optional → repo-wide when omitted. |
+| `scripts/ship-stage-reconcile.sh [milestone]` | reconcile | Orphaned locks across all kinds: a `status:in-progress` slice/bug whose workflow died, or a draft-PR `status:fix-in-progress` whose fix-pr engineer died. Bug `status:in-progress` is disambiguated by the `# Bug Analysis` comment — present → dead fix (`release:ready-to-implement`); absent → dead analyze (`release:clear-analyze`). Same telemetry-heartbeat + GitHub-staleness death gate as stage 0. Parses the linked issue from `feature/<n>-` or `fix/<n>-` branches. |
+| `scripts/ship-stage-analyze-bug.sh [milestone]` | analyze-bug | `kind:bug` with NO `status:*` label (freshly filed) — the orchestrator locks (`+status:in-progress`) and dispatches the read-only analyze engineer. |
+| `scripts/ship-stage-kickoff.sh [milestone]` | kickoff | `kind:feature\|enhancement\|bug` at `status:ready-to-implement`, 0 open blockers, not `status:in-progress`. Emits `kind:` so the command routes feature/enhancement → `implement-slice.mjs`, bug → `fix-bug.mjs`. |
+| `scripts/ship-stage-fix-pr.sh [milestone]` | fix-pr | Draft PRs blocked on CI / conflict, no `status:fix-in-progress` / `status:need-attention`; linked issue from `Closes #<n>`. Works for slice and bug-fix PRs. |
+| `scripts/ship-stage-close-pr.sh [milestone]` | close-pr | Mergeable draft PRs (every rollup SUCCESS / NEUTRAL / SKIPPED), tagged `merge:<auto\|manual>`; linked issue from `Closes #<n>`. |
 
 ### Label flipping (atomic)
 
@@ -108,6 +121,7 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the fo
 | `templates/dispatch-prompt.md` | Skeleton the `implement-slice` Workflow (and the outer loop, for fix-pr) fills before passing to `Agent`'s `prompt`. One line: dispatch verb + slice # + task IDs. Everything else the agent discovers from the slice body's checklist. |
 | `templates/pr-body.md` | Draft-PR body skeleton (`Closes #<slice-#>`) — the shape `implement-slice`'s terminal PR phase builds. |
 | `templates/bug-issue.md` | Body of a `kind:bug` issue — Zone A (the reporter's symptom) only. The diagnosis is posted as a comment by the analyze step, not written into the body. The fix-bug workflow reads the approved analysis comment as its spec. |
+| `templates/bug-analysis-comment.md` | The `# Bug Analysis` comment the analyze step posts (Zone B — the diagnosis): Reproduction, Root cause, Proposed fix, Regression-test plan, Blast radius + Contract impact. After a human approves it, `fix-bug.mjs` reads it as the fix spec. |
 
 ## Pattern
 

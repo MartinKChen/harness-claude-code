@@ -48,7 +48,7 @@ Choose the reproduction path in this order:
 2. **Playwright fallback.** If no browser MCP is present, OR the user denies the permission, OR browser-MCP control fails for any reason, fall back to driving the booted stack with Playwright headlessly (the same machinery `workflow-engineer-e2e` uses). When you fall back because no MCP is configured, note once in the analysis comment that adding a browser MCP would enable richer live-browser reproduction — but never block waiting on an install.
 3. **Direct harness** (backend-only bugs). When the bug has no UI surface, reproduce with a direct API call / a throwaway unit harness against the booted stack.
 
-Capture evidence of the reproduction: a screenshot / trace, or the failing request+response / stack trace. If you cannot reproduce after a genuine attempt, post the analysis comment with reproduction verdict **NOT-REPRODUCED** (steps tried + what you'd need), flip the issue to `status:need-attention`, and stop — do not guess a root cause.
+Capture evidence of the reproduction: a screenshot / trace, or the failing request+response / stack trace. If you cannot reproduce after a genuine attempt, post the analysis comment with reproduction verdict **NOT-REPRODUCED** (steps tried + what you'd need), swap the lock to need-attention (`gh issue edit <n> --remove-label "status:in-progress" --add-label "status:need-attention"`), and stop — do not guess a root cause.
 
 ### 4. Root-cause to file:line
 
@@ -56,7 +56,7 @@ With the reproduction in hand, trace the defect to its source. `rg` for the hand
 
 ### 5. Contract guard
 
-A bug never changes an API contract or data model. If the only correct fix would require editing `docs/api-contract/*` or `docs/data-model/*`, the issue is misclassified: set **Contract impact: REQUIRES-CHANGE** in the comment, recommend reclassifying to a feature (architecture decision needed), flip the issue to `status:need-attention`, and stop. Do NOT propose a contract-violating workaround to keep it a "bug".
+A bug never changes an API contract or data model. If the only correct fix would require editing `docs/api-contract/*` or `docs/data-model/*`, the issue is misclassified: set **Contract impact: REQUIRES-CHANGE** in the comment, recommend reclassifying to a feature (architecture decision needed), swap the lock to need-attention (`gh issue edit <n> --remove-label "status:in-progress" --add-label "status:need-attention"`), and stop. Do NOT propose a contract-violating workaround to keep it a "bug".
 
 ### 6. Post the analysis comment + flip to ready-to-review
 
@@ -66,13 +66,13 @@ Fill `operation-git/templates/bug-analysis-comment.md` (header `# Bug Analysis`)
 bash skills/operation-git/scripts/post-comment.sh <n> <file>
 ```
 
-Then release the bug to the human approval gate:
+Then release the bug from the analyze lock to the human approval gate:
 
 ```
-gh issue edit <n> --add-label "status:ready-to-review"
+gh issue edit <n> --remove-label "status:in-progress" --add-label "status:ready-to-review"
 ```
 
-(A freshly-filed bug has no `status:*`, so this is an add, not a swap.) A human reviews the `# Bug Analysis` comment and approves the approach by flipping `status:ready-to-review` → `status:ready-to-implement`, which makes the bug eligible for the kickoff stage that launches `fix-bug`.
+(The `/ship` analyze stage applied `status:in-progress` as the analyze lock before dispatching you — this swap releases it. If your reproduction verdict is NOT-REPRODUCED, or Contract impact is REQUIRES-CHANGE, swap to `status:need-attention` instead: `--remove-label "status:in-progress" --add-label "status:need-attention"`.) A human reviews the `# Bug Analysis` comment and approves the approach by flipping `status:ready-to-review` → `status:ready-to-implement`, which makes the bug eligible for the kickoff stage that launches `fix-bug`.
 
 Terminal action. Exit. Do NOT write production code, create a fix branch, or open a PR — those belong to `fix-bug`, post-approval.
 
