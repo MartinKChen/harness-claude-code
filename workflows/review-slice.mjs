@@ -297,7 +297,7 @@ if (!prep || !prep.ok) {
   log(`Halting: ${reason}`)
   // Blocked-run contract: post a diagnostic, return a blocked verdict. Flip nothing.
   await agent(
-    `Post a single diagnostic comment on slice issue #${SLICE} explaining that the slice review could not run: "${reason}". Use \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} <body-file>\`. Do NOT add or remove ANY label.`,
+    `Post a single diagnostic comment on slice ISSUE #${SLICE} explaining that the slice review could not run: "${reason}". #${SLICE} is a GitHub issue, NOT a pull request — do NOT look up or comment on a PR, do NOT run \`gh pr comment\`. Run verbatim: write the reason to a body file, then \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} <body-file>\` (this wraps \`gh issue comment ${SLICE}\`). Do NOT add or remove ANY label.`,
     { label: 'publish:blocked', phase: 'Publish', model: WRITER_MODEL },
   )
   return { slice: SLICE, scope: SCOPE, verdict: 'BLOCK', status: 'blocked', reason }
@@ -475,12 +475,14 @@ const body = composeComment(confirmed, { phase2Skipped, scopeNote: prep.scopeNot
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Publish')
 const publish = await agent(
-  `You are the terminal publisher for the slice #${SLICE} ${SCOPE} review. You perform the ONLY write in this workflow: posting the verdict comment. Do not re-review, do not edit code, do NOT add/remove any label, do NOT open a PR.
+  `You are the terminal publisher for the slice #${SLICE} ${SCOPE} review. You perform the ONLY write in this workflow: posting the verdict comment.
 
-Do exactly this and nothing else:
+CRITICAL — #${SLICE} is a GitHub ISSUE (a slice), NOT a pull request. There is NO PR for this slice; this review runs before any PR exists. Do NOT look up a PR, do NOT run \`git log\`, do NOT use \`gh pr comment\`, do NOT add/remove any label, do NOT open a PR, do NOT re-review or edit code. The review-verdict comment goes on the slice ISSUE.
+
+Do EXACTLY these two steps and nothing else — run the second command verbatim:
 1. Write the verdict comment body (provided below) to /tmp/review-slice-${SLICE}.md.
-2. Post it: \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} /tmp/review-slice-${SLICE}.md\`.
-Return posted=true, error=null (or error set on failure).
+2. Post it: \`bash skills/operation-git/scripts/post-comment.sh ${SLICE} /tmp/review-slice-${SLICE}.md\` (this wraps \`gh issue comment ${SLICE}\`).
+Set posted=true ONLY if that command exited 0; otherwise set posted=false and put the command's actual stderr in error. Never report a "post by hand later" workaround as success or as a non-error — if you did not run the command, that is an error.
 
 --- VERDICT COMMENT BODY (verbatim, write to /tmp/review-slice-${SLICE}.md) ---
 ${body}

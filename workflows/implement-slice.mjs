@@ -208,6 +208,11 @@ if (e2eTasks.length) {
   for (let i = 0; i < FIX_CAP; i++) {
     const r = await reviewSlice('coverage')
     if (r?.error) return halt(`E2E coverage gate could not run review-slice: ${r.error}`)
+    // A set publishError means the verdict comment never reached GitHub (e.g. the
+    // Haiku publisher narrated a "post by hand later" workaround instead of running
+    // post-comment.sh). The gate's findings would then be invisible to the fix loop —
+    // halt to a human rather than loop blind or APPROVE on an unposted verdict.
+    if (r?.publishError) return halt(`E2E coverage gate verdict was not posted to #${SLICE}: ${r.publishError}`)
     if (r?.verdict === 'APPROVE') { passed = true; break }
     if (i === FIX_CAP - 1) break
     await agent(
@@ -285,6 +290,10 @@ let reviewPassed = false
 for (let i = 0; i < FIX_CAP; i++) {
   const r = await reviewSlice('full')
   if (r?.error) return halt(`slice review could not run review-slice: ${r.error}`)
+  // Unposted verdict (see the coverage-gate note above): the findings never reached
+  // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
+  // "see the # Slice Review comment" body points at a comment that doesn't exist.
+  if (r?.publishError) return halt(`slice review verdict was not posted to #${SLICE}: ${r.publishError}`)
   if (r?.verdict === 'APPROVE') { reviewPassed = true; break }
   if (i === FIX_CAP - 1) break
   await agent(
