@@ -4,9 +4,14 @@ Deterministic multi-agent orchestration scripts invoked via the `Workflow` tool.
 
 **These ship with the plugin.** They live here (not in a consuming project's `.claude/workflows/`, which is where the `Workflow` tool resolves `name:`-addressed workflows). The plugin therefore invokes them by **`scriptPath`** against `${CLAUDE_PLUGIN_ROOT}`, exactly as `hooks/hooks.json` references its hook scripts — never by `name:`, which would resolve in the user's project and miss.
 
-## One workflow, one file
+## Two workflows, self-contained
 
-The slice lifecycle is a single workflow. The review fan-out used to be a second file (`review-slice.mjs`) called as a child workflow, but it is now **inlined** into `implement-slice.mjs` as the `runReviewSlice()` function — the child-by-`scriptPath` plumbing (and the launch-crash class it guarded against) is gone. Workflow nesting is one level deep regardless (a child calling `workflow()` throws), and folding the review in keeps that budget free.
+Two workflows ship, one per unit of work:
+
+- **`implement-slice.mjs`** — the per-slice cycle for `kind:feature` **and** `kind:enhancement` (an enhancement is a single feature-shaped issue with a `## Tasks` checklist; it runs the identical cycle).
+- **`fix-bug.mjs`** — the lighter per-bug cycle for `kind:bug` (no E2E authoring, no coverage gate; the regression test is the spec, written inside the Fix phase).
+
+Each is **self-contained**: the review fan-out used to be a second file (`review-slice.mjs`) called as a child workflow, but it is now **inlined** into each workflow as a `runReview*()` function — `runReviewSlice()` in `implement-slice.mjs`, `runReview()` (production-code only) in `fix-bug.mjs`. Workflow scripts can't `import`, and nesting is one level deep (a child calling `workflow()` throws), so the review block is duplicated rather than shared — the cost of the self-contained-script model. Both copies carry the same `DIMENSIONS` / `VERIFY_LENSES` / scoring; keep them in sync when tuning.
 
 ```
 /loop /implement-feature <feature>   (outer driver: 4 stages — reconcile / kickoff / fix-pr / close-pr)
@@ -80,6 +85,19 @@ Agents run on **two tiers** (retune via `AGENT_MODEL` / `WRITER_MODEL` at the to
 |------|--------|-----|
 | `sonnet` (`AGENT_MODEL`) | Surface classification + every `axis-reviewer` finder and Verify skeptic lens | The judgment-bearing work. Matches the single `reviewer` agent (`model: sonnet`). |
 | `haiku` (`WRITER_MODEL`) | The mechanical review-prep agent, the terminal Publish agent, and the Implement completion-check | Tool-orchestration and pure execution. |
+
+## `fix-bug.mjs` — the per-bug cycle
+
+One background run per approved bug, launched by the unified implement command's kickoff stage after a human approved the `# Bug Analysis` comment (flipping `status:ready-to-implement`) and the orchestrator flipped `status:ready-to-implement` → `status:in-progress` (the bug lock). The read-only **analyze** step + the human approval gate happen *before* this workflow (see `workflow-engineer-analyze-bug`); `fix-bug.mjs` owns only the automatic post-approval half.
+
+| Phase | What it does | Realization |
+|-------|--------------|-------------|
+| **Prep** | One agent reads the bug body + the newest approved `# Bug Analysis` comment, creates-or-reuses the `fix/<n>-<intent>` branch on origin (idempotent → resume-safe), and carries the Regression-test plan forward. Halts if there is no approved analysis, it's NOT-REPRODUCED, or Contract impact is REQUIRES-CHANGE (reclassify to feature). | `agent()` |
+| **Fix** | One `engineer` dispatch (`Fix bug #<n>`): write the regression test FIRST (RED, fails on pre-fix code), drive it GREEN, refactor, propagate the class-of-bug, push. | `agent({agentType: engineer})` |
+| **Review** | `runReview('production-code')` looping to an `engineer` fix (`Fix the review feedback on bug #<n>`) until APPROVE. No round cap. The `test-coverage` dimension enforces the regression test fails-before / passes-after. | `runReview()` + `agent()` |
+| **PR** | Open the idempotent `merge:manual` draft PR (`Closes #<n>`) and release the `status:in-progress` lock. | `agent()` |
+
+`runReview(phaseTitle, fixBranch)` is the production-code-only port of `runReviewSlice()` — same Prep → Spec → Gate → Quality → dedup → verify → compose → Publish pipeline, but with no `test-coverage` *scope* (the coverage gate is an `implement-slice`-only pre-implementation phase; for a bug, test-coverage is just one spec **dimension** over the fix diff). It posts a `# Bug Fix Review` comment on the bug issue and returns the verdict. `halt()` flips `status:in-progress` → `status:need-attention`, the only path to a human.
 
 ## How it's wired
 

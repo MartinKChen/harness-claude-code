@@ -61,6 +61,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 |-------|----------------|
 | `workflow-engineer-analyze-bug` | Dispatch prompt opens with `Analyze bug #<n>` — diagnose a `kind:bug` issue READ-ONLY: reproduce (browser MCP first, Playwright fallback, stack booted either way), root-cause to `file:line`, post a `# Bug Analysis` comment, flip to `status:ready-to-review`. Writes no code, creates no branch, opens no PR. (Exception to the TDD/ship-code default — this verb is pure diagnosis.) |
 | `workflow-engineer-implement-task` | Dispatch prompt opens with `Implement slice #<n> tasks <ids>` (backend / frontend tasks from the slice checklist, never e2e). |
+| `workflow-engineer-fix-bug` | Dispatch prompt opens with `Fix bug #<n>` (write the regression test first, drive it green, refactor) or `Fix the review feedback on bug #<n>` (address the `# Bug Fix Review` findings). Production code only; resolves the `fix/<n>-*` branch by prefix; every commit carries `Refs #<n>`. |
 | `workflow-engineer-e2e` | Dispatch prompt opens with `Pass E2E acceptance for slice #<n>` — run the slice's E2E specs against a booted stack and drive production code to GREEN. |
 | `workflow-engineer-fix-slice` | Dispatch prompt opens with `Fix the review feedback on slice #<n>`. |
 | `workflow-engineer-fix-pr` | Dispatch prompt opens with `Fix PR #<n>` and the PR carries `status:fix-in-progress`. |
