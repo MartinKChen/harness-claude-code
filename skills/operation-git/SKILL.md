@@ -107,6 +107,7 @@ Pure shell — no LLM, no agent, no skill layer. The umbrella driver runs the fo
 | `templates/commit-messages.md` | Conventional Commits format. Subject line + body + trailer rules. Every commit produced by a slice-phase workflow skill carries a `Task: <static-id>` trailer + `Refs #<slice-#>` (fix-pr drops `Task:` and uses `Refs #<pr-#>` + `Refs #<slice-#>`). |
 | `templates/dispatch-prompt.md` | Skeleton the `implement-slice` Workflow (and the outer loop, for fix-pr) fills before passing to `Agent`'s `prompt`. One line: dispatch verb + slice # + task IDs. Everything else the agent discovers from the slice body's checklist. |
 | `templates/pr-body.md` | Draft-PR body skeleton (`Closes #<slice-#>`) — the shape `implement-slice`'s terminal PR phase builds. |
+| `templates/bug-issue.md` | Body of a `kind:bug` issue — Zone A (the reporter's symptom) only. The diagnosis is posted as a comment by the analyze step, not written into the body. The fix-bug workflow reads the approved analysis comment as its spec. |
 
 ## Pattern
 
