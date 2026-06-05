@@ -112,6 +112,7 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - Visible focus styles required (`:focus-visible`); never `outline: none` without a replacement.
 - Trap focus inside modals; restore to the opener on close.
 - Empty-state copy, loading skeletons, "no results" panels render inside the same semantic landmark (`<main>`) the loaded state would — so Playwright's `getByRole('main').getByRole(...)` queries work.
+- Match the slice's already-authored E2E specs as your **affordance contract**: read them read-only (see the implement-task workflow's context step) and expose the exact accessible names, ARIA roles, and navigation path they query — don't guess the conventions blind. This is interface-matching only (selectors, labels, the click path), not behavior: the Gherkin AC stays the source of *what the UI must do*, and a spec asserting behavior the AC never specified is a divergence to surface at the pass-E2E gate, not something to bake into the UI.
 
 ### Responsive
 
