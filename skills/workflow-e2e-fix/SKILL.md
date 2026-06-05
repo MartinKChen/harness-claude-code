@@ -42,7 +42,7 @@ If no in-scope comment exists, halt and surface `fix dispatched but no coverage-
 
 ### 3. Set up the slice worktree
 
-Create-or-reuse the slice-scoped worktree on the slice branch (do **not** integrate `origin/main` — fixing happens on the slice branch as-is; main is integrated once, later, at the Pass-E2E phase via `workflow-engineer-e2e`). Check the branch for prior `Refs #<slice#>` WIP commits to ground what's already landed. `cd` into the worktree path.
+Create-or-reuse the slice-scoped worktree on the slice branch (do **not** integrate `origin/main` — fixing happens on the slice branch as-is; main is integrated once, later, at the Pass-E2E phase via `workflow-engineer-diagnose-e2e`). Check the branch for prior `Refs #<slice#>` WIP commits to ground what's already landed. `cd` into the worktree path.
 
 ### 4. Modify / add specs per the in-scope comment(s)
 

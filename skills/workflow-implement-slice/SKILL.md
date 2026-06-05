@@ -38,7 +38,7 @@ agent ticks its boxes as it finishes.
 | Coverage gate | `runReviewSlice('test-coverage')` + `e2e-author` fix loop | Static review of the authored specs vs AC + non-happy-paths. Loops to APPROVE (no round cap). |
 | Plan | `agent()` | Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group). |
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
-| Pass E2E | `agent({agentType: engineer})` | Run specs vs booted stack, drive production code to GREEN. `need-attention` → halt. |
+| Pass E2E | `agent({agentType: engineer})` diagnose → per-group fix loop | Each round: one **diagnose** dispatch boots the stack, runs the specs, and categorizes failures into correlated groups; then one **fix** dispatch per group runs **serially** (shared worktree). Loops (uncapped) until a round diagnoses GREEN; a test-case constraint → `halt()`. |
 | Slice review | `runReviewSlice('production-code')` + `engineer` fix loop | Loops to APPROVE (no round cap). |
 | PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
 

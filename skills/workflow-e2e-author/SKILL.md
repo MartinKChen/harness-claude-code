@@ -33,7 +33,7 @@ Fetch the slice issue (number, title, body, labels, url) via `bash skills/operat
 ### 2. Resolve the slice branch and set up the worktree
 
 - Resolve the slice's attached branch (`gh issue develop <n> --list`, or `resolve-slice-branch.sh`).
-- Create-or-reuse the slice-scoped worktree on that branch (do **not** integrate `origin/main` — authoring happens on the slice branch as-is; main is integrated once, later, at the Pass-E2E phase via `workflow-engineer-e2e`).
+- Create-or-reuse the slice-scoped worktree on that branch (do **not** integrate `origin/main` — authoring happens on the slice branch as-is; main is integrated once, later, at the Pass-E2E phase via `workflow-engineer-diagnose-e2e`).
 - Before authoring, check the slice branch for prior `Refs #<slice#>` WIP commits — a killed earlier run may have already landed specs for some named ids; reconcile against the checklist (`[x]` = done) and resume from the first un-authored task.
 - `cd` into the worktree path.
 

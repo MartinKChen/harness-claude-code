@@ -103,14 +103,35 @@ const DISPATCH_PLAN = {
   },
   required: ['groups'],
 }
-const E2E_RESULT = {
+// Returned by the Pass-E2E diagnose stage: the categorized outcome of running the
+// slice's E2E suite. `green` = all specs pass (the phase is done). `failures` =
+// production-fixable failures, grouped by shared root cause (each group → one serial
+// engineer fix dispatch). `need-attention` = at least one failure is a test-case
+// constraint (a spec the user / e2e-author must change) — halts the slice.
+const E2E_DIAGNOSIS = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    status: { type: 'string', enum: ['green', 'need-attention'] },
-    reason: { type: ['string', 'null'], description: 'set only when status=need-attention (the test-case constraint)' },
+    status: { type: 'string', enum: ['green', 'failures', 'need-attention'] },
+    reason: { type: ['string', 'null'], description: 'set only when status=need-attention (the test-case constraint to surface to a human)' },
+    groups: {
+      type: 'array',
+      description: 'correlated failure groups (set when status=failures; [] otherwise). Each group shares one production-code root cause and is fixed by ONE engineer dispatch.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          groupId:      { type: 'string' },
+          rootCause:    { type: 'string', description: 'shared production-code root-cause hypothesis, to file:line where known' },
+          complexity:   { type: 'string', enum: ['L', 'M', 'H'] },
+          failingTests: { type: 'array', items: { type: 'string' }, description: 'spec-file::test-title of every failure in this group' },
+          fixHint:      { type: 'string', description: 'concrete production-code corrective action + any sibling sites to propagate to' },
+        },
+        required: ['groupId', 'rootCause', 'complexity', 'failingTests', 'fixHint'],
+      },
+    },
   },
-  required: ['status', 'reason'],
+  required: ['status', 'reason', 'groups'],
 }
 const SIDE_EFFECT = {
   type: 'object',
@@ -699,17 +720,50 @@ Return openIds = the subset of [${ids}] whose checkbox is still \`[ ]\` (empty a
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PHASE E: Pass E2E — one engineer runs the slice's E2E specs against a booted
-// stack and drives PRODUCTION code (never the specs) to GREEN. An unfixable
-// test-case constraint halts the slice to a human.
+// PHASE E: Pass E2E — a two-stage diagnose → fix loop (was one all-in-one engineer
+// dispatch). Each round:
+//   Stage 1 (diagnose) — ONE engineer integrates origin/main, boots the stack, runs
+//     the slice's E2E specs, and CATEGORIZES any failures into correlated root-cause
+//     groups. It edits no production code; a test-case constraint (a spec only the
+//     user / e2e-author can fix) halts the slice.
+//   Stage 2 (fix) — one engineer PER correlated group, dispatched SERIALLY (all share
+//     the one slice worktree, so only one edit happens at a time — same discipline as
+//     Phase D). Fixers drive production code only and push; they do NOT re-boot the
+//     stack — the next round's diagnose re-runs the whole suite to verify.
+// The loop is uncapped (consistent with the rest of this file): it converges when a
+// round diagnoses green, and the only halt is the test-case-constraint bail.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Pass E2E')
 if (e2eTasks.length) {
-  const e2e = await agent(
-    `Pass E2E acceptance for slice #${SLICE}.`,
-    { agentType: ENGINEER, phase: 'Pass E2E', label: 'pass-e2e', schema: E2E_RESULT },
-  )
-  if (!e2e || e2e.status === 'need-attention') return halt(e2e?.reason || 'E2E acceptance could not be reached without editing a spec')
+  for (let round = 1; ; round++) {
+    // Stage 1 — diagnose: integrate main, boot, run, categorize. No production edits.
+    const diag = await agent(
+      `Diagnose E2E acceptance for slice #${SLICE}.`,
+      { agentType: ENGINEER, phase: 'Pass E2E', label: `e2e-diagnose:${round}`, schema: E2E_DIAGNOSIS },
+    )
+    if (!diag) return halt('E2E diagnosis dispatch returned nothing')
+    if (diag.status === 'need-attention')
+      return halt(diag.reason || 'E2E acceptance could not be reached without editing a spec')
+    if (diag.status === 'green') { log(`Pass E2E: green after ${round - 1} fix round(s).`); break }
+
+    const groups = diag.groups ?? []
+    // A diagnosis that reports failures but produces no fix groups is unactionable —
+    // halt rather than spin a fixless round forever.
+    if (!groups.length) return halt('E2E diagnosis reported failures but produced no fix groups')
+    log(`Pass E2E: round ${round} — ${groups.length} failure group(s): ${groups.map(g => `${g.groupId}(${g.complexity})`).join(', ')}`)
+
+    // Stage 2 — fix: one engineer per correlated group, SERIAL (shared worktree, one
+    // edit at a time). No boot here; the next round's diagnose re-runs the suite.
+    for (const g of groups) {
+      await agent(
+        `Fix E2E failures on slice #${SLICE} — group ${g.groupId}.
+Root cause: ${g.rootCause}
+Failing tests: ${g.failingTests.join('; ')}
+Fix: ${g.fixHint}`,
+        { agentType: ENGINEER, phase: 'Pass E2E', label: `e2e-fix:${round}:${g.groupId}` },
+      )
+    }
+  }
 } else {
   log('Pass E2E: no e2e tasks — skipping.')
 }
