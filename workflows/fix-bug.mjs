@@ -167,6 +167,23 @@ function jaccard(a, b) {
   return inter / (A.size + B.size - inter)
 }
 
+// ── Uncapped-loop instrumentation (parity with implement-slice) ──────────────
+// The Review loop below is UNCAPPED. A per-round COST METER (budget.spent() delta)
+// makes the spend visible, and the OSCILLATION GUARD halts to a human only on NO
+// PROGRESS — the SAME I:H blocker surviving its own targeted engineer fix for
+// STALL_ROUNDS rounds — never on round count. A loop that keeps retiring blockers
+// runs uncapped.
+const STALL_ROUNDS = 3
+const kb = n => Math.round(n / 1000)
+const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
+const sameBlocker = (a, b) => fileNoLine(a.file) === fileNoLine(b.file) && jaccard(a.title, b.title) >= 0.5
+const trackStall = (prev, blockers) => blockers.map(b => {
+  const carried = prev.find(p => sameBlocker(p, b))
+  return { file: b.file, title: b.title, streak: carried ? carried.streak + 1 : 1 }
+})
+const stuckBlockers = stall => stall.filter(s => s.streak >= STALL_ROUNDS)
+const fmtStuck = stuck => stuck.map(s => `\`${s.file}\` — ${s.title} (survived ${s.streak} rounds)`).join('; ')
+
 const SEV_RANK = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 }
 function dedupeFindings(all) {
   const kept = []
@@ -368,6 +385,9 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
 
     const blocked = confirmed.some(f => f.impact === 'H')
     const verdict = blocked ? 'BLOCK' : 'APPROVE'
+    // The I:H survivors that drive the BLOCK — returned so the caller's loop can
+    // fingerprint them across rounds (oscillation guard).
+    const blockers = confirmed.filter(f => f.impact === 'H').map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
     const body = composeComment(confirmed, { phase2Skipped, scopeNote: rprep.scopeNote, dedupMerged, verdict })
@@ -388,7 +408,7 @@ ${body}
       { label: 'publish', phase: phaseTitle, schema: PUBLISH, model: WRITER_MODEL },
     )
 
-    return { verdict, publishError: publish?.error ?? null }
+    return { verdict, publishError: publish?.error ?? null, blockers }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -451,16 +471,29 @@ await agent(
 // passes-after; full review blocks only on a surviving I:H finding.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Review')
-for (let round = 1; ; round++) {
-  const r = await runReview('Review', prep.fixBranch)
-  if (r?.error) return halt(`bug-fix review could not run: ${r.error}`)
-  if (r?.publishError) return halt(`bug-fix review verdict was not posted to #${ISSUE}: ${r.publishError}`)
-  if (r?.verdict === 'APPROVE') break
-  log(`Review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
-  await agent(
-    `Fix the review feedback on bug #${ISSUE}.`,
-    { agentType: ENGINEER, phase: 'Review', label: `fix:${round}` },
-  )
+{
+  let stall = []
+  let lastSpent = tokensSpent()
+  for (let round = 1; ; round++) {
+    const r = await runReview('Review', prep.fixBranch)
+    if (r?.error) return halt(`bug-fix review could not run: ${r.error}`)
+    if (r?.publishError) return halt(`bug-fix review verdict was not posted to #${ISSUE}: ${r.publishError}`)
+    const spent = tokensSpent()
+    log(`Review: round ${round} — ${r.verdict}, ${r.blockers.length} I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    lastSpent = spent
+    if (r?.verdict === 'APPROVE') break
+    // Oscillation guard: halt if an I:H blocker survives STALL_ROUNDS dedicated
+    // engineer fixes — structurally stuck, not slow.
+    stall = trackStall(stall, r.blockers)
+    const stuck = stuckBlockers(stall)
+    if (stuck.length)
+      return halt(`Bug-fix review stalled — ${stuck.length} I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    log(`Review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+    await agent(
+      `Fix the review feedback on bug #${ISSUE}.`,
+      { agentType: ENGINEER, phase: 'Review', label: `fix:${round}` },
+    )
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

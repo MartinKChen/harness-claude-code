@@ -2,6 +2,26 @@
 
 An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a pickup / close-out lifecycle command (`/implement-feature`) backed by pure-shell discovery scripts that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD, coding / frontend / backend / container / observability patterns, git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
 
+## Scope & assumptions
+
+Read this before adopting — it sets expectations honestly.
+
+**The orchestration is stack-agnostic; the pattern catalogue currently codifies one stack.** The lifecycle machinery — the commands, the GitHub-issue label protocol, the agents, the `Workflow` scripts, the discovery scripts, the review fan-out — makes no language assumptions. What is stack-specific is the *content* of the `pattern-*` skills and the project templates. Today they codify the stack we build on:
+
+| Layer | Current coverage |
+| --- | --- |
+| Backend | Python 3.12+, FastAPI, SQLAlchemy + Alembic, `uv`, `ruff` / `mypy` / `bandit` / `pytest` |
+| Frontend | TypeScript, React, Vite, TanStack Query, RHF + Zod, `biome` |
+| Data | PostgreSQL |
+| E2E | Playwright |
+| Infra | Docker multi-stage + compose, nginx, OpenTelemetry, GitHub Actions |
+
+**If you are on this stack**, the plugin runs as-is. **If you are not**, the lifecycle still applies but the pattern catalogue won't fit — that is expected, not a defect. The `pattern-engineer-*` / `pattern-reviewer-*` pairing is the deliberate extension seam: add a language or framework by adding a matching engineer/reviewer skill pair (authored via `/create-skill`), and put coverage *substance* in the role-neutral `pattern-test-coverage` so it reaches both sides. The stack-agnostic skills (`pattern-engineer-coding-standard`, `principle-engineer-tdd`, `operation-git`, `pattern-architect-deep-module`) and every `pattern-reviewer-*` catalogue are reusable on any stack today, independent of the lifecycle.
+
+**The `/scaffold-project` templates are stack-specific by nature** (they materialize a FastAPI + React/Vite + compose stack). Greenfield bootstrap assumes that stack; the rest of the lifecycle does not.
+
+**Maturity.** This is a young, opinionated harness under active development on a private project; treat it as a reference implementation to adapt, not a turnkey drop-in. The greenfield feature lifecycle is the most exercised path; bug and enhancement lanes are newer.
+
 ## Install from GitHub
 
 In Claude Code:
@@ -78,7 +98,7 @@ There are **two unit-cycle workflows** — one per `kind:` of work — and in bo
 
 | Workflow | Layer | What it does |
 | --- | --- | --- |
-| `implement-slice.mjs` | Per feature/enhancement slice (launched by `/ship` or `/implement-feature` kickoff, one per slice) | Owns the whole inner cycle: Prep (parse the slice checklist) → Author E2E (`e2e-author`) → Coverage gate (`runReviewSlice('test-coverage')` + fix loop) → Plan → Implement (`engineer`, serial groups) → Pass E2E (`engineer` diagnose → serial per-group fix loop) → Slice review (`runReviewSlice('production-code')` + fix loop) → open the `merge:manual` draft PR and release the slice lock. Fix loops are uncapped — each loops to confidence-to-pass (`APPROVE` / all tasks ticked); `halt()` flips `status:need-attention` only on infra failure (the only path to a human). Generative phases are single `agent()` dispatches (shared worktree → serial); the two reviewer phases are `runReviewSlice()` fan-outs. |
+| `implement-slice.mjs` | Per feature/enhancement slice (launched by `/ship` or `/implement-feature` kickoff, one per slice) | Owns the whole inner cycle: Prep (parse the slice checklist) → Author E2E (`e2e-author`) → Coverage gate (`runReviewSlice('test-coverage')` + fix loop) → Plan → Implement (`engineer`, serial groups) → Pass E2E (`engineer` diagnose → serial per-group fix loop) → Slice review (`runReviewSlice('production-code')` + fix loop) → open the `merge:manual` draft PR and release the slice lock. Fix loops are uncapped on *progress* — each loops to confidence-to-pass (`APPROVE` / all tasks ticked) with no fixed round limit, and every round logs its token delta (a cost meter). `halt()` flips `status:need-attention` — the path to a human — on infra failure OR on an **oscillation stall**: the same blocker surviving its own targeted fix for `STALL_ROUNDS` (3) consecutive rounds, fingerprinted by file + title so genuine progress (retiring blockers, even while surfacing new ones) never trips it. Generative phases are single `agent()` dispatches (shared worktree → serial); the two reviewer phases are `runReviewSlice()` fan-outs. |
 | `fix-bug.mjs` | Per approved bug (launched by `/ship` kickoff once a human approved the `# Bug Analysis` comment) | The lighter sibling of `implement-slice.mjs` — no E2E-authoring phase and no coverage gate. Prep (create the `fix/<n>-<intent>` branch, pull the approved analysis' regression-test plan) → Fix (write the regression test **first** — RED on pre-fix code — drive it GREEN, refactor) → Review (`runReview()`, production-code scope, + fix loop) → open the `merge:manual` draft PR and release the bug lock. The fails-before/passes-after discipline is enforced by the review's deletable-code lens (`pattern-test-coverage`), not a bespoke gate. |
 | `runReviewSlice()` / `runReview()` | inlined function inside each workflow | Fans review out across isolated `pattern-reviewer-*` dimensions — one `axis-reviewer` agent each — dedups overlapping findings, adversarially verifies each through three skeptic lenses (batched per dimension, ≤10 findings per agent, so dispatch scales with dimensions × chunks rather than one agent per finding — the cross-lens majority vote is unchanged), then **posts one `# Slice Review` / `# E2E Coverage Gate` / `# Bug Fix Review` comment and RETURNS the verdict** — flips no label, opens no PR (the surrounding phases own those). Scopes: `test-coverage` (gate the authored E2E specs pre-implementation against the slice AC + non-happy-paths; spec dims only; BLOCK on any gap) and `production-code` (the two-phase walk against implemented code; BLOCK on any surviving `I:H`). `fix-bug.mjs` duplicates the production-code path inline (workflow scripts are self-contained — no shared import). |
 
