@@ -1,5 +1,5 @@
 <!--
-Used in step 4 of the create-issues skill — present this breakdown to the user
+Used in step 4 of the create-feature-issues skill — present this breakdown to the user
 for explicit approval before the slice issues are created. The static IDs shown
 here (`<type-code>.<index>` scoped to the slice, e.g. `e2e.1`, `be.1`, `fe.2`)
 are PERMANENT — they become the keys of the inline task checklist in each slice

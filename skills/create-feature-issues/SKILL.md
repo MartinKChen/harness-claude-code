@@ -1,15 +1,15 @@
 ---
-name: create-issues
+name: create-feature-issues
 description: "Decompose a locked-in feature's PRD into release-safe vertical-slice GitHub issues — ONE issue per slice, whose body inlines the typed task breakdown (e2e → backend → frontend) as a static-ID checklist (no task sub-issues). Verifies the merged `feature-lockin` PR, reads PRD pair, critical paths, glossary, ADRs (via index), C4 diagrams, API contracts, data models, and the design system's surface + navigation inventory; emits a foundation/shell slice first for frontend-bearing features and a page-reachability gate (each page task declares its entry source); quizzes user; on approval opens slice issues labeled `kind:feature` + `status:ready-to-review` with a `feature/<slice#>-<intent>` branch and 1-up slice-level `Blocked by` chains; then archives the now-spent PRD pair (`requirement.md` + `implement-detail.md`) into `_archive/<feature>/` so they never contaminate later agent reasoning. Activate on 'create/slice issues for <feature-name>'; require `<feature-name>`."
 ---
 
-# create-issues
+# create-feature-issues
 
 Turn a locked-in feature into a set of release-safe **vertical slice** GitHub issues. Each slice becomes **one** issue whose body inlines its typed task breakdown (e2e / backend / frontend) as a **static-ID checklist** — there are no task sub-issues. The skill is always invoked with a `<feature-name>` that points at `docs/product-requirement-document/<feature-name>/` — there is no free-form / ad-hoc input path. It decomposes the work, quizzes the user for explicit approval, creates one issue per slice (with its branch), then **archives the spent PRD pair**.
 
 **The task checklist is the task ledger.** Inside each slice issue body, the `## Tasks` section is a checklist of static-ID entries (`e2e.1`, `be.1`, `fe.1`, …). Those IDs are **permanent keys** — they are never translated to issue numbers and never become their own issues. The fully-qualified permanent key is `s<slice#>.<type>.<n>` (the slice number comes from the slice issue); inside one slice body the short form (`e2e.1`) is unambiguous because the issue number already scopes it. The downstream workflow reads this checklist to know what to build, ticks each box on completion, and references the qualified key in commit trailers (`Task: s<slice#>.<id>`). Task-level dependencies are expressed in each entry's `blocked-by:` field as static IDs — not as GitHub `Blocked by` relationships.
 
-**The PRD pair is a single-use input.** `requirement.md` + `implement-detail.md` exist for exactly one purpose: to be sliced into issues here. Once the issues carry the work, nothing re-reads those two files as a load-bearing input (engineers work from issue bodies; the durable contracts — ADR / data-model / api-contract / runbooks — carry every canonical fact). Leaving them in the live tree only lets a stale or superseded intent silently contaminate later agent reasoning. So this skill's **last act** is to relocate the pair into `docs/product-requirement-document/_archive/<feature-name>/` (step 6). The two governing rules that fall out: **`create-issues` reads only *active* features** (those still under the live PRD root), and **nothing globs `_archive/`**.
+**The PRD pair is a single-use input.** `requirement.md` + `implement-detail.md` exist for exactly one purpose: to be sliced into issues here. Once the issues carry the work, nothing re-reads those two files as a load-bearing input (engineers work from issue bodies; the durable contracts — ADR / data-model / api-contract / runbooks — carry every canonical fact). Leaving them in the live tree only lets a stale or superseded intent silently contaminate later agent reasoning. So this skill's **last act** is to relocate the pair into `docs/product-requirement-document/_archive/<feature-name>/` (step 6). The two governing rules that fall out: **`create-feature-issues` reads only *active* features** (those still under the live PRD root), and **nothing globs `_archive/`**.
 
 ## When to activate
 
@@ -72,11 +72,11 @@ Read every source listed below in full — partial reads will skew the slice bre
   - If the live directory is present → proceed normally.
   - If it's absent **but** `_archive/<feature-name>/` exists → this feature was **already sliced** (step 6 archives the PRD pair at the end of a successful run). **STOP** and surface:
 
-    > Feature `<feature-name>` has already been sliced and its build docs are archived under `_archive/`. `create-issues` only operates on active features. If you intend to re-slice it, restore the pair from `_archive/<feature-name>/` (e.g. `git mv` it back) first.
+    > Feature `<feature-name>` has already been sliced and its build docs are archived under `_archive/`. `create-feature-issues` only operates on active features. If you intend to re-slice it, restore the pair from `_archive/<feature-name>/` (e.g. `git mv` it back) first.
 
   - If **neither** exists → genuine lock-in contract violation: halt and surface, do not invent context.
 
-  This keeps the single governing rule explicit: **`create-issues` reads only active features.** No other skill needs `_archive/` awareness — the graveyard is read by nothing.
+  This keeps the single governing rule explicit: **`create-feature-issues` reads only active features.** No other skill needs `_archive/` awareness — the graveyard is read by nothing.
 
 - **Critical paths (mandatory).** List `docs/critical-path/` and read every critical-path file whose entry point, steps, or summary touches the surface this feature is changing. Critical paths are organized by user flow, not by feature, so a single feature can touch one, several, or zero of them — list first, then decide which to read.
 
@@ -300,7 +300,7 @@ The PRD pair (`requirement.md` + `implement-detail.md`) has now done its entire 
 
    ```yaml
    ---
-   status: sliced            # build docs consumed by create-issues
+   status: sliced            # build docs consumed by create-feature-issues
    sliced_at: <YYYY-MM-DD>   # absolute date — today
    ---
    ```
@@ -384,9 +384,9 @@ Good — vertical tracer bullets, each merge leaves the product working. Each sl
 - **Branch intent name is hand-picked, not auto-slugged.** The `<intent>` segment is a short kebab-case noun-phrase (≤40 chars) that conveys what the slice does, chosen during step 5a. Do NOT mechanically slugify the issue title — titles are written for humans scanning a list, branch names need to read well in isolation.
 - **Acceptance criteria live on the slice only, and cover E2E/UI.** Include the AC section (EARS + Gherkin) on the slice issue **only when the slice has UI**, scoped to behavior a user can validate from the UI. This is the slice's single AC ceremony — tasks point at it (`covers:`) rather than duplicating it. Backend tasks point at their api-contract / data-model file (`contract:`) instead; a contract-less utility task carries its own one-line `done:` criterion.
 - **EARS + Gherkin for the slice's behavioral criteria.** The slice-level AC (for UI slices) uses EARS, and non-trivial criteria add 1+ Gherkin scenarios with `Given` / `When` / `Then` steps. RFC 2119 keywords (MUST, SHALL, SHOULD, MAY, MUST NOT, SHOULD NOT) MUST appear in UPPERCASE in `Then` / `And` outcome lines. `Given` / `When` lines state facts and do not need RFC 2119 keywords.
-- **Data-model + migration changes ride along, specified by the contract.** A `backend` task that introduces or changes a data model carries that change in the same task (never its own task) and points at both `docs/api-contract/<entity>.yaml` and `docs/data-model/<entity>.yaml` (`contract:`). The data-model contract is the binding spec for the migration; the downstream engineer derives upgrade/downgrade migration tests from it — `create-issues` does not re-state migration Gherkin in the slice body.
+- **Data-model + migration changes ride along, specified by the contract.** A `backend` task that introduces or changes a data model carries that change in the same task (never its own task) and points at both `docs/api-contract/<entity>.yaml` and `docs/data-model/<entity>.yaml` (`contract:`). The data-model contract is the binding spec for the migration; the downstream engineer derives upgrade/downgrade migration tests from it — `create-feature-issues` does not re-state migration Gherkin in the slice body.
 - **The PRD pair is single-use; archive it after slicing.** `requirement.md` + `implement-detail.md` are inputs to this skill and nothing else re-reads them as load-bearing. After every slice issue is created (step 5), relocate the pair into `docs/product-requirement-document/_archive/<feature-name>/` via `git mv`, stamp `status: sliced` frontmatter, and commit (step 6). Physical relocation — not just a flag — is what keeps stale intent off the agent read surface; agents glob the live tree and would read a `status:`-flagged file left in place. Archive only on full success; never archive a partial run.
-- **`create-issues` reads only active features.** If the live `docs/product-requirement-document/<feature-name>/` is gone but `_archive/<feature-name>/` exists, the feature was already sliced — STOP and surface, do not re-slice from the archive. Nothing globs `_archive/`; it is the graveyard, read by no skill.
+- **`create-feature-issues` reads only active features.** If the live `docs/product-requirement-document/<feature-name>/` is gone but `_archive/<feature-name>/` exists, the feature was already sliced — STOP and surface, do not re-slice from the archive. Nothing globs `_archive/`; it is the graveyard, read by no skill.
 
 ### EARS notation cheat sheet
 

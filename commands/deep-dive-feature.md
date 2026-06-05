@@ -98,7 +98,7 @@ If `gh repo sync` is unavailable in this repo (no remote default branch), fall b
 gh api --method POST repos/:owner/:repo/milestones -f title="{feature-name}"
 ```
 
-Set only the title — leave description, due_on, and state at their defaults. The milestone is the umbrella for the lock-in PR (Step 11) and downstream slice/task issues created later by `create-issues`.
+Set only the title — leave description, due_on, and state at their defaults. The milestone is the umbrella for the lock-in PR (Step 11) and downstream slice/task issues created later by `create-feature-issues`.
 
 **4. Create the feature branch as a worktree off latest `origin/main`.**
 
@@ -213,7 +213,7 @@ Invite `architect` into the team. Name + subagent_type match verbatim (`name = "
 Then send the initial brief via `SendMessage`. The brief MUST cover:
 
 - The requirement file the architect should read first: `docs/product-requirement-document/{feature-name}/requirement.md` (and the sibling Critical Path / Glossary files).
-- The locked design system the architect must read: `docs/design-system/` — **especially `docs/design-system/surfaces.md`** (the surface + navigation inventory locked in the design phase). The architect models the **app shell / global-nav container as a real C4 component** and a file-tree entry in `implement-detail.md`, derived from that inventory — not as an incidental `Dashboard.tsx`. This gives `create-issues` a second, architectural signal for the foundation/shell slice.
+- The locked design system the architect must read: `docs/design-system/` — **especially `docs/design-system/surfaces.md`** (the surface + navigation inventory locked in the design phase). The architect models the **app shell / global-nav container as a real C4 component** and a file-tree entry in `implement-detail.md`, derived from that inventory — not as an incidental `Dashboard.tsx`. This gives `create-feature-issues` a second, architectural signal for the foundation/shell slice.
 - The architecture context the architect should survey: `docs/architecture-decision-record/README.md` (ADR index) and the existing C4 diagrams under `docs/architecture/`.
 - The instruction: **work inside the worktree** at `{worktree_path}` — every read must target that directory.
 - The instruction: **lead a technical discovery conversation with the user directly**. The orchestrator will not forward messages during the interview (see Step 8). The architect should expect to hear from the user directly.
@@ -332,7 +332,7 @@ EOF
 )
 ```
 
-PR title: **human-readable** (e.g. `docs({feature-name}): lock requirements + architecture`). Do **not** use the literal string `feature lockin` — the lock-in marker is the **`feature-lockin` label**, not the title. Downstream skills (`create-issues`) query by that label.
+PR title: **human-readable** (e.g. `docs({feature-name}): lock requirements + architecture`). Do **not** use the literal string `feature lockin` — the lock-in marker is the **`feature-lockin` label**, not the title. Downstream skills (`create-feature-issues`) query by that label.
 
 The milestone (`{feature-name}`) was created in Step 5 — gh resolves it by title.
 

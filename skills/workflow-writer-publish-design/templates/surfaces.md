@@ -1,7 +1,7 @@
 # Surface + Navigation Inventory — <Product Name>
 
 > The canonical list of every routed surface and how a user reaches it. This is the contract
-> `create-issues` reads to emit the **foundation/shell slice** (which owns the global nav
+> `create-feature-issues` reads to emit the **foundation/shell slice** (which owns the global nav
 > container + authenticated layout + landing/dashboard) and to enforce the **page-reachability
 > gate**: every page task declares an entry source from this table, and the reviewer verifies
 > that inbound path actually exists in code. `architect` reads this file too — the app shell /
@@ -25,7 +25,7 @@
 
 **Kinds** — `top-level` (parentless section, reached from global nav or a redirect) · `detail-child` (reached from a row/link on its parent) · `contextual` (new/edit/dialog reached from a control on a parent) · `external-entry` (login / magic-link, entered via URL or email) · `redirect-system` (`/` → home, 404, system routes).
 
-**Reachability rules** (the gate `create-issues` and the reviewer enforce):
+**Reachability rules** (the gate `create-feature-issues` and the reviewer enforce):
 
 - A **top-level (parentless)** surface MUST be in the global nav **or** be an explicit redirect target.
 - A surface **with a parent** MUST be linked from that parent (a row, card, or control).

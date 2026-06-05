@@ -432,19 +432,24 @@
   <p class="eyebrow">harness-claude-code · workflow guide</p>
   <h1>How the workflow works</h1>
   <p class="lede">
-    A walkthrough of the three top-level commands, the role-based agents,
+    A walkthrough of the top-level commands, the role-based agents,
     and the GitHub-issue lifecycle they drive together — including who talks to
     whom, where the user sits in the loop, and how every state transition is
     recoverable because the source of truth lives on issues, labels, and a
-    per-slice task checklist.
+    per-unit task checklist.
   </p>
   <p class="lede" style="margin-top:14px">
-    <strong style="color:var(--accent)">New in v0.40</strong> — the inner slice
-    cycle (author E2E → coverage gate → implement → pass E2E → review → fix → PR)
-    no longer round-trips through GitHub labels stage by stage. It now runs
-    end-to-end inside <strong>one background <code>implement-slice</code> Workflow
-    per slice</strong>. <code>/implement-feature</code> shrank from nine stages to
-    four. See <a href="#whats-new">what changed</a>.
+    <strong style="color:var(--accent)">New in v0.41</strong> — the
+    <code>/ship</code> command unifies all three kinds of work into one loop.
+    It is a superset of <code>/implement-feature</code>: the same feature flow,
+    plus an <strong>enhancement</strong> lane (one feature-shaped
+    <code>kind:enhancement</code> issue, no interview) and a full
+    <strong>bug</strong> lane (read-only <code>analyze-bug</code> → human approval
+    gate → the lighter <code>fix-bug</code> Workflow). Kickoff routes by
+    <code>kind:</code> — feature/enhancement launch <code>implement-slice.mjs</code>,
+    bugs launch <code>fix-bug.mjs</code>. Milestone is optional: omit it for the
+    repo-wide maintenance lane. <code>/implement-feature</code> remains as a
+    feature-only fallback. See <a href="#whats-new">what changed</a>.
   </p>
 </header>
 
@@ -457,7 +462,7 @@
     <li><a href="#agents">The agents</a></li>
     <li><a href="#discovery-flow">Discovery: <code>/deep-dive-feature</code></a></li>
     <li><a href="#scaffold-flow">Scaffold: <code>/scaffold-project</code></a></li>
-    <li><a href="#exec-flow">Execution: <code>/implement-feature</code></a></li>
+    <li><a href="#exec-flow">Execution: <code>/ship</code></a></li>
     <li><a href="#slice-workflow">The slice runs as a workflow</a></li>
     <li><a href="#labels">Labels are the protocol</a></li>
     <li><a href="#label-flips">How labels flip</a></li>
@@ -469,42 +474,52 @@
 <section id="big-picture">
   <h2>The big picture</h2>
   <p>
-    The harness has <strong>three top-level commands</strong> and a set of
+    The harness is built from <strong>top-level commands</strong> and a set of
     role-based agents. Commands are <em>orchestrators</em>: they don't write code
     themselves; they bring agents onto a team, brief them, route messages, and —
-    in execution — launch a <strong>background <code>implement-slice</code>
-    Workflow per slice</strong> against GitHub-issue state, backed by a pure-shell
-    discovery script (<code>task-finder.sh</code> + four per-stage helpers) that
-    decides what's eligible each pass. Durable state lives in three places: the
-    GitHub slice issue and its labels, the slice <em>body's</em> task checklist,
-    and the slice branch's commits — which means the loop can be stopped, resumed,
-    or re-run without losing track of where work is.
+    in execution — launch a <strong>background unit-cycle Workflow per unit of
+    work</strong> against GitHub-issue state, backed by a pure-shell discovery
+    script that decides what's eligible each pass. The unified execution command
+    is <strong><code>/ship</code></strong>, driven by <code>ship-finder.sh</code>
+    (five stages: reconcile · analyze-bug · kickoff · fix-pr · close-pr). It spans
+    all three kinds of work and routes kickoff by <code>kind:</code> —
+    <code>kind:feature</code> / <code>kind:enhancement</code> launch
+    <code>implement-slice.mjs</code>, <code>kind:bug</code> launches
+    <code>fix-bug.mjs</code>. (<code>/implement-feature</code> +
+    <code>task-finder.sh</code> remain as a feature-only fallback with four stages.)
+    Durable state lives in three places: the GitHub issue and its labels, the
+    issue <em>body's</em> task checklist (or, for a bug, its approved analysis
+    comment), and the unit branch's commits — which means the loop can be stopped,
+    resumed, or re-run without losing track of where work is.
   </p>
   <div class="ascii">
 <pre>
                 ┌──────────────────────────────────────────────────────────┐
                 │                       USER (you)                        │
                 └──┬────────────────────┬──────────────────────────────┬──┘
-                   │ /deep-dive-feature │ /scaffold-project            │ /implement-feature &lt;feature-name&gt;
+                   │ /deep-dive-feature │ /scaffold-project            │ /ship [milestone]
                    ▼                    ▼                              ▼
             ┌────────────┐         ┌────────────┐                ┌──────────────┐
             │ product-   │         │ scaffold-  │                │ orchestrator │
-            │  owner →   │         │  project   │                │ (task-finder │
-            │ design-    │         │ (templates │                │  .sh · 4     │
+            │  owner →   │         │  project   │                │ (ship-finder │
+            │ design-    │         │ (templates │                │  .sh · 5     │
             │  lead →    │         │ + seeds    │                │  stages)     │
             │ architect  │         │  locked    │                └──────┬───────┘
-            │ + writers  │         │  tokens)   │                       │ Stage 1: launch
-            └─────┬──────┘         └─────┬──────┘                       ▼ (one per slice)
-                  │                      │                  ┌────────────────────────┐
-                  ▼                      ▼                  │ implement-slice Workflow│
-       PRD + design system + ADRs   bootable stack + tokens │ author E2E → coverage  │
-       + surfaces + contracts       (compose up; PR opened) │ gate → plan → implement│
-       (committed on feature                                │ → pass E2E → review →  │
-        branch; PR opened)                                  │ fix → open draft PR    │
-                                                            └───────────┬────────────┘
-                                                                        ▼
-                                                            draft PR → fix-pr / close-pr
-                                                            (the outer loop's other stages)
+            │ + writers  │         │  tokens)   │            kickoff routes by kind:
+            └─────┬──────┘         └─────┬──────┘                       ▼
+                  │                      │            ┌───────────────────────────────────┐
+                  ▼                      ▼            │ feature / enhancement → implement-  │
+       PRD + design system + ADRs   bootable stack   │   slice.mjs (author E2E → cov gate  │
+       + surfaces + contracts       + tokens         │   → implement → pass E2E → review)  │
+       (committed on feature        (compose up;     │ bug → fix-bug.mjs (regression test  │
+        branch; PR opened)           PR opened)      │   first → fix → review)             │
+                                                     └─────────────────┬───────────────────┘
+                                                                       ▼
+                                                       draft PR → fix-pr / close-pr
+                                                       (the outer loop's other stages)
+
+       (bug lane adds an up-front  analyze-bug  stage: read-only reproduce + root-cause
+        → # Bug Analysis comment → human approves → kickoff launches fix-bug.mjs)
 </pre>
   </div>
 </section>
@@ -653,9 +668,9 @@
         end-to-end shipping.
       </p>
       <ul>
-        <li><code>/implement-feature &lt;feature-name&gt;</code> drives reconcile → kickoff → fix-pr → close-pr</li>
-        <li>Launches the <code>implement-slice</code> Workflow, which dispatches <code>e2e-author</code> / <code>engineer</code> and runs the inlined <code>runReviewSlice()</code> fan-out (<code>axis-reviewer</code> agents)</li>
-        <li>Across slices work runs in parallel; <em>within</em> a slice everything is serial inside its one workflow</li>
+        <li><code>/ship [milestone]</code> drives reconcile → analyze-bug → kickoff → fix-pr → close-pr (<code>/implement-feature</code> is the feature-only four-stage subset)</li>
+        <li>Kickoff launches <code>implement-slice.mjs</code> (feature/enhancement) or <code>fix-bug.mjs</code> (bug), which dispatch <code>e2e-author</code> / <code>engineer</code> and run the inlined review fan-out (<code>axis-reviewer</code> agents)</li>
+        <li>Across units work runs in parallel; <em>within</em> a unit everything is serial inside its one workflow</li>
       </ul>
     </div>
   </div>
@@ -669,10 +684,12 @@
     are sharp on purpose: <code>product-owner</code> never writes architecture;
     <code>design-lead</code> never writes code; <code>engineer</code> never
     writes E2E specs; <code>reviewer</code> is read-only on production code. In
-    execution the agents are no longer dispatched by <code>/implement-feature</code>
-    directly — they are dispatched <strong>by the <code>implement-slice</code>
-    Workflow</strong> (the lone exception is the <code>fix-pr</code> engineer, an
-    external-wait stage the outer loop still owns).
+    execution the agents are no longer dispatched by the <code>/ship</code>
+    orchestrator directly — they are dispatched <strong>by the unit-cycle
+    Workflow</strong> (<code>implement-slice.mjs</code> / <code>fix-bug.mjs</code>).
+    The two exceptions the outer loop still owns are the read-only
+    <code>analyze-bug</code> engineer (pre-approval) and the <code>fix-pr</code>
+    engineer (an external-wait stage).
   </p>
   <table class="matrix">
     <thead>
@@ -853,28 +870,39 @@
 </section>
 
 <section id="exec-flow">
-  <h2>Execution — <code>/implement-feature &lt;feature-name&gt;</code></h2>
+  <h2>Execution — <code>/ship [milestone]</code></h2>
   <p>
-    One sweep through <strong>four</strong> outer stages, in order. The
-    orchestrator runs
-    <code>skills/operation-git/scripts/task-finder.sh &lt;feature-name&gt;</code>
-    once — pure shell, no LLM — to discover every eligible candidate across the
-    four stages against ONE GitHub-state snapshot, then walks the report
-    top-to-bottom. Each stage is <strong>milestone-scoped</strong>,
-    <strong>label-driven</strong>, and <strong>self-skipping</strong> (its report
-    section reads <code>- (none)</code> when there's nothing to do). One
-    invocation = one pass — wrap with <code>/loop</code> to keep advancing until
-    the feature ships.
+    One sweep through the outer stages, in order. The orchestrator runs
+    <code>skills/operation-git/scripts/ship-finder.sh [milestone]</code>
+    once — pure shell, no LLM — to discover every eligible candidate against ONE
+    GitHub-state snapshot, then walks the report top-to-bottom. <code>/ship</code>
+    has <strong>five</strong> stages — <strong>reconcile</strong> →
+    <strong>analyze-bug</strong> → <strong>kickoff</strong> →
+    <strong>fix-pr</strong> → <strong>close-pr</strong> — spanning all three kinds.
+    Milestone is <strong>optional</strong>: pass one to scope to a feature, omit
+    it for the repo-wide maintenance lane (all open bugs + one-off enhancements).
+    Each stage is <strong>self-skipping</strong> (its report section reads
+    <code>- (none)</code> when there's nothing to do). One invocation = one pass —
+    wrap with <code>/loop /ship [milestone]</code> to keep advancing until the
+    work ships.
+    <br><br>
+    <span class="muted"><code>/implement-feature &lt;feature-name&gt;</code> is the
+    feature-only fallback: the same flow minus the <code>analyze-bug</code> stage
+    (four stages, always milestone-scoped), driven by <code>task-finder.sh</code>.</span>
   </p>
   <p>
-    The command's whole job is now: <strong>reconcile</strong> dead-run locks,
-    <strong>launch</strong> a slice's Workflow, and shepherd the resulting
-    <strong>PR</strong>. The inner slice cycle — author E2E, coverage gate,
-    implement, pass E2E, review, fix — is no longer the command's concern; it
-    runs entirely inside the <code>implement-slice</code> Workflow that Stage 1
-    launches (<a href="#slice-workflow">next section</a>). The orchestrator never
-    waits for backgrounded work <em>within</em> a pass: once it launches a
-    workflow or dispatches the <code>fix-pr</code> engineer, it ends the pass; a
+    The command's whole job is: <strong>reconcile</strong> dead-run locks,
+    dispatch the read-only <strong>analyze-bug</strong> engineer for freshly-filed
+    bugs (→ <code># Bug Analysis</code> comment → human approval gate),
+    <strong>launch</strong> a unit's Workflow at kickoff (routed by
+    <code>kind:</code> — <code>implement-slice.mjs</code> for feature/enhancement,
+    <code>fix-bug.mjs</code> for bug), and shepherd the resulting
+    <strong>PR</strong>. The inner unit cycle — author E2E, coverage gate,
+    implement, pass E2E, review, fix (or, for a bug, regression-test-first → fix →
+    review) — is never the command's concern; it runs entirely inside the
+    Workflow that kickoff launches (<a href="#slice-workflow">next section</a>).
+    The orchestrator never waits for backgrounded work <em>within</em> a pass:
+    once it launches a workflow or dispatches an engineer, it ends the pass; a
     finished run re-invokes it (event-driven) and the next pass picks up what
     moved.
   </p>
@@ -1178,16 +1206,17 @@
     <div class="lbl-fam">
       <h4>kind:*</h4>
       <ul>
-        <li><span class="pill kind">kind:feature</span> — full per-slice-Workflow lifecycle today</li>
-        <li><span class="pill kind">kind:bug</span> / <span class="pill kind">kind:enhancement</span> — issue-tracked but not yet looped</li>
+        <li><span class="pill kind">kind:feature</span> — per-slice-Workflow lifecycle (<code>implement-slice.mjs</code>)</li>
+        <li><span class="pill kind">kind:enhancement</span> — one feature-shaped issue, same <code>implement-slice.mjs</code> cycle, no interview</li>
+        <li><span class="pill kind">kind:bug</span> — <code>/ship</code> analyze → human gate → <code>fix-bug.mjs</code></li>
       </ul>
     </div>
     <div class="lbl-fam">
       <h4>status:*</h4>
       <ul>
-        <li><span class="pill status">status:ready-to-review</span> — human approval gate on a new slice</li>
+        <li><span class="pill status">status:ready-to-review</span> — human approval gate (a new slice/enhancement, or a bug's posted <code># Bug Analysis</code>)</li>
         <li><span class="pill status">status:ready-to-implement</span> — kickoff picks this up</li>
-        <li><span class="pill status">status:in-progress</span> — the slice lock; held for the whole workflow run</li>
+        <li><span class="pill status">status:in-progress</span> — the unit lock (slice, enhancement, analyze, or bug-fix); held for the whole run</li>
         <li><span class="pill status">status:fix-in-progress</span> — PR-level lock (fix-pr)</li>
         <li><span class="pill status">status:need-attention</span> — workflow halted; the human owns the next move</li>
       </ul>
@@ -1222,7 +1251,7 @@
     each arrow is the actor that performs the step.
   </p>
   <div class="actor-legend">
-    <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-issues</code>)</span>
+    <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-feature-issues</code>)</span>
     <span><span class="actor agent">agent</span> the <code>implement-slice</code> Workflow or a dispatched sub-agent</span>
     <span><span class="actor human">human</span> the user</span>
     <span><span class="actor github">github</span> GitHub automation (PR merge auto-closes linked issues)</span>
@@ -1236,7 +1265,7 @@
 
       <div class="flow-state start">(issue does not exist)</div>
       <div class="flow-arrow">
-        <span class="actor skill">create-issues</span>
+        <span class="actor skill">create-feature-issues</span>
         <span class="effect">opens ONE issue (inline task checklist in body) + attaches slice branch</span>
       </div>
       <div class="flow-state">kind:feature &middot; status:ready-to-review</div>
