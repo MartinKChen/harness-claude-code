@@ -35,7 +35,7 @@ out="$(bash "$script_dir/list-draft-prs.sh" \
     --status broken \
     --missing-label status:fix-in-progress \
     --missing-label status:need-attention \
-    "${milestone_args[@]}" \
+    ${milestone_args[@]+"${milestone_args[@]}"} \
   | jq -c '.[]' \
   | while read -r row; do
       number="$(printf '%s' "$row" | jq -r .number)"

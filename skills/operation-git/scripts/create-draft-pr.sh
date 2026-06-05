@@ -51,7 +51,7 @@ if [[ -n "$existing" ]]; then
 fi
 
 args=(--base main --head "$slice_branch" --title "$title" --body-file "$body_file" --draft)
-for l in "${labels[@]}"; do args+=(--label "$l"); done
+for l in ${labels[@]+"${labels[@]}"}; do args+=(--label "$l"); done
 [[ -n "$milestone" ]] && args+=(--milestone "$milestone")
 
 gh pr create "${args[@]}" >/dev/null

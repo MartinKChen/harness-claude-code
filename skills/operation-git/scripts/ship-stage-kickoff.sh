@@ -44,7 +44,7 @@ out="$(bash "$script_dir/list-issues.sh" \
     --kind kind:feature --kind kind:enhancement --kind kind:bug \
     --label status:ready-to-implement \
     --missing-label status:in-progress \
-    "${milestone_args[@]}" \
+    ${milestone_args[@]+"${milestone_args[@]}"} \
   | jq -c '.[]' \
   | while read -r row; do
       number="$(printf '%s' "$row" | jq -r .number)"

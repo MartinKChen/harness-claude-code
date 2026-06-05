@@ -195,8 +195,8 @@ run_lockfile_tracked_check() {
   if [ "${#untracked[@]}" -gt 0 ] || [ "${#modified[@]}" -gt 0 ]; then
     local list=""
     local f
-    for f in "${untracked[@]}"; do list+=$'\n  - untracked: '"${f}"; done
-    for f in "${modified[@]}"; do list+=$'\n  - modified:  '"${f}"; done
+    for f in ${untracked[@]+"${untracked[@]}"}; do list+=$'\n  - untracked: '"${f}"; done
+    for f in ${modified[@]+"${modified[@]}"}; do list+=$'\n  - modified:  '"${f}"; done
     deny \
       "engineer-pre-push: blocking git push for ${slice_branch} — lockfile drift detected (untracked or uncommitted)" \
       "Every lockfile in the worktree must be tracked in git and free of uncommitted changes — CI workflows that cache against \`cache-dependency-path\` will fail if the lockfile they reference is missing or stale on the pushed tree. PR #165 hit exactly this with \`e2e/package-lock.json\` generated but never staged. Files flagged now:${list}
@@ -468,7 +468,7 @@ run_e2e_checks() {
   # If smoke already failed, don't compound the noise — the engineer fixes
   # the stack first, then re-pushes and gets an E2E signal.
   local f
-  for f in "${failures[@]}"; do
+  for f in ${failures[@]+"${failures[@]}"}; do
     case "$f" in
       container:smoke-*) note "skipping E2E run — container smoke failed; fix the stack first"; return ;;
     esac
