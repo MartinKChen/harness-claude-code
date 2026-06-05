@@ -96,6 +96,7 @@ Where a module emits an artifact handed to another service — a link/redirect/c
 E2E test code is itself the implementation; the coverage question is the quality of its selectors and assertions.
 
 - **Selectors** — semantic (`getByRole`, `getByLabel`, accessible name) over `data-testid` (justified inline only when no semantic anchor exists); brittle CSS-class / XPath selectors hide breakage. Scope and anchor row-state locators (`row.getByText(/^archived$/i)`) so they don't match incidental page chrome.
+- **No page-wide false collision** — a feature assertion must be scoped to its region (`page.getByRole("main")` / a row / the dialog), never a page-wide loose `getByText(/…/)` that can also hit the signed-in identity in the nav chrome or an entity name in an off-region dropdown. A per-test seed-isolation token must be opaque (a random suffix), not the scenario keyword the assertion hunts for — `user-archived@…` seeded then asserted with `/archived/i` collides with itself in the chrome and dropdowns. Flag both as HIGH: they pass-but-wrong or fail on strict-mode, and surface only at validation time.
 - **Assertions** — check user-visible state (text, role, URL), not raw HTTP responses or DOM internals; a `toHaveURL` must pin the exact surface, not a permissive prefix that matches list and detail alike; a required confirmation dialog is asserted visible, not merely handled; a state-*removal* is asserted in code, not left as a comment.
 - **One critical-path flow per spec** — independent flows in one `test()` break failure isolation.
 

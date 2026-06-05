@@ -65,7 +65,7 @@ Never mix: a single precondition is seeded through exactly one path. Don't `INSE
 - Use the canonical client / helper the project ships (e.g. a `pg-promise` connection, a SQLAlchemy session, a Prisma `prisma.user.create({...})` call). Don't open ad-hoc connections from the spec — re-use the configured client so connection strings and transactions stay consistent.
 - Wrap related inserts in a transaction so a partial failure rolls back cleanly. A spec that leaves a half-seeded `user` row makes downstream tests non-deterministic.
 - Set timestamps explicitly when the data model declares them NOT NULL with no default. Don't rely on DB-side `now()` defaults if the model says the column is not nullable AND has no default — that's a contract bug to surface, not to paper over.
-- Always isolate seeded data per test (unique slugs / emails / IDs) so concurrent specs don't collide on UNIQUE constraints. A test that hard-codes `email: "test@example.com"` will fight every other test that does the same.
+- Always isolate seeded data per test (unique slugs / emails / IDs) so concurrent specs don't collide on UNIQUE constraints. A test that hard-codes `email: "test@example.com"` will fight every other test that does the same. **Derive that uniqueness from an opaque token (a random suffix / run id), never from the semantic keyword under test** — see "Scope assertions, and keep isolation tokens out of assertion text" below; a `user-archived@…` seed that the spec then asserts with `/archived/i` collides with itself.
 - Clean up after the spec (transaction rollback in a fixture teardown, or explicit delete) unless the harness already truncates between tests.
 
 ### Route shared global-chrome interactions through one helper (biggest maintenance lever)
@@ -79,6 +79,22 @@ Rules:
 - **Why this is the biggest lever.** A chrome locator copy-pasted across N specs means a single shell change (logout button relabeled, user menu restructured, banner role changed) breaks all N specs independently, each fixed in a separate place. Centralized, the same change is one function edit — every downstream spec across every slice goes green again. This converts an N-spec ripple into a 1-edit fix.
 - **Helper owns chrome mechanics, not feature assertions.** The helper encapsulates the chrome locator + action (and chrome-state assertions like "the header shows this email"). Feature-specific, page-body interactions and assertions stay in the spec (or a page-scoped helper) — don't collapse everything into one god-helper that every spec depends on for unrelated reasons.
 - **Semantic selectors still apply inside the helper.** Centralizing the locator doesn't waive the selector discipline — `getByRole` / `getByLabel` / `getByText` over `data-testid` lives in the helper, justified in writing where a fallback is unavoidable.
+
+### Scope assertions, and keep isolation tokens out of assertion text (biggest false-collision lever)
+
+A page-wide matcher (`page.getByText(/…/)`, `page.getByRole(…, { name: /…/ })`) sweeps the **entire DOM** — which on every authed page includes the persistent global chrome (the signed-in user's email / display name) and every off-region widget (dropdown `<option>` lists, side panels, toasts) that happens to render seeded entity names. A loose regex run page-wide therefore matches strings the test never meant to touch — either failing on a strict-mode violation (two matches) or, worse, passing against the *wrong* element. This is the single most common reason an authored spec has to be rewritten at E2E-validation time, so author against it up front.
+
+Two failure modes, both avoidable:
+
+- **Unscoped match.** `page.getByText(/archived/i)` hits the status badge you meant *and* an "Archived Projects" option in a filter dropdown *and* the signed-in `user-archived@…` in the nav.
+- **Isolation token == assertion target.** The per-test uniqueness rule (above) tempts you to bake the scenario's keyword into the seed identity (e.g. `archived`, `pending`), so the unique token *is* the string the assertion hunts for — and it leaks into the chrome and every dropdown, colliding with itself.
+
+Rules:
+
+- **Resolve the region before you assert; never assert feature content page-wide.** Anchor to the smallest stable container first — `page.getByRole("main")`, `page.getByRole("dialog")`, the specific `page.getByRole("table")`, a single `page.getByRole("row", { name: … })` — then locate *within* it: `await expect(main.getByText(/archived/i)).toBeVisible()`. The chrome and off-region widgets are outside that region by construction, so they can't collide.
+- **Assert on the feature's rendered output, not a keyword sweep.** Prefer the user-visible artifact the feature produces — a status badge with accessible name `Archived`, a named alert/banner, a row's state cell (`row.getByText(/^archived$/i)` anchored `^…$`) — over a loose substring regex that any seeded name can satisfy.
+- **Keep the seed-isolation token lexically disjoint from anything the spec asserts.** Make uniqueness opaque (`entity-${runId}`, `user+${runId}@example.com`); never reuse the scenario keyword as the token. The display name a dropdown renders, and the email the nav renders, must not contain the word your assertion looks for.
+- **Treat the signed-in identity as a permanent page-wide collision source.** On any authed surface the chrome always renders the current user's email / name. Any page-wide `/…@example.com/` (or token-bearing) matcher will hit it — scope, or assert exact + anchored, every time.
 
 ### Asserting against external-service doubles
 
@@ -99,3 +115,5 @@ When a scenario's outcome lands in an external-service double (mail catcher, que
 - **Mixing seed paths for one precondition.** Half via API, half via DB. → Pick one path per precondition.
 - **No FK / constraint awareness.** Inserting children before parents, or omitting NOT NULL columns. → Read the data model; insert in dependency order.
 - **Copy-pasted chrome interactions.** The same `getByRole("banner")…logout` chain (or authed-header assertion) inlined in two-plus specs. → Lift it into the shared chrome helper (`logout(page)`, `expectAuthedChrome(page, email)`); a shell change must be a 1-edit fix, not an N-spec ripple.
+- **Page-wide loose matcher.** `page.getByText(/archived/i)` that also matches the signed-in email in the nav or an entity name in a dropdown. → Scope to a region (`page.getByRole("main")`, a row, the dialog) and/or anchor exact (`/^archived$/i`).
+- **Isolation token doubling as the assertion target.** Seeding `user-archived@…` / "Archived Co" and then asserting `/archived/i`. → Make the uniqueness token opaque (`+${runId}`); assert on the feature's rendered output, not the seed keyword.
