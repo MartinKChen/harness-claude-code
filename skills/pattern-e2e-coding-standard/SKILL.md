@@ -39,6 +39,14 @@ Rules:
 
 This rule overrides any local convention the spec might otherwise inherit. Specs conform to the published contract, never the reverse.
 
+### An E2E asserts user-visible state only — never backend internals
+
+An E2E spec proves a **user-visible, cross-surface** result through the live stack — a rendered balance, a status badge, a landing URL, a row appearing in a list. It is the most expensive and most brittle layer, so it asserts only what the user can see, and only for behavior on a journey worth walking (see `docs/test-layering-and-gates.md`).
+
+- **Assert user-visible state, never backend internals through the UI.** A ledger delta, a token's `used_at`, an outbox-row enqueue, "the row was written in the same transaction", a `4xx`/`429` code, "no row created" — these are **backend invariants** owned by the backend-integration layer and proven by an API-level test against real Postgres. Do NOT reach for them through the browser (querying the DB mid-spec, asserting an internal counter, decoding a response envelope the user never sees). If you find yourself wanting to assert a backend internal in an E2E spec, it belongs at the backend layer instead — flag it.
+- **Not every AC maps to an E2E assertion.** A slice's ACs fan across owning layers; only the *user-visible cross-surface* clauses land in an E2E spec. A backend-only AC has no E2E assertion at all (and a backend-only slice has no E2E spec). Walking every AC through the UI is the layering error this standard exists to prevent — it produces brittle specs that re-prove what an endpoint test already proves.
+- **The seam between mock and real stays at the contract layer.** Where a non-happy-path envelope (e.g. a `409 OVERLAP` body shape) must be verified, that is a contract test / schema-generated client concern — not a branch to enumerate in the single golden-path E2E walk.
+
 ### Pick the seeding path deliberately
 
 Default order of preference for setting up E2E state, from most realistic to most invasive:

@@ -31,9 +31,33 @@ Commit-message format is owned by the **dispatched caller**, not this skill. Eac
 
 ## Workflow
 
+### "Outside" is relative to the unit under construction
+
+Outside-in TDD ≠ "always start from a browser E2E." It means: start at the **outermost boundary of the thing you are building**, write a failing acceptance test *there*, then grow the inner modules with fast unit RED→GREEN→REFACTOR loops until the acceptance test goes green. The outer boundary depends on the task's **owning layer** (Principle 3 of `docs/test-layering-and-gates.md`):
+
+- **Backend-only task** → "outside" is the **HTTP endpoint** (or the worker tick) — the acceptance test is an API test against real Postgres; inner loops are service unit tests with fake adapters at seams. A ledger delta / "same tx" / "no row created" clause is proven here, never through a browser.
+- **Frontend-only task** → "outside" is the **rendered/routed tree** (RTL, API mocked at `src/lib/api`); inner loops are component/hook unit tests.
+- **Cross-surface journey task** → "outside" is the **browser** (Playwright), through the live stack — and only this layer earns one.
+
+```
+OUTER loop (acceptance, at the unit's owning layer):  write RED ──────────────► GREEN
+                                                       │  stays red across the work   │
+INNER loop (unit):                                     │  R→G→R→G→R→G→R→G→R→G→R→G ...  │
+                                                       └── many fast cycles build it ──┘
+```
+
+The acceptance test is **written first and is *supposed* to stay red** across the inner loops — a long-red outer test is the north star, not a violation. Writing it *after* implementation forfeits its function: it becomes a regression test asserting what the code happens to do, not what the spec demanded. **An after-the-fact acceptance test is a TDD-method violation even when the resulting file looks identical.**
+
+### Two kinds of E2E: slice-segment vs critical-path
+
+When the unit *is* a cross-surface journey, distinguish the two E2E tests (Principle 5 of `docs/test-layering-and-gates.md`) — conflating them is what makes multi-slice journeys feel impossible to test-first:
+
+- **Slice-segment E2E** — owned by *this slice*, drives *this slice's* design, written **red-first within the slice** against already-merged-green upstream seeded via fixtures. This is where the TDD design pressure lives; it is an *implementation gate* for the slice.
+- **Critical-path E2E** — owned by the *milestone*. Its journey **spec** (the frozen `## Journey (Gherkin)` golden path) is authored upfront and decides where the slice seams go, but the **executable full walk** is composed *late*, at milestone close, by stitching the slice-owned segments into one continuous walk against a single seed. It is an acceptance/integration **release gate**, not a per-slice TDD driver — do not try to author it upfront for UI that isn't designed yet (that is the AC-vs-test conflation one level up), and do not hold one monolithic test red across the whole milestone.
+
 ### Outside-in TDD loop
 
-0. **Write the acceptance test first. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios. Write **one** failing acceptance/integration test that describes the slice end-to-end in the user's terms, derived from those scenarios. Run only that single test by name (see *Test scoping during the loop*). Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
+0. **Write the acceptance test first, at the unit's owning layer. This step is mandatory when the unit of work is a GitHub issue with Gherkin scenarios or EARS acceptance criteria — it is never optional.** Read the GitHub issue under work (e.g. `gh issue view <n>`) and extract the acceptance criteria from its body — typically EARS + Gherkin scenarios, plus the task's `covers:` AC clause(s) and `scenario:`. Write **one** failing acceptance/integration test at the task's owning layer (HTTP endpoint for backend, rendered tree for frontend, browser only for a cross-surface journey — see *"Outside" is relative to the unit*), derived from the mapped scenario. Run only that single test by name (see *Test scoping during the loop*). Confirm it is a valid RED (see *What counts as a valid RED*). Leave it red. Commit as `test(<feature>): add failing acceptance test for <behavior>` (formatted per the dispatched caller's `templates/commit-messages.md`). This is the goalpost. **Do not write any production code — no function body, no class, no route handler, no ORM model column — until this commit exists in `git log`.**
 
 1. **For each module needed to satisfy the goalpost, run the inner loop.** Define the module's narrow public interface using deep-module discipline (interface narrow relative to the functionality it hides). Identify its seams — anything across a process/IO boundary (store, HTTP client, clock, queue, message bus). For each seam, build a fake adapter (`InMemoryTaskStore`, `FakeClock`, `RecordingHttpClient`). Then loop until the module's behavior is complete:
 
