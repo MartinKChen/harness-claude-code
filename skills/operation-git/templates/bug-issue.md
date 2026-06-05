@@ -1,6 +1,8 @@
 <!--
 Body of a `kind:bug` GitHub issue in the unified implement lifecycle.
 
+Authored by the `create-bug-issue` skill (via create-bug.sh).
+
 This template is ZONE A ONLY — the reporter's symptom. It is the immutable
 record of what was observed and how to reproduce it. The diagnosis (root cause,
 proposed fix, regression-test plan) is NOT written here: the analyze step posts

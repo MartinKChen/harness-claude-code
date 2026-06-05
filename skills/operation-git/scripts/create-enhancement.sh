@@ -2,16 +2,16 @@
 # create-enhancement.sh
 #
 # Create one `kind:enhancement` issue from a feature-shaped body file and link its
-# development branch — the enhancement analog of what create-issues does per slice,
+# development branch — the enhancement analog of what create-feature-issues does per slice,
 # but for a single ad-hoc enhancement (no PRD, no decomposition). Deterministic
-# gh mechanics only; the /file-enhancement command authors the body + intent.
+# gh mechanics only; the /create-enhancement-issue command authors the body + intent.
 #
 # Steps:
 #   1. Create the issue with labels kind:enhancement + status:ready-to-review
-#      (the human-review gate, identical to a create-issues slice).
+#      (the human-review gate, identical to a create-feature-issues slice).
 #   2. Link an `enhancement/<n>-<intent>` branch via `gh issue develop --base main`
 #      (creates the branch off origin/main AND records the GitHub dev link — no
-#      local checkout, no manual push), exactly as create-issues cuts slice
+#      local checkout, no manual push), exactly as create-feature-issues cuts slice
 #      branches. implement-slice resolves it back via `gh issue develop --list`.
 #   3. Optionally attach a milestone.
 #

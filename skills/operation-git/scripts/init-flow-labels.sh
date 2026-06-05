@@ -6,7 +6,7 @@
 # Workflow per slice; GitHub keeps only durable, human-relevant state. So the
 # surviving label families are small:
 #
-#   status:ready-to-review     — create-issues sets this; the human design-approval gate
+#   status:ready-to-review     — create-feature-issues sets this; the human design-approval gate
 #   status:ready-to-implement  — human flips ready-to-review → this to release the slice
 #   status:in-progress         — REPURPOSED: the slice lock ("a workflow is running"). Name
 #                                kept to limit churn; it is no longer a per-task state.

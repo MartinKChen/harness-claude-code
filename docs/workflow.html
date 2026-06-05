@@ -1222,7 +1222,7 @@
     each arrow is the actor that performs the step.
   </p>
   <div class="actor-legend">
-    <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-issues</code>)</span>
+    <span><span class="actor skill">skill</span> orchestrator step — a <code>/implement-feature</code> stage or a workflow skill (e.g. <code>create-feature-issues</code>)</span>
     <span><span class="actor agent">agent</span> the <code>implement-slice</code> Workflow or a dispatched sub-agent</span>
     <span><span class="actor human">human</span> the user</span>
     <span><span class="actor github">github</span> GitHub automation (PR merge auto-closes linked issues)</span>
@@ -1236,7 +1236,7 @@
 
       <div class="flow-state start">(issue does not exist)</div>
       <div class="flow-arrow">
-        <span class="actor skill">create-issues</span>
+        <span class="actor skill">create-feature-issues</span>
         <span class="effect">opens ONE issue (inline task checklist in body) + attaches slice branch</span>
       </div>
       <div class="flow-state">kind:feature &middot; status:ready-to-review</div>

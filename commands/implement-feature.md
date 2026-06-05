@@ -18,7 +18,7 @@ This command does **not** wait for backgrounded work to finish *within* a pass. 
 
 ## Arguments
 
-Exactly one positional argument: `<feature-name>` — the GitHub milestone name created by `/deep-dive-feature` and used by `create-issues` to group every slice issue and inherited by every slice PR.
+Exactly one positional argument: `<feature-name>` — the GitHub milestone name created by `/deep-dive-feature` and used by `create-feature-issues` to group every slice issue and inherited by every slice PR.
 
 If `<feature-name>` is missing or empty, stop and ask the user for it before dispatching anything.
 

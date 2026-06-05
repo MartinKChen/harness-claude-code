@@ -1,5 +1,5 @@
 <!--
-Used in step 5a of the create-issues skill as the body of the slice GitHub issue
+Used in step 5a of the create-feature-issues skill as the body of the slice GitHub issue
 (the ONLY issue created per slice). The `kind:feature` + `status:ready-to-review`
 labels are set on the create command, not in the body.
 

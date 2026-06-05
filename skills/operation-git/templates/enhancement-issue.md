@@ -11,15 +11,15 @@ criteria / Tasks / Notes) PLUS two enhancement-only sections — `## Modifies` a
 `## Don't break` — and MINUS any contract-change section: an enhancement NEVER
 changes an API contract or data model. If the change requires editing
 docs/api-contract/* or docs/data-model/*, it is a FEATURE (architecture decision
-needed) — route it through /deep-dive-feature, not /file-enhancement. The
+needed) — route it through /deep-dive-feature, not /create-enhancement-issue. The
 `## Modifies` section points at the contract(s) the work implements AGAINST
 (read-only), never one it rewrites.
 
-Created by `/file-enhancement` (via create-enhancement.sh) with labels
+Created by `/create-enhancement-issue` (via create-enhancement.sh) with labels
 `kind:enhancement` + `status:ready-to-review`, and a linked
 `enhancement/<n>-<intent>` branch (`gh issue develop`). A human reviews the
 drafted issue and flips `status:ready-to-review` → `status:ready-to-implement` to
-release it to the /ship kickoff stage — exactly the create-issues slice gate.
+release it to the /ship kickoff stage — exactly the create-feature-issues slice gate.
 
 The `## Tasks` checklist is the durable task ledger implement-slice parses, so it
 MUST use the same line format as a feature slice (short static IDs `e2e.1` /

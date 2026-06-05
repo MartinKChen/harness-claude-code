@@ -29,7 +29,7 @@ The Automated Engineer Flow drives off a deliberately small label set — the in
 
 | Family | Labels | Owner of transitions |
 |--------|--------|---------------------|
-| `status:*` | `ready-to-review`, `ready-to-implement`, `in-progress`, `fix-in-progress`, `need-attention` | `status:ready-to-review` is the human-approval gate (set by `create-issues` on freshly-created slices; human flips to `status:ready-to-implement` to release). `status:ready-to-implement` → `status:in-progress` is the kickoff lock = "an `implement-slice` Workflow is running on this slice"; the workflow releases it when it opens the draft PR, or flips it to `status:need-attention` on halt. `status:fix-in-progress` is the PR-level lock for the outer-loop fix-pr stage. `status:need-attention` is the durable, user-owned halt. |
+| `status:*` | `ready-to-review`, `ready-to-implement`, `in-progress`, `fix-in-progress`, `need-attention` | `status:ready-to-review` is the human-approval gate (set by `create-feature-issues` on freshly-created slices; human flips to `status:ready-to-implement` to release). `status:ready-to-implement` → `status:in-progress` is the kickoff lock = "an `implement-slice` Workflow is running on this slice"; the workflow releases it when it opens the draft PR, or flips it to `status:need-attention` on halt. `status:fix-in-progress` is the PR-level lock for the outer-loop fix-pr stage. `status:need-attention` is the durable, user-owned halt. |
 | `kind:*` | `feature`, `bug`, `enhancement` | issue creation only |
 | `merge:*` | `auto`, `manual` | `implement-slice`'s PR phase sets `manual` on draft PR creation; user opts into `auto` |
 | PR markers | `feature-lockin` | architect during deep-dive |
@@ -96,7 +96,8 @@ Pure shell, same shape as the `task-finder` family but covering **feature + enha
 |--------|---------|
 | `scripts/flip-label.sh <issue-or-pr-#> [--remove <l>]... [--add <l>]...` | One atomic `gh issue edit` / `gh pr edit` call. Touches only the labels named — every other label is preserved. Used by every lock/unlock helper. |
 | `scripts/close-issue.sh <issue-#> [--reason completed\|not_planned]` | Close an issue (after stripping `status:in-progress`). |
-| `scripts/create-enhancement.sh --title <t> --body-file <p> --intent <kebab> [--milestone <m>]` | Create one `kind:enhancement` issue (+ `status:ready-to-review`) from a feature-shaped body and link an `enhancement/<n>-<intent>` branch via `gh issue develop` — the single-issue analog of a create-issues slice. Prints `issue:<n>` + `branch:<…>`. Called by `/file-enhancement`. |
+| `scripts/create-enhancement.sh --title <t> --body-file <p> --intent <kebab> [--milestone <m>]` | Create one `kind:enhancement` issue (+ `status:ready-to-review`) from a feature-shaped body and link an `enhancement/<n>-<intent>` branch via `gh issue develop` — the single-issue analog of a create-feature-issues slice. Prints `issue:<n>` + `branch:<…>`. Called by the `create-enhancement-issue` skill. |
+| `scripts/create-bug.sh --title <t> --body-file <p> [--milestone <m>]` | Create one `kind:bug` issue from a Zone-A symptom body — NO `status:*` label, NO branch (the analyze-eligible state the `/ship` analyze stage keys off; the fix branch is cut later by `fix-bug.mjs`). Prints `issue:<n>`. Called by the `create-bug-issue` skill. |
 
 ### Reviewer outputs
 
@@ -123,7 +124,7 @@ Pure shell, same shape as the `task-finder` family but covering **feature + enha
 | `templates/pr-body.md` | Draft-PR body skeleton (`Closes #<slice-#>`) — the shape `implement-slice`'s terminal PR phase builds. |
 | `templates/bug-issue.md` | Body of a `kind:bug` issue — Zone A (the reporter's symptom) only. The diagnosis is posted as a comment by the analyze step, not written into the body. The fix-bug workflow reads the approved analysis comment as its spec. |
 | `templates/bug-analysis-comment.md` | The `# Bug Analysis` comment the analyze step posts (Zone B — the diagnosis): Reproduction, Root cause, Proposed fix, Regression-test plan, Blast radius + Contract impact. After a human approves it, `fix-bug.mjs` reads it as the fix spec. |
-| `templates/enhancement-issue.md` | Body of a `kind:enhancement` issue — the slice-body shape (Context / Scope / Acceptance criteria / Tasks) plus `## Modifies` + `## Don't break`, minus any contract-change section (an enhancement never changes a contract). The `## Tasks` checklist matches the slice format so `implement-slice.mjs` parses it. Authored by `/file-enhancement`. |
+| `templates/enhancement-issue.md` | Body of a `kind:enhancement` issue — the slice-body shape (Context / Scope / Acceptance criteria / Tasks) plus `## Modifies` + `## Don't break`, minus any contract-change section (an enhancement never changes a contract). The `## Tasks` checklist matches the slice format so `implement-slice.mjs` parses it. Authored by `/create-enhancement-issue`. |
 
 ## Pattern
 
