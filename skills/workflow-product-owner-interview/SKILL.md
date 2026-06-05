@@ -83,13 +83,13 @@ When the user's answer triggers a need to revisit an earlier decision, name the 
 
 ### 6. Classify the critical path against existing ones
 
-Before requesting approval, list `docs/critical-path/` and read any file whose name, entry point, or steps overlap with the new flow. Decide which case applies — and if it's not obvious from the files alone, ask the user with a recommendation:
+Before requesting approval, list `docs/critical-path/` and read any file whose name, `## Summary`, or `## Journey (Gherkin)` overlaps with the new flow. Decide which case applies — and if it's not obvious from the files alone, ask the user with a recommendation:
 
 - **Extend** — the new requirement adds to an existing critical path. The publisher will edit that file in place and append a History entry.
 - **Supersede** — the new requirement replaces an existing critical path (flow rewrite, pivot, deprecated feature). The publisher will write the new file AND delete the superseded one. Name the superseded file in the approval request so the user can object before deletion.
 - **Brand new** — no related critical path exists. The publisher will create a new file.
 
-Capture the classification (and, if superseding, the file to be deleted) so the next step can include it in the approval request.
+Capture the classification (and, if superseding, the file to be deleted) so the next step can include it in the approval request. Also capture the **frozen golden-path Journey** — the single end-to-end Given/When/Then happy path the critical path's `## Journey (Gherkin)` block will hold. This is the milestone's release-gate spec AND the seam-decider (it decides where slices are cut and cannot drift later), so it must be settled with the user here — not invented downstream. ONE golden path only; failure modes are slice-owned ACs, not part of the journey.
 
 ### 7. Request approval to proceed
 
@@ -115,6 +115,7 @@ Compose **one dispatch prompt** as plain text. It must include:
 - The working directory of the worktree (the orchestrator will surface this at readiness signal time — leave it as a `{worktree_path}` placeholder until then).
 - The **clarified requirement** content (problem from the user's perspective, solution from the user's perspective, the full list of user stories collected during the interview, what's explicitly out of scope, any further notes).
 - The **critical-path classification** — `extend` / `supersede` / `brand new` — plus the target file name. If superseding, name the file to be deleted so the writer can drop it.
+- The **frozen golden-path Journey** as a single Given/When/Then scenario (captured in step 6) — the publisher writes it verbatim into the critical path's `## Journey (Gherkin)` block. ONE happy path end-to-end; no failure branches.
 - The **list of glossary terms** collected during the interview, each with the definition you and the user settled on.
 - Whether the **product-context section of `CLAUDE.md`** warrants an update (product pivot, scope expansion, new core user, or shift in success criteria) — and if so, the proposed wording.
 

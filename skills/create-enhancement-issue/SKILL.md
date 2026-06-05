@@ -27,7 +27,7 @@ A short description of the enhancement. If none was given, ask the user what the
 
 ### Step 1 — Understand the request
 
-From the request (and a brief clarifying exchange only if genuinely ambiguous — this is NOT a full interview), pin down: the existing behavior being changed, the new/changed behavior, and whether it has UI (E2E-validatable) or is backend-only. Keep it light; the user filed this because they already know what they want.
+From the request (and a brief clarifying exchange only if genuinely ambiguous — this is NOT a full interview), pin down: the existing behavior being changed, the new/changed behavior, and **whether it closes a cross-surface journey segment worth walking** (which earns an `e2e` task) versus being a backend-only / pure-layout change (no e2e task — its ACs are discharged at the backend/frontend owning layer). Note that "has UI" ≠ "needs an e2e task": classify by whether a journey is walked, not by whether a component renders. Keep it light; the user filed this because they already know what they want.
 
 ### Step 2 — Read context (read-only) + the contract guard
 
@@ -45,8 +45,8 @@ Fill `operation-git/templates/enhancement-issue.md`:
 - **Context** — what this enhances, in glossary vocabulary.
 - **Modifies** — the contract(s) it conforms to (read-only) and the surfaces/pages touched. The **Critical path / feature** pointer is *optional*: include it when the enhancement clearly extends one named feature; omit the line for a standalone / cross-cutting enhancement that doesn't map to a single feature. Never block or pester the user for a feature name — leave it out if there isn't an obvious one.
 - **Scope** — in / out.
-- **Acceptance criteria (EARS) + Scenarios (Gherkin)** — ONLY if it has UI; omit for backend-only (each backend task points at its api-contract instead).
-- **Tasks** — the durable checklist `implement-slice` parses. Use the slice-body format exactly: short static IDs (`e2e.1` / `be.1` / `fe.1`), a `blocked-by:` field (1-up DAG, `—` for none), and a follow-on pointer line (`covers:` / `contract:` / `design:` / `entry-source:` + `reached-from:` for pages / `done:` for a contract-less utility). An enhancement may have a single task or several.
+- **Acceptance criteria (EARS) + Scenarios (Gherkin)** — **always present** (an AC is a specification, not a test). A backend-only enhancement's ACs are backend invariants with a backend owning layer — write them; do not omit. Classify each AC clause by owning layer (Principle 1 of `docs/test-layering-and-gates.md`). ACs are ticked checkboxes ticked by the reviewer at end-of-slice review.
+- **Tasks** — the durable checklist `implement-slice` parses. Use the slice-body format exactly: short static IDs (`e2e.1` / `be.1` / `fe.1`), a `blocked-by:` field (1-up DAG, `—` for none), and a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (walked at its owning layer) uniformly, plus the type-specific pointer (`contract:` / `design:` / `entry-source:` + `reached-from:` for pages / `done:` for a contract-less utility). Emit an `e2e` task ONLY when the enhancement closes a cross-surface journey segment — there is no mandatory e2e prerequisite. An enhancement may have a single task or several.
 - **Don't break** — the existing E2E specs / flows that must still pass.
 - **Notes** — read-only ADRs, flags, caveats.
 
