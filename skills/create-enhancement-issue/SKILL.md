@@ -34,7 +34,7 @@ From the request (and a brief clarifying exchange only if genuinely ambiguous �
 Read only what shapes the issue:
 
 - `docs/GLOSSARY.md` — vocabulary for the body.
-- The existing critical path / feature this extends, and the relevant `docs/api-contract/<entity>.yaml` / `docs/data-model/<entity>.yaml` / `docs/design-system/surfaces.md` for the surface(s) touched.
+- The existing critical path / feature this extends (if it maps to one — a standalone enhancement may not), and the relevant `docs/api-contract/<entity>.yaml` / `docs/data-model/<entity>.yaml` / `docs/design-system/surfaces.md` for the surface(s) touched.
 
 **Contract guard.** Decide whether the enhancement can be implemented by conforming to the existing contracts, or whether it would require **changing** `docs/api-contract/*` or `docs/data-model/*` (a new endpoint shape, a new/changed column, a new resource). If it requires a contract change, STOP and tell the user: *"This needs an API-contract / data-model change, which is an architecture decision — file it as a feature via `/deep-dive-feature`, not `/create-enhancement-issue`."* Do not create an issue.
 
@@ -43,7 +43,7 @@ Read only what shapes the issue:
 Fill `operation-git/templates/enhancement-issue.md`:
 
 - **Context** — what this enhances, in glossary vocabulary.
-- **Modifies** — the existing critical path, the contract(s) it conforms to (read-only), the surfaces/pages touched.
+- **Modifies** — the contract(s) it conforms to (read-only) and the surfaces/pages touched. The **Critical path / feature** pointer is *optional*: include it when the enhancement clearly extends one named feature; omit the line for a standalone / cross-cutting enhancement that doesn't map to a single feature. Never block or pester the user for a feature name — leave it out if there isn't an obvious one.
 - **Scope** — in / out.
 - **Acceptance criteria (EARS) + Scenarios (Gherkin)** — ONLY if it has UI; omit for backend-only (each backend task points at its api-contract instead).
 - **Tasks** — the durable checklist `implement-slice` parses. Use the slice-body format exactly: short static IDs (`e2e.1` / `be.1` / `fe.1`), a `blocked-by:` field (1-up DAG, `—` for none), and a follow-on pointer line (`covers:` / `contract:` / `design:` / `entry-source:` + `reached-from:` for pages / `done:` for a contract-less utility). An enhancement may have a single task or several.

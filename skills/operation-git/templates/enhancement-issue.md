@@ -35,7 +35,7 @@ task point at its api-contract / data-model file (read-only conformance).
 ## Modifies
 <The existing surface this changes, as read-only pointers — what it implements
 AGAINST, never rewrites. Replaces a feature's source-PRD pointer.>
-- **Critical path / feature:** <the existing flow being extended>
+- **Critical path / feature:** <OPTIONAL — the existing flow being extended, when this enhancement maps to one named feature. Omit the line entirely for a standalone / cross-cutting enhancement that doesn't extend a single feature.>
 - **Contracts (conform to, do not change):** docs/api-contract/<entity>.yaml · docs/data-model/<entity>.yaml
 - **Surfaces / pages:** <existing route(s) / component(s) touched, from docs/design-system/surfaces.md>
 
