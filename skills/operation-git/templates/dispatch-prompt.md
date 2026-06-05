@@ -2,7 +2,7 @@
 
 The inner slice lifecycle runs inside one background `implement-slice` Workflow per slice (see `workflow-implement-slice`). That workflow dispatches sub-agents at each phase with a minimal prompt: a **(slice #, task IDs)** pair, never an issue-per-task. There are no per-task issues — task tracking lives in a static-ID checklist inside the slice issue body. Each dispatched agent reads the slice body, locates its task block(s), and resumes from the checklist (an already-`[x]` task is done).
 
-The orchestrator (the workflow, or the outer `/loop` for `fix-pr`) fills ONLY the placeholders — never failure logs or diagnosis. Extra context here is hard to audit and goes stale.
+The orchestrator (the workflow, or the outer `/loop` for `fix-pr`) fills ONLY the placeholders — never hand-authored failure logs. The one structured exception is the `fix-e2e` dispatch, whose group root-cause / failing-tests / fix-hint placeholder is filled from the *machine-generated* diagnosis the `diagnose-e2e` step just returned (fresh per round, not stale human context). Everything else stays minimal — extra prose here is hard to audit and goes stale.
 
 ## Author E2E for a slice's e2e tasks
 
@@ -40,17 +40,30 @@ push. You own the lifecycle until the named tasks are implemented, boxed, and
 pushed.
 ```
 
-## Pass E2E acceptance for a slice
+## Diagnose E2E for a slice
 
 ```
-Pass E2E acceptance for slice #<slice-#>.
+Diagnose E2E acceptance for slice #<slice-#>.
 
-Find every E2E spec on the slice branch, run them against the slice's stack via
-testcontainers, and drive TDD on production code only (never modify the E2E
-specs) until they are all green, then push. You own the lifecycle until the
-suite is green and pushed — or, if a spec fails due to a test-case constraint
-that can't be addressed via production-code changes, flip the slice to
-`status:need-attention` and exit.
+Integrate `origin/main`, boot the slice's stack via testcontainers, and run
+every E2E spec on the slice branch. Categorize any failures into correlated
+production-fix groups (shared root cause, complexity, fix hint) and return the
+diagnosis — do NOT write a fix or edit the specs. A failure that can only be
+addressed by editing a spec is a test-case constraint → return need-attention.
+```
+
+## Fix E2E failures for a slice
+
+```
+Fix E2E failures on slice #<slice-#> — group <group-id>.
+Root cause: <shared production-code root cause>
+Failing tests: <spec-file::test-title; …>
+Fix: <concrete production-code corrective action + sibling sites>
+
+Drive production code only (never the E2E specs) via TDD until this group's root
+cause is resolved; propagate the class-of-bug; commit with a `Refs #<slice-#>`
+trailer and push. Do NOT boot or re-run the full E2E suite — the diagnose step
+re-runs it. You own the lifecycle until your fix is pushed.
 ```
 
 ## Fix reviewer findings on a slice
@@ -79,6 +92,7 @@ on the PR.
 |------------------|--------------------------------------------------------------|
 | `<slice-#>`      | The slice issue number the workflow is driving.              |
 | `<ids>`          | Comma-separated static task IDs from the slice checklist (e.g. `e2e.1,e2e.2` or `be.1`). |
+| `<group-id>`     | A diagnosed E2E failure group's id, plus its root cause / failing tests / fix hint (`fix-e2e` only — filled from the diagnose step's return). |
 | `<pr-#>`         | The draft PR number being dispatched (`fix-pr` only).        |
 
 The orchestrator fills these in before calling `Agent`. Nothing else goes into the prompt — the dispatched agent uses the slice body's checklist as its single source of truth for task state.

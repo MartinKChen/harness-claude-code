@@ -1063,8 +1063,8 @@
       </tr>
       <tr>
         <td class="role">Pass E2E</td>
-        <td class="model">agent · engineer</td>
-        <td>Run specs vs a booted stack, drive production code to GREEN. A test-case constraint → <code>halt()</code>.</td>
+        <td class="model">agent · engineer (diagnose → fix loop)</td>
+        <td>Each round: one <strong>diagnose</strong> dispatch boots the stack, runs the specs, and categorizes failures into correlated groups; then one <strong>fix</strong> dispatch per group runs <strong>serially</strong> (shared worktree). Loops (uncapped) until a round diagnoses GREEN. A test-case constraint → <code>halt()</code>.</td>
       </tr>
       <tr>
         <td class="role">Slice review</td>
@@ -1334,7 +1334,7 @@
         <span class="actor agent">Implement</span>
         <span class="effect">engineer per group, <strong>serial</strong> (shared worktree); done groups skipped</span>
       </div>
-      <div class="flow-state">Pass E2E &mdash; engineer drives specs to GREEN</div>
+      <div class="flow-state">Pass E2E &mdash; engineer diagnoses failures, then per-group engineer fixes drive specs to GREEN (loop)</div>
 
       <div class="flow-arrow">
         <span class="actor agent">Slice review</span>

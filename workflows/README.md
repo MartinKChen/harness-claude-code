@@ -107,7 +107,7 @@ One background run per approved bug, launched by the unified implement command's
 Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs", args: { slice: <n>, today: "<YYYY-MM-DD>" } })
 ```
 
-There is no longer a `reviewScriptPath` to pass — the review fan-out is inlined. The per-dimension catalogues are the `pattern-reviewer-*` skills — each `axis-reviewer` agent reads exactly one, and also applies that skill's per-project `.claude/memory/patterns/<skill>.md` overlay via `memory-convention` when one exists, so dreamed rules reach the fan-out the same way they reach the single-agent `reviewer`. The generative dispatches load the `workflow-e2e-author` / `workflow-engineer-implement-task` / `workflow-engineer-e2e` / `workflow-engineer-fix-slice` skills via their trigger phrases.
+There is no longer a `reviewScriptPath` to pass — the review fan-out is inlined. The per-dimension catalogues are the `pattern-reviewer-*` skills — each `axis-reviewer` agent reads exactly one, and also applies that skill's per-project `.claude/memory/patterns/<skill>.md` overlay via `memory-convention` when one exists, so dreamed rules reach the fan-out the same way they reach the single-agent `reviewer`. The generative dispatches load the `workflow-e2e-author` / `workflow-engineer-implement-task` / `workflow-engineer-diagnose-e2e` / `workflow-engineer-fix-e2e` / `workflow-engineer-fix-slice` skills via their trigger phrases.
 
 ### Assumptions to verify before trusting it in production
 

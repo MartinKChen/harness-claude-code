@@ -7,7 +7,7 @@ description: "Address slice-review findings on one slice. Read the slice body an
 
 Address slice-review findings on a single slice. Dispatched after the slice review (the `runReviewSlice()` fan-out in `implement-slice`) returns a BLOCK verdict. Scope is read from the most recent slice-review comment on the slice (newer than the slice branch's last `Refs #<slice#>` commit), with user directives in the same window overriding.
 
-In the new model, E2E passing is a separate earlier phase (`workflow-engineer-e2e`); this fix loop only addresses the reviewer's findings. The calling workflow re-runs the slice review after the fix — this skill does no re-validation and flips no labels.
+In the new model, E2E passing is a separate earlier phase (`workflow-engineer-diagnose-e2e` + `workflow-engineer-fix-e2e`); this fix loop only addresses the reviewer's findings. The calling workflow re-runs the slice review after the fix — this skill does no re-validation and flips no labels.
 
 ## When to activate
 
@@ -16,7 +16,7 @@ Activate this skill whenever:
 - The dispatch prompt opens with `Fix the review feedback on slice #<n>`.
 - The user types `/workflow-engineer-fix-slice`, or phrases like "fix slice #<n> per the reviewer findings".
 
-Do NOT activate to pass E2E acceptance (use `workflow-engineer-e2e`), to fix a PR (use `workflow-engineer-fix-pr`), or to implement fresh tasks (use `workflow-engineer-implement-task`).
+Do NOT activate to pass E2E acceptance (use `workflow-engineer-diagnose-e2e` / `workflow-engineer-fix-e2e`), to fix a PR (use `workflow-engineer-fix-pr`), or to implement fresh tasks (use `workflow-engineer-implement-task`).
 
 ## Input contract
 
@@ -96,7 +96,7 @@ Terminal action. Exit. Do NOT flip any label — the calling workflow re-runs th
 
 - **User directives in the comment window override everything else.**
 - **Scope from the comment window, not from labels.** Only comments newer than the last `Refs #<slice#>` commit are in scope.
-- **Production-only fixes.** Never modify E2E specs from this lane. (E2E passing is the separate `workflow-engineer-e2e` phase; this loop only addresses review findings.)
+- **Production-only fixes.** Never modify E2E specs from this lane. (E2E passing is the separate Pass-E2E phase — `workflow-engineer-diagnose-e2e` + `workflow-engineer-fix-e2e`; this loop only addresses review findings.)
 - **Every commit carries `Refs #<slice#>`** plus a `Task: <id>` trailer where the finding maps to one.
 - **Resume from the checklist + WIP commits.** Reconcile against already-`[x]` tasks and prior `Refs #<slice#>` commits before re-touching code.
 - **Pick up by the reviewer's `Fix now` class.** Effort is the reviewer's call — do not self-promote a `Defer` back to must-fix without a user directive.
