@@ -25,34 +25,24 @@ Refs #<slice-#>
 
 ## Trailer rules (workflow-* skills)
 
-There are no per-task issues — task tracking lives in a static-ID checklist in
-the slice issue body. So every commit produced inside a slice-phase `workflow-*`
-skill carries a `Task:` trailer plus the slice `Refs`:
+There are no per-task issues — task tracking lives in a static-ID checklist in the slice issue body. So every commit produced inside a slice-phase `workflow-*` skill carries a `Task:` trailer plus the slice `Refs`:
 
 ```
 Task: <static-id>
 Refs #<slice-#>
 ```
 
-- `Task: <static-id>` — the slice-checklist task ID this commit advances (e.g.
-  `Task: be.1`). This is the commit→task mapping used for crash recovery: a
-  re-dispatched agent reads the checklist for ticked boxes and the branch log for
-  `Task:` trailers to know what already landed. A commit that advances more than
-  one task may carry more than one `Task:` trailer.
-- `Refs #<slice-#>` — the slice issue. Same value for every commit on the slice
-  branch; lets reviewers scope by slice quickly and lets the reconcile reaper
-  find a slice branch's WIP commits.
+- `Task: <static-id>` — the slice-checklist task ID this commit advances (e.g. `Task: be.1`). This is the commit→task mapping used for crash recovery: a re-dispatched agent reads the checklist for ticked boxes and the branch log for `Task:` trailers to know what already landed. A commit that advances more than one task may carry more than one `Task:` trailer.
+- `Refs #<slice-#>` — the slice issue. Same value for every commit on the slice branch; lets reviewers scope by slice quickly and lets the reconcile reaper find a slice branch's WIP commits.
 
-**fix-pr is the exception.** A fix-PR commit is not advancing a slice task, so it
-drops the `Task:` trailer and carries two `Refs`:
+**fix-pr is the exception.** A fix-PR commit is not advancing a slice task, so it drops the `Task:` trailer and carries two `Refs`:
 
 ```
 Refs #<pr-#>
 Refs #<slice-#>
 ```
 
-Never use `Closes #<slice-#>` in commits — closure happens later (PR merge closes
-the slice via the PR body's `Closes` line).
+Never use `Closes #<slice-#>` in commits — closure happens later (PR merge closes the slice via the PR body's `Closes` line).
 
 **Bad**
 
