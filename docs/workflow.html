@@ -1102,7 +1102,10 @@
     (<code>scope:'test-coverage'</code>) and the post-implementation slice review
     (<code>scope:'production-code'</code>). It isolates each review dimension onto its own
     <code>axis-reviewer</code> agent and adversarially verifies every finding
-    before it can block.
+    before it can block — verification batches same-dimension findings (≤10 per
+    agent) through three independent skeptic lenses, so dispatch scales with
+    dimensions × chunks rather than one agent per finding while the cross-lens
+    majority vote stays intact.
   </p>
   <p>
     <strong>The new boundary (changed in 0.40):</strong> it <strong>posts the

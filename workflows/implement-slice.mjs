@@ -200,11 +200,29 @@ const SURFACES = {
   },
   required: ['backend', 'frontend', 'python', 'typescript', 'fastapi', 'database', 'container', 'vite', 'hasContractFiles'],
 }
-const REFUTE_VERDICT = {
+// One verify agent judges a whole batch of same-dimension findings through a
+// single lens and returns one verdict PER finding, indexed 1-based against the list
+// it was shown. A finding whose index the agent omits counts as refuted — the same
+// "uncertain → refuted" default the old per-finding verify enforced.
+const BATCH_VERDICT = {
   type: 'object',
   additionalProperties: false,
-  properties: { refuted: { type: 'boolean' }, reason: { type: 'string' } },
-  required: ['refuted', 'reason'],
+  properties: {
+    verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          index:   { type: 'integer', description: '1-based index of the finding in the list shown to you' },
+          refuted: { type: 'boolean' },
+          reason:  { type: 'string', description: 'one line, specific to THIS finding (cite what you read)' },
+        },
+        required: ['index', 'refuted', 'reason'],
+      },
+    },
+  },
+  required: ['verdicts'],
 }
 const PUBLISH = {
   type: 'object',
@@ -241,6 +259,11 @@ const VERIFY_LENSES = [
   { key: 'severity',    ask: 'Would this actually break in production at the stated impact, or is the severity inflated? If it cannot realistically cause the claimed harm, treat it as refuted (severity does not justify a HIGH).' },
 ]
 
+// One verify agent judges at most this many same-dimension findings through one
+// lens. Past it, the dimension's findings split into multiple chunks — each chunk
+// still gets all three lenses — so no single agent's context is overloaded.
+const VERIFY_BATCH_CAP = 10
+
 // ── Pure helpers (mechanics live in JS, judgement lives in agents) ────────────
 const sevToImpact = s => (s === 'CRITICAL' || s === 'HIGH') ? 'H' : s === 'MEDIUM' ? 'M' : 'L'
 
@@ -260,6 +283,12 @@ function jaccard(a, b) {
   let inter = 0
   for (const t of A) if (B.has(t)) inter++
   return inter / (A.size + B.size - inter)
+}
+
+const chunk = (arr, n) => {
+  const out = []
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
+  return out
 }
 
 // Conservative cross-dimension dedup: two findings collapse only when they sit on
@@ -385,38 +414,73 @@ Apply ONE review dimension to slice #${SLICE} and nothing else.
 Follow your single-axis review contract exactly — read that one skill, apply ONLY its catalogue, honor the ${scope} framing, the recall-over-precision stance, and the honesty floor (zero findings is valid; never fabricate).`
 }
 
-// Adversarial refutation of a finding list: each finding faces VERIFY_LENSES
-// independent skeptics that read the REAL code; it survives only on a majority
-// "not refuted". This is the precision backstop that keeps the uncapped fix loops
-// from chasing phantom findings.
+// Render the batch of same-dimension findings one lens agent must judge. Each
+// finding keeps its own [N] index so the agent reports a discrete verdict per
+// finding: the batch is a packaging optimisation that bounds dispatch count, NOT a
+// licence to judge the set as a whole.
+function verifyBatchPrompt(items, lens, diffCtx) {
+  const list = items.map((f, i) => `[${i + 1}] dimension: ${f.dimension}
+    title: ${f.title}
+    severity: ${f.severity}
+    file: ${f.file}
+    claim (impact): ${f.impactStatement}
+    proposed fix: ${f.fix}
+    BAD snippet the finder cited:
+    ${f.bad}`).join('\n\n')
+
+  return `${diffCtx}
+
+Adversarially verify ${items.length} code-review finding(s), ALL from the "${items[0].dimension}" dimension, through the "${lens.key}" lens. Be a skeptic, not a rubber stamp. ${lens.ask}
+
+Treat each finding as its OWN investigation: for EVERY finding below, open the cited \`file:line\` (and its surroundings) in the worktree and decide on THAT finding's own evidence. Do NOT judge the batch as a whole, do NOT let one finding's verdict sway another's, and do NOT skim — a verdict you did not actually read the code for is worthless. If you are uncertain about a finding after reading its code, default to refuted=true for THAT finding: an unproven finding must not block a slice.
+
+Findings under scrutiny — the [N] index is what you report each verdict against:
+
+${list}
+
+Return one verdict per finding ({ index, refuted, reason }), covering every index 1..${items.length}.`
+}
+
+// Adversarial refutation of a finding list — the precision backstop that keeps the
+// uncapped fix loops from chasing phantom findings. Findings are grouped by
+// dimension and chunked to VERIFY_BATCH_CAP, so one agent never drowns; each
+// (dimension, chunk) faces VERIFY_LENSES independent skeptics and a finding survives
+// only on a majority "not refuted" across the three lenses. Batching collapses the
+// dispatch count from 3×findings to 3×chunks-per-dimension WITHOUT touching the
+// cross-lens majority vote — and the prompt still forces per-finding investigation.
 async function verifyFindings(list, tag, diffCtx, phaseTitle) {
-  return parallel(list.map(f => () =>
+  const byDim = new Map()
+  for (const f of list) {
+    if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
+    byDim.get(f.dimension).push(f)
+  }
+  const batches = []
+  for (const [dim, dimFindings] of byDim) {
+    const chunks = chunk(dimFindings, VERIFY_BATCH_CAP)
+    chunks.forEach((items, bi) => batches.push({ dim, items, bi, multi: chunks.length > 1 }))
+  }
+
+  const verified = await parallel(batches.map(({ dim, items, bi, multi }) => () =>
     parallel(VERIFY_LENSES.map(lens => () =>
-      agent(
-        `${diffCtx}
-
-Adversarially verify a code-review finding. REFUTE it through the "${lens.key}" lens — be a skeptic, not a rubber stamp. ${lens.ask}
-
-If you are uncertain after reading the actual code, default to refuted=true: an unproven finding must not block a slice.
-
-Finding under scrutiny:
-- dimension: ${f.dimension}
-- title: ${f.title}
-- severity: ${f.severity}
-- file: ${f.file}
-- claim (impact): ${f.impactStatement}
-- proposed fix: ${f.fix}
-- BAD snippet the finder cited:
-${f.bad}
-
-Read \`${f.file}\` (and its surroundings) in the worktree yourself before deciding. Return refuted + a one-line reason.`,
-        { label: `verify:${tag}:${f.dimension}:${lens.key}`, phase: phaseTitle, schema: REFUTE_VERDICT, model: AGENT_MODEL },
+      agent(verifyBatchPrompt(items, lens, diffCtx),
+        { label: `verify:${tag}:${dim}:${lens.key}${multi ? `:b${bi + 1}` : ''}`, phase: phaseTitle, schema: BATCH_VERDICT, model: AGENT_MODEL },
       ),
-    )).then(votes => {
-      const v = votes.filter(Boolean)
-      return { ...f, survives: v.filter(x => !x.refuted).length >= 2 } // majority of lenses
+    )).then(lensResults => {
+      // One BATCH_VERDICT per lens (null if that lens agent failed). A finding
+      // survives when ≥2 lenses returned an explicit not-refuted verdict for its
+      // index; a missing or null verdict counts as refuted (conservative default).
+      const live = lensResults.filter(Boolean)
+      return items.map((f, i) => {
+        const idx = i + 1
+        const notRefuted = live.filter(r => {
+          const v = (r.verdicts || []).find(x => x.index === idx)
+          return v && !v.refuted
+        }).length
+        return { ...f, survives: notRefuted >= 2 } // majority of lenses
+      })
     }),
   ))
+  return verified.flat()
 }
 
 // Fan out a dimension set → flat list of findings tagged with their dimension + phase.
