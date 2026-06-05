@@ -30,15 +30,19 @@ const TODAY = input.today ?? 'unknown-date'
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
-// No convergence cap. Each gate / review / implement loop runs until it reaches
+// No ROUND cap. Each gate / review / implement loop runs until it reaches
 // confidence to pass (a review APPROVE, or every task ticked [x]) rather than
-// halting to a human after a fixed number of rounds. The only halts left are
-// genuine infra failures (a review step that can't set up its worktree, a verdict
-// that never posted) — never "didn't converge fast enough". The review fan-out is
-// tuned to surface findings aggressively, and its adversarial verify phase is what
-// keeps these loops from chasing phantom findings forever: only a finding that
-// survives refutation can hold the gate open, and `full` review blocks on I:H
-// alone, so once the real blockers are fixed the loop converges.
+// abandoning work after a fixed number of rounds — a real blocker is fixed for
+// however many rounds it takes. Two guards make "uncapped" observable rather than
+// scary (see the instrumentation block below): every round logs its token delta
+// (the cost meter), and the oscillation guard halts to a human only on NO PROGRESS
+// — the SAME blocker surviving its own targeted fix for STALL_ROUNDS rounds — not on
+// round count. The other halts are genuine infra failures (a review step that can't
+// set up its worktree, a verdict that never posted). The review fan-out is tuned to
+// surface findings aggressively, and its adversarial verify phase keeps these loops
+// from chasing phantom findings: only a finding that survives refutation holds the
+// gate open, and `full` review blocks on I:H alone, so once the real blockers are
+// fixed the loop converges.
 
 // Subagent types — the plugin's real agents (each loads its own skill stack), not
 // the default workflow dimension agent.
@@ -290,6 +294,29 @@ const chunk = (arr, n) => {
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
   return out
 }
+
+// ── Uncapped-loop instrumentation: cost meter + oscillation guard ─────────────
+// The fix loops are deliberately UNCAPPED. Two helpers make that safe to watch:
+//   1. COST METER — budget.spent() is the shared output-token tally for the whole
+//      turn; logging its per-round delta lets a human watching /workflows see cost
+//      accrue and step in. tokensSpent() degrades to 0 if budget is unavailable.
+//   2. OSCILLATION GUARD — a human escalates on NO PROGRESS, not round count: the
+//      SAME blocker surviving its own targeted fix round after round. trackStall()
+//      carries a per-blocker streak across rounds (matched by same file +
+//      ≥0.5-Jaccard title, reusing the dedup fingerprint); stuckBlockers() trips
+//      once a streak reaches STALL_ROUNDS. A loop that keeps RETIRING blockers —
+//      even while surfacing new ones — never trips it, so genuine progress runs
+//      uncapped exactly as before.
+const STALL_ROUNDS = 3
+const kb = n => Math.round(n / 1000)
+const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
+const sameBlocker = (a, b) => fileNoLine(a.file) === fileNoLine(b.file) && jaccard(a.title, b.title) >= 0.5
+const trackStall = (prev, blockers) => blockers.map(b => {
+  const carried = prev.find(p => sameBlocker(p, b))
+  return { file: b.file, title: b.title, streak: carried ? carried.streak + 1 : 1 }
+})
+const stuckBlockers = stall => stall.filter(s => s.streak >= STALL_ROUNDS)
+const fmtStuck = stuck => stuck.map(s => `\`${s.file}\` — ${s.title} (survived ${s.streak} rounds)`).join('; ')
 
 // Conservative cross-dimension dedup: two findings collapse only when they sit on
 // the same file (line-insensitive) AND their titles overlap ≥ 0.5 Jaccard. Keep
@@ -588,6 +615,11 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
     // confirmed I:H finding.
     const blocked = scope === 'test-coverage' ? confirmed.length > 0 : confirmed.some(f => f.impact === 'H')
     const verdict = blocked ? 'BLOCK' : 'APPROVE'
+    // The findings that actually drive the BLOCK — coverage: every confirmed gap;
+    // production: the I:H survivors. Returned so the caller's loop can fingerprint
+    // them across rounds (oscillation guard).
+    const blockers = (scope === 'test-coverage' ? confirmed : confirmed.filter(f => f.impact === 'H'))
+      .map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
     const body = composeComment(confirmed, { phase2Skipped, scopeNote: rprep.scopeNote, dedupMerged, scope, verdict })
@@ -609,7 +641,7 @@ ${body}
       { label: `publish:${scope}`, phase: phaseTitle, schema: PUBLISH, model: WRITER_MODEL },
     )
 
-    return { verdict, publishError: publish?.error ?? null }
+    return { verdict, publishError: publish?.error ?? null, blockers }
   } catch (e) {
     return { error: `${scope} review crashed: ${e?.message || String(e)}` }
   }
@@ -694,6 +726,8 @@ if (pendingE2E.length) {
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Coverage gate')
 if (e2eTasks.length && !allE2EAlreadyDone) {
+  let stall = []
+  let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
     const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch)
     if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
@@ -701,7 +735,16 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
     // findings would then be invisible to the fix loop — halt rather than loop blind
     // or APPROVE on an unposted verdict.
     if (r?.publishError) return halt(`E2E coverage gate verdict was not posted to #${SLICE}: ${r.publishError}`)
+    const spent = tokensSpent()
+    log(`Coverage gate: round ${round} — ${r.verdict}, ${r.blockers.length} gap(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    lastSpent = spent
     if (r?.verdict === 'APPROVE') break
+    // Oscillation guard: halt if a coverage gap survives STALL_ROUNDS dedicated
+    // e2e-author fixes — the loop is stuck, not slow.
+    stall = trackStall(stall, r.blockers)
+    const stuck = stuckBlockers(stall)
+    if (stuck.length)
+      return halt(`E2E coverage gate stalled — ${stuck.length} gap(s) survived ${STALL_ROUNDS} consecutive e2e-author fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
     log(`Coverage gate: round ${round} returned BLOCK — dispatching an e2e-author fix and re-gating.`)
     await agent(
       `Fix E2E coverage feedback on slice #${SLICE}.`,
@@ -799,6 +842,8 @@ Return openIds = the subset of [${ids}] whose checkbox is still \`[ ]\` (empty a
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Pass E2E')
 if (e2eTasks.length) {
+  let stall = []
+  let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
     // Stage 1 — diagnose: integrate main, boot, run, categorize. No production edits.
     const diag = await agent(
@@ -808,13 +853,28 @@ if (e2eTasks.length) {
     if (!diag) return halt('E2E diagnosis dispatch returned nothing')
     if (diag.status === 'need-attention')
       return halt(diag.reason || 'E2E acceptance could not be reached without editing a spec')
-    if (diag.status === 'green') { log(`Pass E2E: green after ${round - 1} fix round(s).`); break }
+    const spent = tokensSpent()
+    if (diag.status === 'green') {
+      log(`Pass E2E: green after ${round - 1} fix round(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+      break
+    }
 
     const groups = diag.groups ?? []
     // A diagnosis that reports failures but produces no fix groups is unactionable —
     // halt rather than spin a fixless round forever.
     if (!groups.length) return halt('E2E diagnosis reported failures but produced no fix groups')
-    log(`Pass E2E: round ${round} — ${groups.length} failure group(s): ${groups.map(g => `${g.groupId}(${g.complexity})`).join(', ')}`)
+    // Fingerprint each failing test (spec-file::test-title) as a blocker so the
+    // oscillation guard can detect a test that survives its own fix round after round.
+    const failing = groups.flatMap(g => g.failingTests).map(t => {
+      const ix = String(t).indexOf('::')
+      return ix >= 0 ? { file: t.slice(0, ix), title: t.slice(ix + 2) } : { file: '', title: String(t) }
+    })
+    log(`Pass E2E: round ${round} — ${groups.length} failure group(s), ${failing.length} failing test(s): ${groups.map(g => `${g.groupId}(${g.complexity})`).join(', ')}; +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    lastSpent = spent
+    stall = trackStall(stall, failing)
+    const stuck = stuckBlockers(stall)
+    if (stuck.length)
+      return halt(`Pass E2E stalled — ${stuck.length} E2E failure(s) survived ${STALL_ROUNDS} consecutive fix rounds unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
 
     // Stage 2 — fix: one engineer per correlated group, SERIAL (shared worktree, one
     // edit at a time). No boot here; the next round's diagnose re-runs the suite.
@@ -837,19 +897,32 @@ Fix: ${g.fixHint}`,
 // until APPROVE.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Slice review')
-for (let round = 1; ; round++) {
-  const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch)
-  if (r?.error) return halt(`slice review could not run: ${r.error}`)
-  // Unposted verdict (see the coverage-gate note above): the findings never reached
-  // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
-  // "see the # Slice Review comment" body points at a comment that doesn't exist.
-  if (r?.publishError) return halt(`slice review verdict was not posted to #${SLICE}: ${r.publishError}`)
-  if (r?.verdict === 'APPROVE') break
-  log(`Slice review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
-  await agent(
-    `Fix the review feedback on slice #${SLICE}.`,
-    { agentType: ENGINEER, phase: 'Slice review', label: `fix:${round}` },
-  )
+{
+  let stall = []
+  let lastSpent = tokensSpent()
+  for (let round = 1; ; round++) {
+    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch)
+    if (r?.error) return halt(`slice review could not run: ${r.error}`)
+    // Unposted verdict (see the coverage-gate note above): the findings never reached
+    // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
+    // "see the # Slice Review comment" body points at a comment that doesn't exist.
+    if (r?.publishError) return halt(`slice review verdict was not posted to #${SLICE}: ${r.publishError}`)
+    const spent = tokensSpent()
+    log(`Slice review: round ${round} — ${r.verdict}, ${r.blockers.length} I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    lastSpent = spent
+    if (r?.verdict === 'APPROVE') break
+    // Oscillation guard: halt if an I:H blocker survives STALL_ROUNDS dedicated
+    // engineer fixes — structurally stuck, not slow.
+    stall = trackStall(stall, r.blockers)
+    const stuck = stuckBlockers(stall)
+    if (stuck.length)
+      return halt(`Slice review stalled — ${stuck.length} I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    log(`Slice review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+    await agent(
+      `Fix the review feedback on slice #${SLICE}.`,
+      { agentType: ENGINEER, phase: 'Slice review', label: `fix:${round}` },
+    )
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
