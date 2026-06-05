@@ -33,6 +33,7 @@ Rules:
 - **Disagreement is a question, not a code change.** If the contract looks wrong, open a question on the task. Never silently ship code that contradicts a published contract.
 - **Code may be stricter than the contract, never looser.** A contract-declared `max_length: 100` may be enforced more tightly only if the task asks for it; it may not be relaxed.
 - **No invented endpoints, fields, error codes, or columns.** If the contract doesn't declare it, it doesn't exist in this change.
+- **The contract files are READ-ONLY to you.** `docs/api-contract/*` and `docs/data-model/*` are inputs you implement against — never outputs you edit. Resolving an impl↔contract mismatch by editing the contract inverts the authority that makes it an independent check. If the contract is genuinely wrong, missing a status code/field, or self-contradictory, that is an architect decision: do not patch it — halt to `status:need-attention` with a contract-change request (see the `workflow-engineer-*` lanes). "Code conforms to the contract, never the reverse" includes *never silently rewriting the contract to match your code*.
 
 This rule overrides the priority hierarchy below. Readability / KISS / DRY / YAGNI choose between conforming implementations — they never license a deviation from the contract.
 

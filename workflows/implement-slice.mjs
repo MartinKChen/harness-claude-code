@@ -72,20 +72,36 @@ const TASK = {
   },
   required: ['id', 'type', 'done', 'blockedBy', 'delivery'],
 }
+// The Scope Manifest — derived ONCE in Prep from the slice body, then carried
+// verbatim into every review (coverage gate + slice review) as the closed
+// authority for what this slice must prove. It exists to stop the reviews from
+// inventing work the issue never authorized: ACs synthesized from prose, or
+// backfill tests for behavior the slice never changed. See agents/axis-reviewer.md
+// for how each scope consumes it.
+const SCOPE_MANIFEST = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    acIds:     { type: 'array', items: { type: 'string' }, description: 'the enumerated acceptance-criterion ids (AC1, AC2, …) — the canonical, CLOSED acceptance set. If a clause is not in this list it is not an AC.' },
+    dontBreak: { type: 'array', items: { type: 'string' }, description: 'the `## Don\'t break` items verbatim — regression guards on EXISTING behavior (protect the current path), NOT mandates to author new coverage for it.' },
+  },
+  required: ['acIds', 'dontBreak'],
+}
 const PREP = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    ok:          { type: 'boolean' },
-    haltReason:  { type: ['string', 'null'] },
-    sliceTitle:  { type: 'string' },
-    sliceBranch: { type: 'string' },
-    milestone:   { type: ['string', 'null'] },
-    typeScope:   { type: 'string', description: 'conventional PR-title prefix inferred from the slice, e.g. feat(auth)' },
-    smokeHint:   { type: 'string', description: 'one-line manual smoke for the PR test plan' },
-    tasks:       { type: 'array', items: TASK },
+    ok:            { type: 'boolean' },
+    haltReason:    { type: ['string', 'null'] },
+    sliceTitle:    { type: 'string' },
+    sliceBranch:   { type: 'string' },
+    milestone:     { type: ['string', 'null'] },
+    typeScope:     { type: 'string', description: 'conventional PR-title prefix inferred from the slice, e.g. feat(auth)' },
+    smokeHint:     { type: 'string', description: 'one-line manual smoke for the PR test plan' },
+    tasks:         { type: 'array', items: TASK },
+    scopeManifest: SCOPE_MANIFEST,
   },
-  required: ['ok', 'haltReason', 'sliceTitle', 'sliceBranch', 'milestone', 'typeScope', 'smokeHint', 'tasks'],
+  required: ['ok', 'haltReason', 'sliceTitle', 'sliceBranch', 'milestone', 'typeScope', 'smokeHint', 'tasks', 'scopeManifest'],
 }
 const DISPATCH_PLAN = {
   type: 'object',
@@ -527,12 +543,16 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 //   phaseTitle — the parent phase to group the fan-out agents under
 //                ('Coverage gate' or 'Slice review')
 //   sliceBranch — resolved once in Prep; reused here to skip re-resolution
+//   scopeManifest — the closed { acIds, dontBreak } authority from Prep; rendered
+//                into diffCtx so every dimension agent AND every adversarial
+//                verifier judges findings against the same bounded scope (cover
+//                exactly the closed AC set, no prose-synthesized ACs).
 // Returns { verdict: 'APPROVE'|'BLOCK', publishError } on success, or { error } on
 // any infra failure (worktree setup, an uncaught throw). The whole body is
 // try/caught so a crash surfaces as { error } and the caller halt()s to a human,
 // never killing the run uncaught.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReviewSlice(scope, phaseTitle, sliceBranch) {
+async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest) {
   try {
     // ── Prep: read-only worktree + diff ──
     const rprep = await agent(
@@ -576,7 +596,17 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
         { label: `review-surfaces:${scope}`, phase: phaseTitle, schema: SURFACES, model: AGENT_MODEL },
       ) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true })
 
-    const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.`
+    const sm = scopeManifest || { acIds: [], dontBreak: [] }
+    const fmtList = (xs, wrap) => xs.length ? xs.map(wrap).join(', ') : '(none declared)'
+    const manifestBlock = `
+## Scope Manifest (the CLOSED authority for slice #${SLICE} — derived once from the issue body; do not widen it)
+- **Acceptance criteria (closed set):** ${sm.acIds.length ? sm.acIds.join(', ') : '(none enumerated)'} — the canonical AC ids. Treat this as exhaustive: do NOT synthesize an AC from prose, a comment, or a Gherkin line that has no id in this list.
+- **Don't-break (regression guards):** ${fmtList(sm.dontBreak, s => `"${s}"`)} — existing behavior to protect from regression. These guard the CURRENT path; they are NOT a mandate to author new coverage for it.
+
+Apply this manifest exactly as your scope's rules in agents/axis-reviewer.md direct (test-coverage: cover exactly the AC ids + their Gherkin; production-code: every finding must ground in a declared AC id or a touched-path rule).`
+
+    const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.
+${manifestBlock}`
 
     // ── Spec: fan out phase-1 dimensions, dedup, then VERIFY *before* the gate, so
     // the gate trips only on a blocker that actually survives scrutiny. ──
@@ -679,8 +709,11 @@ Steps:
    For each task return { id (short form, e.g. be.1), type (e2e|backend|frontend), done (true iff [x]), blockedBy (the ids in the blocked-by field, [] if "—"), delivery (the quoted text) }.
 3. Resolve the slice branch: \`bash skills/operation-git/scripts/resolve-slice-branch.sh ${SLICE}\` → sliceBranch.
 4. typeScope = the conventional PR-title prefix you infer from the slice (e.g. feat(auth)). smokeHint = one short manual smoke a reviewer would run. milestone = the slice's milestone title (or null).
+5. Derive the **Scope Manifest** from the same body — this is the closed authority the downstream reviews are bounded by, so transcribe it faithfully and do NOT invent entries:
+   - \`acIds\` ← the enumerated acceptance-criterion ids only (the \`AC1\`, \`AC2\`, … labels), in order. The canonical, closed AC set — capture the IDs, not the prose, and do NOT mint new ids from sentences that lack a label.
+   - \`dontBreak\` ← the \`## Don't break\` items verbatim, one string each. These are regression guards on existing behavior; capture them as written (absent section → \`[]\`).
 
-Return the PREP object.`,
+Return the PREP object (including scopeManifest).`,
   { phase: 'Prep', schema: PREP },
 )
 if (!prep || !prep.ok) return halt(prep?.haltReason || 'prep could not read the slice body')
@@ -729,7 +762,7 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
   let stall = []
   let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch)
+    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest)
     if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
     // A set publishError means the verdict comment never reached GitHub. The gate's
     // findings would then be invisible to the fix loop — halt rather than loop blind
@@ -901,7 +934,7 @@ phase('Slice review')
   let stall = []
   let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch)
+    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch, prep.scopeManifest)
     if (r?.error) return halt(`slice review could not run: ${r.error}`)
     // Unposted verdict (see the coverage-gate note above): the findings never reached
     // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
