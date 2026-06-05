@@ -22,6 +22,15 @@ A `scope` qualifier in the dispatch (or the default `production-code`) selects t
 
 Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — the set of `[x]` tasks is what was built. Read the slice's Acceptance criteria (EARS + Gherkin) — that is the spec the slice is judged against; each task's pointer (api-contract / data-model / Gherkin scenario / design tokens) is the unit spec for that task.
 
+## The Scope Manifest bounds every finding
+
+This fallback applies the SAME bound the fan-out path enforces in `agents/axis-reviewer.md`. Derive a **Scope Manifest** from the slice issue body before reviewing — the closed authority for this slice:
+
+- **Acceptance criteria** (the enumerated `AC1, AC2, …` ids) — the canonical, CLOSED acceptance set. **Never synthesize an AC** from prose, a heading, a comment, or a Gherkin line with no id. If it is not in the list, the slice does not owe it — and because the set is closed, round one must enumerate every gap in it (there is no "find one more next round").
+- **Don't-break** (`## Don't break`) — regression guards on EXISTING behavior; "don't regress the current path," NOT a mandate to backfill the coverage that path always lacked.
+
+Every `I:H` (blocking) finding must ground in either a declared AC id or a touched-path catalogue rule on a surface in the diff (for `pattern-reviewer-contract`, a clause violated by code that exists in the diff). A would-be blocker that rests on a prose-inferred AC, a reviewer-judgement edge no spec clause names, or a pre-existing gap on an untouched surface is itself the error — score it `I:M`/`I:L` (Defer/Nit) or drop it; it must never BLOCK.
+
 ## Scope (one skill, two modes)
 
 - **`test-coverage`** — runs pre-implementation, judging the **authored E2E specs** against the slice AC + pattern-mandated non-happy-paths. Run only the Spec-phase dimensions (test-coverage, and contract if a sibling contract exists). Skip the Code-quality phase — there is no production code yet. **Wrinkle:** the dimension prompt's usual "test files are out of scope" rule *inverts* here — the E2E specs ARE the deliverable under review, so coverage mode explicitly targets them.
@@ -105,6 +114,7 @@ If something prevents the review (worktree setup failed, slice branch missing), 
 - **Parse the checklist from the slice body** for the implemented set — never list closed sub-issues (there are none; tasks live in the checklist).
 - **Every finding carries `(I:<x>, E:<y>, <class>)`.** Impact is derived mechanically from pattern severity; Effort is the reviewer's judgement; class is the matrix projection onto Fix / Defer / Nit / Drop. `Drop` findings never reach the comment.
 - **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE.
+- **The Scope Manifest is a hard boundary on what may be `I:H`.** Only a gap mapping to a declared AC / Gherkin / contract clause on a touched surface earns `I:H`. Reviewer-judgement edge breadth (boundary, special-char, stand-in assertions) the spec never names, and any pre-existing gap on a surface this slice did not change, are `I:M`/`I:L` at most — surfaced as advice, never a BLOCK. Block on tests that are *missed for spec'd behavior* and code that *violates its contract*; everything else is a Nit.
 - **`test-coverage` scope inverts the test-files rule.** The authored E2E specs are the deliverable under review in coverage mode — target them, judge them against the slice AC + non-happy-paths, and skip the code-quality phase.
 - **The reviewer pattern set is owned by the agent.**
 - **GitHub + the returned verdict are the outputs.** The verdict comment is the only GitHub write; the returned verdict object is the caller's signal.

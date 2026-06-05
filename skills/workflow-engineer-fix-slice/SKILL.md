@@ -97,6 +97,7 @@ Terminal action. Exit. Do NOT flip any label — the calling workflow re-runs th
 - **User directives in the comment window override everything else.**
 - **Scope from the comment window, not from labels.** Only comments newer than the last `Refs #<slice#>` commit are in scope.
 - **Production-only fixes.** Never modify E2E specs from this lane. (E2E passing is the separate Pass-E2E phase — `workflow-engineer-diagnose-e2e` + `workflow-engineer-fix-e2e`; this loop only addresses review findings.)
+- **Contracts are read-only in this lane.** Never edit `docs/api-contract/*` or `docs/data-model/*`. A finding that the implementation diverges from the contract is fixed by changing the CODE to match the contract — never the contract to match the code. If the contract itself is wrong/incomplete, flip the slice to `status:need-attention`, post a `# Contract change requested` comment (entity, exact clause, what's needed, why), and exit. Do not self-amend.
 - **Every commit carries `Refs #<slice#>`** plus a `Task: <id>` trailer where the finding maps to one.
 - **Resume from the checklist + WIP commits.** Reconcile against already-`[x]` tasks and prior `Refs #<slice#>` commits before re-touching code.
 - **Pick up by the reviewer's `Fix now` class.** Effort is the reviewer's call — do not self-promote a `Defer` back to must-fix without a user directive.
