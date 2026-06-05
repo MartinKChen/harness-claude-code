@@ -6,7 +6,7 @@ labels are set on the create command, not in the body.
 There are NO task sub-issues. The task breakdown lives inline in the ## Tasks
 section as a static-ID checklist — that checklist IS the task ledger. The
 engineer ticks each task box as it completes (a claim); the reviewer ticks each
-AC box at end-of-slice review (the verified gate). See docs/test-layering-and-gates.md.
+AC box at end-of-slice review (the verified gate).
 
 Acceptance criteria (EARS + Gherkin) live HERE, on the slice, and ONLY here —
 this is the single AC ceremony for the whole slice.
@@ -16,8 +16,7 @@ backend-only or database-only slice. A backend invariant (ledger deltas, outbox
 enqueue, "same transaction", token state, "no row created") IS an acceptance
 criterion; it simply has a **backend owning layer**. Do NOT omit the AC section
 because the slice has no UI — that is the old AC=E2E conflation. Classify each
-AC's SHALL/THEN clause by its owning layer (Principle 1 of
-docs/test-layering-and-gates.md):
+AC's SHALL/THEN clause by its owning layer:
   - backend integration → HTTP endpoint / worker tick (ledger, tx, token state,
     outbox, DB-constraint rejection, 4xx/429, server-rendered zero-JS HTML).
   - frontend only → rendered/routed tree, API mocked at src/lib/api (UI shows…,

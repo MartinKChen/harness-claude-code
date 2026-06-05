@@ -11,9 +11,8 @@ this task breakdown as a static-ID checklist (the task ledger).
 
 EVERY slice carries Acceptance criteria — including backend-only slices, whose
 ACs are backend invariants with a backend owning layer. Show the AC ids and the
-owning layer each clause was classified into (Principle 1 of
-docs/test-layering-and-gates.md). An `e2e.*` task is emitted ONLY when the slice
-closes a cross-surface journey segment — NOT merely because it has UI.
+owning layer each clause was classified into. An `e2e.*` task is emitted ONLY
+when the slice closes a cross-surface journey segment — NOT merely because it has UI.
 
 Tasks MUST be atomic: one E2E test case (= one user flow), one API endpoint,
 one utility, one page, one component, or one hook per task. Data-model +

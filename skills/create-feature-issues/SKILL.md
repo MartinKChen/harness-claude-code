@@ -165,7 +165,7 @@ For each **slice** (which becomes one GitHub issue), decide:
 
 For each slice, then decompose into **tasks** (which become entries in the slice body's `## Tasks` checklist — not separate issues). Pick whichever of the three types apply to the slice. **Tasks MUST be atomic** — each task delivers exactly one unit of work (one test case, one endpoint, one entity change, one utility, one page, one component, one hook). A slice typically has multiple tasks of the same type (e.g. three `e2e` tasks for three distinct user flows, two `backend` tasks for two distinct endpoints, three `frontend` tasks for three components), so each task needs a stable static **ID** for the dependency graph to be unambiguous.
 
-**First, classify every AC clause by its owning layer (Principle 1 of `docs/test-layering-and-gates.md`).** An EARS AC is the *specification*, not a test — and it is routinely compound. The thing that owns a layer is the **assertion (the SHALL/THEN clause)**, not the whole AC. Classify **per clause**:
+**First, classify every AC clause by its owning layer.** An EARS AC is the *specification*, not a test — and it is routinely compound. The thing that owns a layer is the **assertion (the SHALL/THEN clause)**, not the whole AC. Classify **per clause**:
 
 - a clause observable at the **HTTP endpoint / worker tick** (ledger deltas, "same transaction", token state, outbox enqueue, DB-constraint rejection, "no row created", 4xx/429, server-rendered zero-JS HTML) → **backend** owning layer → discharged by a `backend` task.
 - a clause observable at the **rendered/routed tree** (the UI shows…, hook guards, cache invalidation, error display from a stubbed status, layout/a11y, derived display math) → **frontend** owning layer → discharged by a `frontend` task.

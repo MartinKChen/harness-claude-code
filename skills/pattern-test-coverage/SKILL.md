@@ -29,7 +29,7 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 ## An AC is *discharged at its owning layer* — not "tested"
 
-An acceptance criterion is a **specification**, not a test (see `docs/test-layering-and-gates.md`). "Complete" does not mean *one test per AC at any layer* — it means each AC's SHALL/THEN clause is **discharged by the cheapest durable, faithful proof at its owning layer**, and a *compound* AC fans across layers (classify per clause, not per AC).
+An acceptance criterion is a **specification**, not a test. "Complete" does not mean *one test per AC at any layer* — it means each AC's SHALL/THEN clause is **discharged by the cheapest durable, faithful proof at its owning layer**, and a *compound* AC fans across layers (classify per clause, not per AC).
 
 | Owning layer | The proof sits at… | Signals the clause belongs here |
 |---|---|---|

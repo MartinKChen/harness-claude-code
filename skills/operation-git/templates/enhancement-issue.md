@@ -29,8 +29,7 @@ MUST use the same line format as a feature slice (short static IDs `e2e.1` /
 Acceptance criteria are ALWAYS present — every enhancement carries ACs, including
 a backend-only one. A backend invariant IS an acceptance criterion with a
 **backend owning layer**; do NOT omit the AC section because there's no UI (the
-old AC=E2E conflation). Classify each AC clause by owning layer
-(docs/test-layering-and-gates.md, Principle 1), and emit an `e2e.*` task ONLY
+old AC=E2E conflation). Classify each AC clause by owning layer, and emit an `e2e.*` task ONLY
 when the enhancement closes a cross-surface journey segment worth walking — a
 backend-only enhancement legitimately has zero e2e tasks. ACs are ticked
 CHECKBOXES, ticked by the reviewer at end-of-slice review, never by the engineer.

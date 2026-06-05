@@ -622,7 +622,7 @@ Apply this manifest exactly as your scope's rules in agents/axis-reviewer.md dir
     const taskLedger = (tasks || []).filter(t => t.done)
     const layerOf = t => t.type === 'e2e' ? 'true-E2E (browser, live stack)' : t.type === 'backend' ? 'backend integration (HTTP endpoint / worker tick)' : 'frontend (rendered/routed tree, API mocked at src/lib/api)'
     const ledgerBlock = taskLedger.length ? `
-## Task discharge ledger (each task is proven at its OWNING LAYER — Principle 1 of docs/test-layering-and-gates.md)
+## Task discharge ledger (each task is proven at its OWNING LAYER)
 ${taskLedger.map(t => `- \`${t.id}\` · ${t.type} → owning layer: ${layerOf(t)} · covers: ${t.covers?.length ? t.covers.join(', ') : '(none)'} · scenario: ${t.scenario ? `"${t.scenario}"` : '(none)'}`).join('\n')}
 
 Judge each task against its owning layer: the \`covers:\` AC clause must be discharged THERE (deletable-code lens — deleting the production branch/mutation/derivation makes some test fail), the \`scenario:\` must be walked THERE, and it is asserted ONCE. Do NOT flag a backend invariant for "missing E2E coverage" — a ledger delta / token-state / "no row created" clause is owned by the backend layer and proven by an API-level test, never through the UI.` : ''
@@ -980,7 +980,7 @@ phase('Slice review')
     )
   }
 
-  // ── AC-tick: the VERIFIED GATE (Decision 1 of docs/test-layering-and-gates.md). ──
+  // ── AC-tick: the reviewer-gated VERIFIED GATE (vs. the engineer's task-box claim). ──
   // The engineer self-ticks TASK boxes as a progress claim; the reviewer ticks the
   // AC boxes — and only that AC tick is the verified gate. A production-code APPROVE
   // means no I:H spec-compliance finding survived, i.e. every AC's `covers:` task was

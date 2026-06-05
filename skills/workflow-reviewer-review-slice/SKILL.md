@@ -20,7 +20,7 @@ A `scope` qualifier in the dispatch (or the default `production-code`) selects t
 
 ## Input contract
 
-Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (Gherkin walked at the task's owning layer) plus a type pointer `contract:`/`entry-source:`/`done:`). The checklist is the durable task ledger — the set of `[x]` tasks is what was built. Read the slice's Acceptance criteria (EARS + Gherkin) — the ACs are **ticked checkboxes** (`- [ ] AC<n> — …`), the spec the slice is judged against. Each task's `covers:` names the AC clause(s) it discharges and `scenario:` the proof it walks **at its owning layer** (Principle 1 of `docs/test-layering-and-gates.md`: a task's `type` IS its owning layer — `backend`→HTTP endpoint/worker, `frontend`→rendered tree, `e2e`→browser journey).
+Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (Gherkin walked at the task's owning layer) plus a type pointer `contract:`/`entry-source:`/`done:`). The checklist is the durable task ledger — the set of `[x]` tasks is what was built. Read the slice's Acceptance criteria (EARS + Gherkin) — the ACs are **ticked checkboxes** (`- [ ] AC<n> — …`), the spec the slice is judged against. Each task's `covers:` names the AC clause(s) it discharges and `scenario:` the proof it walks **at its owning layer** (a task's `type` IS its owning layer — `backend`→HTTP endpoint/worker, `frontend`→rendered tree, `e2e`→browser journey).
 
 ## The Scope Manifest bounds every finding
 
@@ -101,7 +101,7 @@ Write to `/tmp/review-slice-<slice#>.md`.
 
 Post the verdict comment on the slice issue via `bash skills/operation-git/scripts/post-comment.sh <n> /tmp/review-slice-<slice#>.md`.
 
-**On a `production-code` APPROVE, tick the AC boxes — the verified gate (Decision 1 of `docs/test-layering-and-gates.md`).** The engineer self-ticks *task* boxes as a progress claim; the reviewer ticks the *AC* boxes, and only that AC tick is the verified gate. A `production-code` APPROVE means no `I:H` spec-compliance finding survived — i.e. every AC's `covers:` task was discharged at its owning layer — so flip every unchecked `- [ ] AC<n> — …` to `- [x] AC<n> — …` in the slice body via `gh issue edit <n> --body-file <edited-body>`, touching only those checkboxes (never a task line, never the AC text). Do **not** tick ACs on a BLOCK, in `test-coverage` scope (no production code yet), or for any AC a surviving spec finding maps to.
+**On a `production-code` APPROVE, tick the AC boxes — the verified gate.** The engineer self-ticks *task* boxes as a progress claim; the reviewer ticks the *AC* boxes, and only that AC tick is the verified gate. A `production-code` APPROVE means no `I:H` spec-compliance finding survived — i.e. every AC's `covers:` task was discharged at its owning layer — so flip every unchecked `- [ ] AC<n> — …` to `- [x] AC<n> — …` in the slice body via `gh issue edit <n> --body-file <edited-body>`, touching only those checkboxes (never a task line, never the AC text). Do **not** tick ACs on a BLOCK, in `test-coverage` scope (no production code yet), or for any AC a surviving spec finding maps to.
 
 Then **return the verdict object** (`APPROVE` / `BLOCK` + the findings) to the caller.
 

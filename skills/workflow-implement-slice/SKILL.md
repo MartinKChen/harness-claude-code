@@ -30,8 +30,7 @@ static-ID checklist — the workflow's Prep phase parses it, and each dispatched
 agent ticks its **task** boxes as it finishes (a progress claim). The slice's
 **AC** checkboxes are a separate ledger: they are ticked by the workflow at the
 end of the Slice-review phase, on APPROVE only — the engineer's task tick is a
-claim; the reviewer-gated AC tick is the verified gate (Decision 1 of
-`docs/test-layering-and-gates.md`).
+claim; the reviewer-gated AC tick is the verified gate.
 
 ## Phases
 

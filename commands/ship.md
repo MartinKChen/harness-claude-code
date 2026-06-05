@@ -162,19 +162,6 @@ No `TaskCreate`, no `Agent`. Never `--force`; never push directly to `main`; nev
 
 ---
 
-### The milestone release gate (a release gate, not an implementation gate — placement DEFERRED)
-
-A critical path spans several slices, so no single slice closes it. Its frozen `## Journey (Gherkin)` golden path (in `docs/critical-path/<flow>.md`, authored upfront at planning) is the **milestone's release-gate spec**. The **executable full walk** is composed *late*, at the milestone boundary, by stitching the slice-owned segment-E2Es into one continuous walk against a **single seed (no re-seeding between steps)** — the only point at which the real selectors and routes exist to write against. Running that walk is the **release gate** (see `docs/test-layering-and-gates.md`, Principles 5–6):
-
-- It is a **release gate, not an implementation gate.** It may sit **red while every individual slice is already merged-green** — that red means "the parts exist but don't compose; don't ship," not "a slice is unfinished."
-- **It NEVER blocks an individual slice's PR.** The per-slice implementation gates (segment-E2E, coverage gate, slice review, the reviewer-ticked ACs) own slice merge; this gate owns only the milestone-ship decision.
-- The full-journey walk is **not redundant** with the segment tests: segment tests re-seed upstream state via fixtures, so by construction they cannot see UI-level compositional seams (a button rendering on state a different slice's real flow set, a balance staying consistent across a state boundary walked through the glass). Keep it to **one golden happy path**; all branches/variations stay in segment-E2Es or lower layers.
-- For a stack whose production is **dormant behind a flag**, this walk going green is exactly the evidence the production-enable runbook should require.
-
-**Placement is OPEN (Decision 2, deferred).** Whether this runs as an extension of the `close-pr` stage when a milestone's *last* slice merges, a dedicated `/ship` step, or a CI job keyed on the milestone boundary is left for a later pass — so this pass does **not** yet compose or run the walk. Until that decision lands, the gate lives only as the frozen Journey spec + the slice-owned segment-E2Es; do not fabricate a milestone-close composition step here on your own.
-
----
-
 ### Step 3 — Emit one summary line
 
 ```

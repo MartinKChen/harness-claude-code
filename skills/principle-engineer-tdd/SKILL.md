@@ -33,7 +33,7 @@ Commit-message format is owned by the **dispatched caller**, not this skill. Eac
 
 ### "Outside" is relative to the unit under construction
 
-Outside-in TDD ≠ "always start from a browser E2E." It means: start at the **outermost boundary of the thing you are building**, write a failing acceptance test *there*, then grow the inner modules with fast unit RED→GREEN→REFACTOR loops until the acceptance test goes green. The outer boundary depends on the task's **owning layer** (Principle 3 of `docs/test-layering-and-gates.md`):
+Outside-in TDD ≠ "always start from a browser E2E." It means: start at the **outermost boundary of the thing you are building**, write a failing acceptance test *there*, then grow the inner modules with fast unit RED→GREEN→REFACTOR loops until the acceptance test goes green. The outer boundary depends on the task's **owning layer**:
 
 - **Backend-only task** → "outside" is the **HTTP endpoint** (or the worker tick) — the acceptance test is an API test against real Postgres; inner loops are service unit tests with fake adapters at seams. A ledger delta / "same tx" / "no row created" clause is proven here, never through a browser.
 - **Frontend-only task** → "outside" is the **rendered/routed tree** (RTL, API mocked at `src/lib/api`); inner loops are component/hook unit tests.
@@ -50,7 +50,7 @@ The acceptance test is **written first and is *supposed* to stay red** across th
 
 ### Two kinds of E2E: slice-segment vs critical-path
 
-When the unit *is* a cross-surface journey, distinguish the two E2E tests (Principle 5 of `docs/test-layering-and-gates.md`) — conflating them is what makes multi-slice journeys feel impossible to test-first:
+When the unit *is* a cross-surface journey, distinguish the two E2E tests — conflating them is what makes multi-slice journeys feel impossible to test-first:
 
 - **Slice-segment E2E** — owned by *this slice*, drives *this slice's* design, written **red-first within the slice** against already-merged-green upstream seeded via fixtures. This is where the TDD design pressure lives; it is an *implementation gate* for the slice.
 - **Critical-path E2E** — owned by the *milestone*. Its journey **spec** (the frozen `## Journey (Gherkin)` golden path) is authored upfront and decides where the slice seams go, but the **executable full walk** is composed *late*, at milestone close, by stitching the slice-owned segments into one continuous walk against a single seed. It is an acceptance/integration **release gate**, not a per-slice TDD driver — do not try to author it upfront for UI that isn't designed yet (that is the AC-vs-test conflation one level up), and do not hold one monolithic test red across the whole milestone.

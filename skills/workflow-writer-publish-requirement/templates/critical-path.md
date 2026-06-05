@@ -1,8 +1,7 @@
 <!--
 A critical path spans several slices, so no single slice closes it. This doc
 holds TWO things and only two: the rationale that makes it critical (Summary)
-and the FROZEN golden-path journey spec (Journey). See
-docs/test-layering-and-gates.md, Principle 5.
+and the FROZEN golden-path journey spec (Journey).
 
 The `## Journey (Gherkin)` block is the milestone's acceptance criterion. It is
 authored upfront at milestone planning and is FROZEN — it decides where the

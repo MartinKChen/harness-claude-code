@@ -36,7 +36,7 @@ Treat the manifest as a hard boundary on what you may report, exactly as the sco
 
 ### The per-task discharge ledger (owning layer)
 
-The dispatch also carries a **task discharge ledger** — one row per implemented task with its **owning layer**, the AC clause(s) it `covers:`, and the `scenario:` it walks. This encodes Principle 1 of `docs/test-layering-and-gates.md`: every AC clause is observable — and cheapest to prove faithfully — at exactly **one** layer (backend integration / frontend / true-E2E), and a compound AC fans across layers into multiple tasks.
+The dispatch also carries a **task discharge ledger** — one row per implemented task with its **owning layer**, the AC clause(s) it `covers:`, and the `scenario:` it walks. The principle: every AC clause is observable — and cheapest to prove faithfully — at exactly **one** layer (backend integration / frontend / true-E2E), and a compound AC fans across layers into multiple tasks.
 
 When your axis is **test-coverage** or **contract**, judge each task against **its owning layer**, not against a uniform bar:
 
