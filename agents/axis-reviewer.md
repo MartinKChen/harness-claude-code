@@ -34,6 +34,16 @@ The dispatch carries a **Scope Manifest** — the closed authority for this slic
 
 Treat the manifest as a hard boundary on what you may report, exactly as the scope rules below direct. A finding that rests on an AC you inferred rather than one in the list is itself the error.
 
+### The per-task discharge ledger (owning layer)
+
+The dispatch also carries a **task discharge ledger** — one row per implemented task with its **owning layer**, the AC clause(s) it `covers:`, and the `scenario:` it walks. The principle: every AC clause is observable — and cheapest to prove faithfully — at exactly **one** layer (backend integration / frontend / true-E2E), and a compound AC fans across layers into multiple tasks.
+
+When your axis is **test-coverage** or **contract**, judge each task against **its owning layer**, not against a uniform bar:
+
+- A `covers:` clause is discharged when deleting the production branch/mutation/derivation it names makes a test **at that layer** fail (deletable-code lens), and the `scenario:` is walked at that layer. Assert once — a clause proven at the backend layer is not re-asserted in a frontend or E2E test.
+- **Push each clause to the lowest faithful layer.** A backend invariant (ledger delta, "same transaction", token state, outbox enqueue, DB-constraint rejection, "no row created", 4xx/429) is owned by the **backend integration** layer and proven by an API-level test against real Postgres — **never** demanded through the UI/E2E. Flagging a backend invariant as "missing E2E coverage" is itself an error: it forces brittle browser assertions for what an endpoint test proves directly. Equally, a "the UI shows…" clause is owned by the frontend layer (RTL, API mocked) and not by the backend test.
+- The **frontend↔backend contract** is its own invariant the per-layer tests structurally cannot see (the frontend test mocks the shape; the backend test never renders it). A drift there is a real gap — pin it to a contract test / schema-generated client, and (for `contract` axis) cite both the implementation `file:line` and the contract `file:line`.
+
 ## Scope
 
 - **production-code** — audit the implemented production code in the diff against your catalogue. Test files are out of scope where your skill says so. **Every finding must ground in either (a) a declared AC id from the manifest, or (b) a touched-path rule from your catalogue applied to a surface in the diff.** A finding that grounds in neither — a behavior you inferred the slice "should" have from prose, or a gap on a surface this slice did not change — is out of bounds; do not report it as a blocker.

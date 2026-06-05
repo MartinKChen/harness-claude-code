@@ -20,7 +20,7 @@ A `scope` qualifier in the dispatch (or the default `production-code`) selects t
 
 ## Input contract
 
-Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — the set of `[x]` tasks is what was built. Read the slice's Acceptance criteria (EARS + Gherkin) — that is the spec the slice is judged against; each task's pointer (api-contract / data-model / Gherkin scenario / design tokens) is the unit spec for that task.
+Read the slice issue #<n> body and parse its `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (Gherkin walked at the task's owning layer) plus a type pointer `contract:`/`entry-source:`/`done:`). The checklist is the durable task ledger — the set of `[x]` tasks is what was built. Read the slice's Acceptance criteria (EARS + Gherkin) — the ACs are **ticked checkboxes** (`- [ ] AC<n> — …`), the spec the slice is judged against. Each task's `covers:` names the AC clause(s) it discharges and `scenario:` the proof it walks **at its owning layer** (a task's `type` IS its owning layer — `backend`→HTTP endpoint/worker, `frontend`→rendered tree, `e2e`→browser journey).
 
 ## The Scope Manifest bounds every finding
 
@@ -52,7 +52,7 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 **In `production-code` scope:** walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
 
-- **Phase 1 — Spec compliance**: the test-coverage gate — `pattern-test-coverage` read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks the slice AC + Gherkin scenarios against the diff) — and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These answer *"did this slice build what was asked?"* — missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model.
+- **Phase 1 — Spec compliance**: the test-coverage gate — `pattern-test-coverage` read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks the slice AC + Gherkin scenarios against the diff) — and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These answer *"did this slice build what was asked?"* — missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model. **Judge each task at its owning layer** (per the discharge ledger): a task's `covers:` clause must be discharged at its `type`'s layer under the deletable-code lens, its `scenario:` walked there, and asserted once. A backend invariant (ledger delta, "same tx", "no row created", 4xx/429) is owned by the backend layer and proven by an API-level test — never flagged as "missing E2E coverage"; a "the UI shows…" clause is owned by the frontend layer. The frontend↔backend contract is its own invariant the per-layer tests can't see — a drift there is a real gap.
 - **Phase 2 — Code quality**: every other loaded pattern (coding standard, observability, security, language- and framework-specific patterns, container, database). These answer *"is what was built well-built?"* — quality, security, and maintainability issues regardless of whether the spec was met.
 
 Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records. Tag every Phase 1 finding `phase: spec` and every Phase 2 finding `phase: quality`.
@@ -97,11 +97,15 @@ The downstream engineer / e2e-author pickup uses the per-finding `Fix` / `Defer`
 
 Write to `/tmp/review-slice-<slice#>.md`.
 
-### 6. Post the verdict comment and return the verdict
+### 6. Post the verdict comment, tick the discharged ACs, and return the verdict
 
-Post the verdict comment on the slice issue via `bash skills/operation-git/scripts/post-comment.sh <n> /tmp/review-slice-<slice#>.md`, then **return the verdict object** (`APPROVE` / `BLOCK` + the findings) to the caller.
+Post the verdict comment on the slice issue via `bash skills/operation-git/scripts/post-comment.sh <n> /tmp/review-slice-<slice#>.md`.
 
-Terminal action. Exit. Flip NO label. Open NO draft PR. (Draft-PR creation moved to the `implement-slice` workflow's terminal phase; label gating is the calling workflow's job.)
+**On a `production-code` APPROVE, tick the AC boxes — the verified gate.** The engineer self-ticks *task* boxes as a progress claim; the reviewer ticks the *AC* boxes, and only that AC tick is the verified gate. A `production-code` APPROVE means no `I:H` spec-compliance finding survived — i.e. every AC's `covers:` task was discharged at its owning layer — so flip every unchecked `- [ ] AC<n> — …` to `- [x] AC<n> — …` in the slice body via `gh issue edit <n> --body-file <edited-body>`, touching only those checkboxes (never a task line, never the AC text). Do **not** tick ACs on a BLOCK, in `test-coverage` scope (no production code yet), or for any AC a surviving spec finding maps to.
+
+Then **return the verdict object** (`APPROVE` / `BLOCK` + the findings) to the caller.
+
+Terminal action. Exit. Flip NO `status:*` label. Open NO draft PR. (Draft-PR creation moved to the `implement-slice` workflow's terminal phase; label gating is the calling workflow's job. The AC-checkbox edit is the one exception to "the only write is the verdict comment" — it is the verified gate this skill owns.)
 
 ### Blocked-run branch
 
@@ -109,8 +113,10 @@ If something prevents the review (worktree setup failed, slice branch missing), 
 
 ## Iron rules
 
-- **Read-only on code.** No edits, no pushes, no `git reset --hard` outside the worktree setup. The only write is one verdict comment.
-- **One review, one comment, return the verdict.** Single-shot. No loop, no re-validation. Flip no label, open no PR.
+- **Read-only on code.** No edits, no pushes, no `git reset --hard` outside the worktree setup. The writes are the verdict comment and — on a `production-code` APPROVE only — ticking the discharged AC checkboxes in the slice body (the verified gate). Never touch production code.
+- **One review, one comment, return the verdict.** Single-shot. No loop, no re-validation. Flip no `status:*` label, open no PR.
+- **The engineer ticks tasks; the reviewer ticks ACs.** A task `[x]` is the engineer's progress claim; an AC `[x]` is this skill's verified gate, set only on `production-code` APPROVE. Never tick an AC a surviving spec finding maps to.
+- **Judge each task at its owning layer.** A `covers:` clause is discharged at its task's `type` layer (backend / frontend / true-E2E) under the deletable-code lens, asserted once. Never demand a backend invariant be proven through E2E, nor a UI clause through a backend test.
 - **Parse the checklist from the slice body** for the implemented set — never list closed sub-issues (there are none; tasks live in the checklist).
 - **Every finding carries `(I:<x>, E:<y>, <class>)`.** Impact is derived mechanically from pattern severity; Effort is the reviewer's judgement; class is the matrix projection onto Fix / Defer / Nit / Drop. `Drop` findings never reach the comment.
 - **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE.

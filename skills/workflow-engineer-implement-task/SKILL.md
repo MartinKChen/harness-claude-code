@@ -24,7 +24,7 @@ Do NOT activate when:
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; follow the pointer (api-contract / data-model / Gherkin scenario / design tokens) for the unit spec.
+Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the Gherkin to walk at this task's owning layer) plus a `contract:`/`entry-source:`/`done:` pointer). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; the task's owning layer is its `type` (backend → HTTP endpoint/worker, frontend → rendered tree) — write the acceptance test there (see `principle-engineer-tdd`). Follow the pointer (api-contract / data-model / Gherkin scenario / design tokens) for the unit spec.
 
 ## Workflow
 
@@ -64,7 +64,7 @@ All subsequent reads / edits / runs happen inside the worktree — never in the 
 
 ### 4. Drive implementation via outside-in TDD
 
-The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR → wiring) and the project context from step 2 are the contract. Each named task carries its own unit spec via its pointer (`contract:` → api-contract / data-model; `covers:` → the slice Gherkin scenario it serves; `done:` → the one-line criterion for a contract-less utility task). Pull additional per-entity / per-ADR files on demand as the change clarifies (see step 2's on-demand list).
+The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR → wiring) and the project context from step 2 are the contract. Each named task carries its own unit spec via its pointer (`contract:` → api-contract / data-model; `covers:` → the AC clause(s) it discharges; `scenario:` → the Gherkin to walk at the task's owning layer; `done:` → the one-line criterion for a contract-less utility task). The acceptance test is written at the task's owning layer — a backend invariant is proven at the endpoint/worker, never through the UI. Pull additional per-entity / per-ADR files on demand as the change clarifies (see step 2's on-demand list).
 
 Drive TDD on the slice branch inside the worktree, task by task. Stop a task when its delivery (and the AC / contract / done pointer it serves) is satisfied by a passing test or observable behavior.
 

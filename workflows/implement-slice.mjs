@@ -69,8 +69,10 @@ const TASK = {
     done:      { type: 'boolean', description: 'true iff the checkbox is [x]' },
     blockedBy: { type: 'array', items: { type: 'string' }, description: 'task ids this one waits on (intra-slice)' },
     delivery:  { type: 'string', description: 'the one-line delivery text from the checklist entry' },
+    covers:    { type: 'array', items: { type: 'string' }, description: 'AC clause ids this task discharges, from the `covers:` field ([] if none)' },
+    scenario:  { type: ['string', 'null'], description: 'the Gherkin scenario this task walks at its owning layer, from the `scenario:` field (null if absent)' },
   },
-  required: ['id', 'type', 'done', 'blockedBy', 'delivery'],
+  required: ['id', 'type', 'done', 'blockedBy', 'delivery', 'covers', 'scenario'],
 }
 // The Scope Manifest — derived ONCE in Prep from the slice body, then carried
 // verbatim into every review (coverage gate + slice review) as the closed
@@ -547,12 +549,18 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 //                into diffCtx so every dimension agent AND every adversarial
 //                verifier judges findings against the same bounded scope (cover
 //                exactly the closed AC set, no prose-synthesized ACs).
+//   tasks      — the parsed `## Tasks` ledger from Prep; rendered as the per-task
+//                discharge ledger so the test-coverage / contract axes can judge
+//                each task against its OWNING LAYER (Principle 1) and verify, per
+//                task, that its `covers:` AC clause is discharged at that layer and
+//                its `scenario:` is walked there — a backend invariant proven at
+//                the backend layer, never re-asserted through E2E.
 // Returns { verdict: 'APPROVE'|'BLOCK', publishError } on success, or { error } on
 // any infra failure (worktree setup, an uncaught throw). The whole body is
 // try/caught so a crash surfaces as { error } and the caller halt()s to a human,
 // never killing the run uncaught.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest) {
+async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks) {
   try {
     // ── Prep: read-only worktree + diff ──
     const rprep = await agent(
@@ -605,8 +613,22 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
 
 Apply this manifest exactly as your scope's rules in agents/axis-reviewer.md direct (test-coverage: cover exactly the AC ids + their Gherkin; production-code: every finding must ground in a declared AC id or a touched-path rule).`
 
+    // Per-task discharge ledger: each task's owning layer is its type (backend →
+    // HTTP endpoint / worker; frontend → rendered tree; e2e → browser journey),
+    // and `covers:` names the AC clause(s) it discharges, `scenario:` the Gherkin
+    // it walks AT that layer. The test-coverage / contract axes use this to verify,
+    // per task, that the clause is discharged at the lowest faithful layer and
+    // asserted once — never demanding a backend invariant be re-proven through E2E.
+    const taskLedger = (tasks || []).filter(t => t.done)
+    const layerOf = t => t.type === 'e2e' ? 'true-E2E (browser, live stack)' : t.type === 'backend' ? 'backend integration (HTTP endpoint / worker tick)' : 'frontend (rendered/routed tree, API mocked at src/lib/api)'
+    const ledgerBlock = taskLedger.length ? `
+## Task discharge ledger (each task is proven at its OWNING LAYER)
+${taskLedger.map(t => `- \`${t.id}\` · ${t.type} → owning layer: ${layerOf(t)} · covers: ${t.covers?.length ? t.covers.join(', ') : '(none)'} · scenario: ${t.scenario ? `"${t.scenario}"` : '(none)'}`).join('\n')}
+
+Judge each task against its owning layer: the \`covers:\` AC clause must be discharged THERE (deletable-code lens — deleting the production branch/mutation/derivation makes some test fail), the \`scenario:\` must be walked THERE, and it is asserted ONCE. Do NOT flag a backend invariant for "missing E2E coverage" — a ledger delta / token-state / "no row created" clause is owned by the backend layer and proven by an API-level test, never through the UI.` : ''
+
     const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.
-${manifestBlock}`
+${manifestBlock}${ledgerBlock}`
 
     // ── Spec: fan out phase-1 dimensions, dedup, then VERIFY *before* the gate, so
     // the gate trips only on a blocker that actually survives scrutiny. ──
@@ -704,9 +726,10 @@ const prep = await agent(
 
 Steps:
 1. Fetch the slice: \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,title,body,labels,url,milestone\`. If closed/unreadable, return ok=false + haltReason; best-effort the rest.
-2. Parse the \`## Tasks\` checklist from the body. Each line looks like:
-   \`- [ ] \\\`be.1\\\` · **backend** · blocked-by: \\\`e2e.1\\\` · "POST /widgets …"\` (or \`[x]\` when done).
-   For each task return { id (short form, e.g. be.1), type (e2e|backend|frontend), done (true iff [x]), blockedBy (the ids in the blocked-by field, [] if "—"), delivery (the quoted text) }.
+2. Parse the \`## Tasks\` checklist from the body. Each entry is a checkbox line plus a follow-on line, e.g.:
+   \`- [ ] \\\`be.1\\\` · **backend** · blocked-by: \\\`e2e.1\\\` · "POST /widgets …"\` (or \`[x]\` when done)
+   \`      covers: AC1, AC3 · scenario: "Schedule moves 1 credit to held" · contract: docs/api-contract/...\`
+   For each task return { id (short form, e.g. be.1), type (e2e|backend|frontend), done (true iff [x]), blockedBy (the ids in the blocked-by field, [] if "—"), delivery (the quoted text), covers (the AC ids in the \`covers:\` field, e.g. ["AC1","AC3"]; [] if absent), scenario (the quoted \`scenario:\` text, or null if absent) }.
 3. Resolve the slice branch: \`bash skills/operation-git/scripts/resolve-slice-branch.sh ${SLICE}\` → sliceBranch.
 4. typeScope = the conventional PR-title prefix you infer from the slice (e.g. feat(auth)). smokeHint = one short manual smoke a reviewer would run. milestone = the slice's milestone title (or null).
 5. Derive the **Scope Manifest** from the same body — this is the closed authority the downstream reviews are bounded by, so transcribe it faithfully and do NOT invent entries:
@@ -762,7 +785,7 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
   let stall = []
   let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest)
+    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks)
     if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
     // A set publishError means the verdict comment never reached GitHub. The gate's
     // findings would then be invisible to the fix loop — halt rather than loop blind
@@ -934,7 +957,7 @@ phase('Slice review')
   let stall = []
   let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch, prep.scopeManifest)
+    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch, prep.scopeManifest, prep.tasks)
     if (r?.error) return halt(`slice review could not run: ${r.error}`)
     // Unposted verdict (see the coverage-gate note above): the findings never reached
     // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
@@ -954,6 +977,25 @@ phase('Slice review')
     await agent(
       `Fix the review feedback on slice #${SLICE}.`,
       { agentType: ENGINEER, phase: 'Slice review', label: `fix:${round}` },
+    )
+  }
+
+  // ── AC-tick: the reviewer-gated VERIFIED GATE (vs. the engineer's task-box claim). ──
+  // The engineer self-ticks TASK boxes as a progress claim; the reviewer ticks the
+  // AC boxes — and only that AC tick is the verified gate. A production-code APPROVE
+  // means no I:H spec-compliance finding survived, i.e. every AC's `covers:` task was
+  // discharged at its owning layer (the test-coverage axis blocks I:H on any
+  // undischarged AC). So on APPROVE we flip every `- [ ] AC<n>` → `- [x] AC<n>`. A
+  // re-run that re-enters on an already-APPROVE'd slice just re-ticks idempotently.
+  const acIds = prep.scopeManifest?.acIds ?? []
+  if (acIds.length) {
+    await agent(
+      `The slice #${SLICE} production-code review has APPROVED — every acceptance criterion is now discharged at its owning layer. Tick the AC checkboxes in the slice body (the reviewer's VERIFIED GATE; the engineer only ticks task boxes). Do exactly this:
+1. \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,body\` to read the current body.
+2. In the \`## Acceptance criteria (EARS)\` section, flip each unchecked AC checkbox \`- [ ] AC<n> — …\` to \`- [x] AC<n> — …\` for these ids: ${acIds.join(', ')}. Leave the AC text and every other line byte-for-byte unchanged; touch ONLY the \`[ ]\`→\`[x]\` of those AC lines (NOT task lines).
+3. Write the edited full body to /tmp/ac-tick-${SLICE}.md and apply it: \`gh issue edit ${SLICE} --body-file /tmp/ac-tick-${SLICE}.md\`.
+Return ok=true (or error set on failure). prNumber=null.`,
+      { label: 'tick-acs', phase: 'Slice review', schema: SIDE_EFFECT, model: WRITER_MODEL },
     )
   }
 }

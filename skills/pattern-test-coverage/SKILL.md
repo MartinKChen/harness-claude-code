@@ -1,6 +1,6 @@
 ---
 name: pattern-test-coverage
-description: "Role-neutral catalogue of what makes a test set *complete* — the shared substance both the engineer (when authoring tests in the TDD red phase) and the reviewer (when gating the code) judge against. Every AC in `Done criteria (EARS)` needs a test that names the behavior and asserts its SHALL/MUST/THEN clause; every `Scenarios (Gherkin)` (and `Migration scenarios`) walks Given→When→Then; new code paths cover the edge breadth (boundary, error, empty, concurrency, idempotency, authz); emitted artifacts are asserted against the consuming contract; `type:e2e` covers parent-slice scenarios through the UI via semantic selectors asserting user-visible state. The spine is the deletable-code lens: a test set is complete only when deleting any single production branch, mutation, derivation, log, or parameter makes a test fail. Activate when writing or reviewing tests."
+description: "Role-neutral catalogue of what makes a test set *complete* — the shared substance both the engineer (when authoring tests in the TDD red phase) and the reviewer (when gating the code) judge against. Every AC in `Acceptance criteria (EARS)` is *discharged* by the cheapest durable proof at its **owning layer** (backend integration / frontend / true-E2E) — a compound AC fans across layers, and each clause is pushed to the lowest layer that can prove it and asserted once; every `Scenarios (Gherkin)` (and `Migration scenarios`) walks Given→When→Then at its owning layer; new code paths cover the edge breadth (boundary, error, empty, concurrency, idempotency, authz); emitted artifacts are asserted against the consuming contract; a `type:e2e` task's scenario is walked through the UI via semantic selectors asserting user-visible state, while backend invariants are proven at the backend layer (never re-walked through the UI). The spine is the deletable-code lens: a test set is complete only when deleting any single production branch, mutation, derivation, log, or parameter makes a test fail. Activate when writing or reviewing tests."
 ---
 
 # pattern-test-coverage
@@ -27,9 +27,32 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 > This is the **one** overlay target for test-coverage *substance*. Because both the engineer and the reviewer load this skill, a rule the dreaming pass files here reaches the side that *makes* the miss (authoring) and the side that *catches* it (review) at once — which is the whole point of keeping the catalogue shared. Reviewer-*reporting* carve-outs (a finding shape that over-flags in this project) belong in the separate `pattern-reviewer-test-coverage` overlay, not here.
 
+## An AC is *discharged at its owning layer* — not "tested"
+
+An acceptance criterion is a **specification**, not a test. "Complete" does not mean *one test per AC at any layer* — it means each AC's SHALL/THEN clause is **discharged by the cheapest durable, faithful proof at its owning layer**, and a *compound* AC fans across layers (classify per clause, not per AC).
+
+| Owning layer | The proof sits at… | Signals the clause belongs here |
+|---|---|---|
+| **Backend integration** | the HTTP endpoint (API test + real Postgres) or worker tick | ledger deltas by column, "same transaction", token state (`used_at`/`expires_at`), outbox enqueue, DB-constraint rejection, "no row created", `SKIP LOCKED` concurrency, rate-limit buckets, `4xx`/`429`, server-rendered (zero-JS) HTML |
+| **Frontend only** | the rendered/routed tree (RTL, API mocked at `src/lib/api`) | "the UI shows…", hook guards (`enabled`), cache invalidation, idempotency-key rotation, error display from a stubbed status, layout/landmarks/a11y, derived display math |
+| **True E2E** | the browser, through the live stack | the *user-visible* result that requires both layers wired together — a rendered balance/status reflecting a real mutation — earned by a *journey worth walking*, never by an AC merely spanning layers |
+
+**Push each clause to the lowest layer that can prove it, and assert it once.** A ledger delta is asserted at backend integration — never re-asserted in a frontend test (which mocks it, proving nothing) or in E2E (slow, brittle). Violating this is the direct cause of selector-collision churn in E2E specs. The **frontend↔backend contract** is its own invariant the per-layer tests structurally can't see — pin it with a contract test / schema-generated client.
+
+Usually the discharge is a test. Occasionally it's something else, still durable:
+
+| Discharge mechanism | Example | Durable? |
+|---|---|---|
+| Automated test | most ACs | ✅ |
+| DB constraint | "overlap impossible by construction" (`EXCLUDE`) | ✅ — but keep **one** test that the constraint *fires* (a migration can drop it) |
+| Type system / compiler | exhaustive discriminated unions | ✅ |
+| Manual / review | "looks aligned" | ❌ rots immediately — never discharge on its own |
+
+A ticked AC checkbox is **never** discharge on its own.
+
 ## The spine: the deletable-code lens
 
-Every rule below is an instance of one test: **could I delete a single line of the production code under test — a branch, a mutation, a derivation, a log call, a parameter — and keep the whole suite green?** If yes, that line is uncovered, however many tests "touch" the area. Before calling a behavior done (engineer) or covered (reviewer), name the line you could delete, then close it.
+Every rule below is an instance of one test: **could I delete a single line of the production code under test — a branch, a mutation, a derivation, a log call, a parameter — and keep the whole suite green?** If yes, that line is uncovered, however many tests "touch" the area. Before calling a behavior done (engineer) or covered (reviewer), name the line you could delete, then close it. **The completeness bar is this deletable-code lens, not one-test-per-AC** — the AC list is the coverage *checklist*; the tests are the coverage. Mapping is many-to-many: one AC may need several tests (boundary/error/concurrency); several ACs may be covered by one walk.
 
 A test fails this lens when it:
 
@@ -45,15 +68,15 @@ The spec is the **slice issue body** plus each task's checklist pointer. The sli
 
 ### 1. Acceptance-criteria coverage (every `type:*`)
 
-For every AC in `## Done criteria (EARS)`:
+For every AC in `## Acceptance criteria (EARS)`:
 
 - **AC exercised** — a test whose description names the AC's behavior AND whose assertions check the `SHALL` / `MUST` / `THEN` clause. A test that merely brushes the area without asserting the clause is shallow coverage, not coverage.
 - **No skipped sub-clause** — the `IF <condition>, THEN …` branch and any `And it SHOULD …` secondary observable in the same AC each need their own assertion; covering only the happy-path return value is shallow.
-- **Right layer** — an HTTP-contract AC is exercised through the request/response, not only a pure-function unit test; a user-visible-state AC is exercised by rendering the component, not only a hook test.
+- **Right (owning) layer** — discharge each clause at its owning layer (table above), and only there. An HTTP-contract / ledger / token-state clause is proven through the request/response against real Postgres — **not** through the UI/E2E and not re-asserted in a frontend test; a "the UI shows…" clause is proven by rendering the component (API mocked), not by a backend test; a true cross-surface clause is proven by the browser walk. A compound AC splits: prove each clause at its layer, assert once.
 
 ### 2. Scenario coverage (every `type:*`)
 
-For every `Scenario:` block (task body, or parent slice body for `type:e2e`): a test walks the full `Given → When → Then`. Given+When with no asserted Then (or a different Then than the spec) is a partial scenario. For `type:e2e`, "covers" means a Playwright spec drives the UI through the scenario and asserts user-visible state — hitting the backend API directly does not cover an E2E scenario.
+For every `scenario:` a task names (and every `Scenario:` block in the slice body): a test walks the full `Given → When → Then` **at that task's owning layer**. Given+When with no asserted Then (or a different Then than the spec) is a partial scenario. A backend task's `scenario:` is walked at the endpoint/worker (the ledger delta, the 409, "no row created"); a frontend task's at the rendered tree. Only a `type:e2e` task's scenario is walked through the UI: a Playwright spec drives the browser through the journey and asserts **user-visible** state. Not every slice scenario is an E2E walk — a backend invariant's scenario is proven by an API-level test, and demanding it be re-walked through the UI is the layering error this catalogue exists to prevent.
 
 ### 3. Migration-scenario coverage (only when `### Migration scenarios (Gherkin)` is present)
 

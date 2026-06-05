@@ -1044,7 +1044,7 @@
       <tr>
         <td class="role">Author E2E</td>
         <td class="model">agent · e2e-author</td>
-        <td>One dispatch for every not-yet-<code>[x]</code> e2e task. Skipped if the slice has no e2e tasks.</td>
+        <td>One dispatch for every not-yet-<code>[x]</code> e2e task. Skipped if the slice has no e2e tasks — and a slice gets one only when it closes a cross-surface journey segment, so backend-only / pure-layout slices skip this phase entirely.</td>
       </tr>
       <tr>
         <td class="role">Coverage gate</td>
@@ -1069,7 +1069,7 @@
       <tr>
         <td class="role">Slice review</td>
         <td class="model">runReviewSlice('production-code')</td>
-        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE (no round cap).</td>
+        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE (no round cap). Judges each task at its <strong>owning layer</strong> (a backend invariant is proven at the backend layer, never demanded through E2E) via a per-task discharge ledger; on APPROVE the workflow ticks every <strong>AC</strong> checkbox — the reviewer-gated verified gate (the engineer's task-box tick is only a progress claim).</td>
       </tr>
       <tr>
         <td class="role">PR</td>

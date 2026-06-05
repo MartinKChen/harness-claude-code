@@ -9,11 +9,7 @@ The orchestrator (the workflow, or the outer `/loop` for `fix-pr`) fills ONLY th
 ```
 Author E2E for slice #<slice-#> tasks <ids>.
 
-Read the slice #<slice-#> body and locate the named e2e task block(s) in the
-`## Tasks` checklist. Author one Playwright spec per task's mapped Gherkin
-scenario, tick each authored task's checkbox in the slice body, post a comment
-summarizing what you authored, then commit and push. You own the lifecycle
-until your specs are pushed and the boxes are ticked.
+Read the slice #<slice-#> body and locate the named e2e task block(s) in the `## Tasks` checklist. Author one Playwright spec per task's mapped Gherkin scenario, tick each authored task's checkbox in the slice body, post a comment summarizing what you authored, then commit and push. You own the lifecycle until your specs are pushed and the boxes are ticked.
 ```
 
 ## Fix E2E coverage feedback on a slice
@@ -21,10 +17,7 @@ until your specs are pushed and the boxes are ticked.
 ```
 Fix E2E coverage feedback on slice #<slice-#>.
 
-Read the newest coverage-gate review comment (posted after the last commit that
-carries `Refs #<slice-#>`), then revise the E2E specs to close the gap. Commit,
-push, and post a comment summarizing the fix. You own the lifecycle until the
-revised specs are pushed.
+Read the newest coverage-gate review comment (posted after the last commit that carries `Refs #<slice-#>`), then revise the E2E specs to close the gap. Commit, push, and post a comment summarizing the fix. You own the lifecycle until the revised specs are pushed.
 ```
 
 ## Implement a slice's tasks
@@ -32,12 +25,7 @@ revised specs are pushed.
 ```
 Implement slice #<slice-#> tasks <ids>.
 
-Read the slice #<slice-#> body, locate the named task block(s) in the `## Tasks`
-checklist, and follow each task's spec pointer (api-contract / data-model /
-Gherkin scenario / design tokens). Drive outside-in TDD, tick each task's
-checkbox as you finish it, commit per task (one `Task: <id>` trailer each), and
-push. You own the lifecycle until the named tasks are implemented, boxed, and
-pushed.
+Read the slice #<slice-#> body, locate the named task block(s) in the `## Tasks` checklist, and follow each task's spec pointer (api-contract / data-model / Gherkin scenario / design tokens). Drive outside-in TDD, tick each task's checkbox as you finish it, commit per task (one `Task: <id>` trailer each), and push. You own the lifecycle until the named tasks are implemented, boxed, and pushed.
 ```
 
 ## Diagnose E2E for a slice
@@ -45,11 +33,7 @@ pushed.
 ```
 Diagnose E2E acceptance for slice #<slice-#>.
 
-Integrate `origin/main`, boot the slice's stack via testcontainers, and run
-every E2E spec on the slice branch. Categorize any failures into correlated
-production-fix groups (shared root cause, complexity, fix hint) and return the
-diagnosis — do NOT write a fix or edit the specs. A failure that can only be
-addressed by editing a spec is a test-case constraint → return need-attention.
+Integrate `origin/main`, boot the slice's stack via testcontainers, and run every E2E spec on the slice branch. Categorize any failures into correlated production-fix groups (shared root cause, complexity, fix hint) and return the diagnosis — do NOT write a fix or edit the specs. A failure that can only be addressed by editing a spec is a test-case constraint → return need-attention.
 ```
 
 ## Fix E2E failures for a slice
@@ -60,10 +44,7 @@ Root cause: <shared production-code root cause>
 Failing tests: <spec-file::test-title; …>
 Fix: <concrete production-code corrective action + sibling sites>
 
-Drive production code only (never the E2E specs) via TDD until this group's root
-cause is resolved; propagate the class-of-bug; commit with a `Refs #<slice-#>`
-trailer and push. Do NOT boot or re-run the full E2E suite — the diagnose step
-re-runs it. You own the lifecycle until your fix is pushed.
+Drive production code only (never the E2E specs) via TDD until this group's root cause is resolved; propagate the class-of-bug; commit with a `Refs #<slice-#>` trailer and push. Do NOT boot or re-run the full E2E suite — the diagnose step re-runs it. You own the lifecycle until your fix is pushed.
 ```
 
 ## Fix reviewer findings on a slice
@@ -71,9 +52,7 @@ re-runs it. You own the lifecycle until your fix is pushed.
 ```
 Fix the review feedback on slice #<slice-#>.
 
-Read every comment posted after the last commit that carries `Refs #<slice-#>`,
-drive the fix via TDD on production code, then commit, push, and post a comment
-summarizing the fix. You own the lifecycle until the fix is pushed.
+Read every comment posted after the last commit that carries `Refs #<slice-#>`, drive the fix via TDD on production code, then commit, push, and post a comment summarizing the fix. You own the lifecycle until the fix is pushed.
 ```
 
 ## Fix a PR
@@ -82,8 +61,7 @@ summarizing the fix. You own the lifecycle until the fix is pushed.
 Fix PR #<pr-#>.
 
 Determine the blockers (merge conflict, failing CI, or both) yourself.
-You own the lifecycle until you push the fix and clear `status:fix-in-progress`
-on the PR.
+You own the lifecycle until you push the fix and clear `status:fix-in-progress` on the PR.
 ```
 
 ## Placeholders

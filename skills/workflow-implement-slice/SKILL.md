@@ -27,7 +27,10 @@ GitHub keeps only durable, human-relevant state: the slice issue, the
 `status:in-progress` lock (held for the whole run), the `status:need-attention`
 halt, and the final draft PR. Task tracking lives in the slice body's `## Tasks`
 static-ID checklist — the workflow's Prep phase parses it, and each dispatched
-agent ticks its boxes as it finishes.
+agent ticks its **task** boxes as it finishes (a progress claim). The slice's
+**AC** checkboxes are a separate ledger: they are ticked by the workflow at the
+end of the Slice-review phase, on APPROVE only — the engineer's task tick is a
+claim; the reviewer-gated AC tick is the verified gate.
 
 ## Phases
 
@@ -39,7 +42,7 @@ agent ticks its boxes as it finishes.
 | Plan | `agent()` | Group impl tasks into ordered engineer dispatches (DAG-respecting, ≤3 tasks/group). |
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
 | Pass E2E | `agent({agentType: engineer})` diagnose → per-group fix loop | Each round: one **diagnose** dispatch boots the stack, runs the specs, and categorizes failures into correlated groups; then one **fix** dispatch per group runs **serially** (shared worktree). Loops (uncapped) until a round diagnoses GREEN; a test-case constraint → `halt()`. |
-| Slice review | `runReviewSlice('production-code')` + `engineer` fix loop | Loops to APPROVE (no round cap). |
+| Slice review | `runReviewSlice('production-code')` + `engineer` fix loop, then AC-tick | Loops to APPROVE (no round cap), judging each task at its **owning layer** (the per-task discharge ledger). On APPROVE, ticks every AC checkbox — the verified gate. |
 | PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
 
 ## Contract

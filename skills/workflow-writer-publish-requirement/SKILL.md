@@ -38,7 +38,7 @@ Send a `SendMessage(to=product-owner)` with:
 
 - An identifying line stating you are the writer dispatched to publish the product-requirement artifacts (name yourself, e.g. `requirement-writer`).
 - The `<feature-name>` and your `<worktree_path>` so `product-owner` can resolve any `{worktree_path}` placeholder in its composed prompt.
-- An explicit ask for the artifact-publishing info: clarified requirement content, critical-path classification (extend / supersede / brand new, with the target file name and — if superseding — the file to delete), the list of glossary terms with their settled definitions, and whether the `CLAUDE.md` product-context section warrants an update (and if so, the proposed wording).
+- An explicit ask for the artifact-publishing info: clarified requirement content, critical-path classification (extend / supersede / brand new, with the target file name and — if superseding — the file to delete) **including the frozen golden-path Journey as a Given/When/Then scenario** (the release-gate spec + seam-decider for the `## Journey (Gherkin)` block), the list of glossary terms with their settled definitions, and whether the `CLAUDE.md` product-context section warrants an update (and if so, the proposed wording).
 
 Wait for `product-owner`'s reply. If `product-owner` does not respond, or responds with anything other than the structured artifact-publishing payload, STOP and surface the gap — do not improvise content. If a piece of context is unclear once the payload arrives, send a follow-up `SendMessage(to=product-owner)` for clarification before generating artifacts.
 
@@ -56,7 +56,7 @@ For the PRD (`docs/product-requirement-document/{feature-name}/requirement.md`):
 
 For the critical-path file (`docs/critical-path/{critical-path-name}.md`):
 
-Apply the classification from the interviewer's hand-off:
+The file holds exactly two substantive things: `## Summary` (the why-critical rationale) and a **frozen `## Journey (Gherkin)` golden-path block** — one end-to-end scenario spanning slices that is the milestone's release-gate spec AND the seam-decider (it decides where the slice seams go and cannot drift). Do NOT also emit `## Entry point` / `## Steps` / `## Exit` / `## Failure modes` — that is the same journey expressed less precisely (the AC-vs-test duplication one level up). Author ONE golden happy path; failure scenarios are slice-owned non-happy-path ACs, not part of this journey. Apply the classification from the interviewer's hand-off:
 
 - **Extend** — edit the named file in place; append a History entry with today's date and a one-line reason.
 - **Supersede** — write the new file from `templates/critical-path.md`, AND delete the named superseded `.md` file. The superseded file's content does not migrate — it lives only in the new file's History entry (e.g. "superseded `<old-path-name>` after pivot").
@@ -115,6 +115,6 @@ Each artifact has a template under `templates/` in this skill's directory. Copy 
 | Asset | Target path on disk | Purpose |
 |-------|---------------------|---------|
 | `templates/requirement.md` | `docs/product-requirement-document/{feature-name}/requirement.md` | The PRD. Problem from the user's perspective, solution from the user's perspective, an extensive numbered list of user stories, explicit out-of-scope section, and any further notes. One per feature. |
-| `templates/critical-path.md` | `docs/critical-path/{critical-path-name}.md` | A single critical user flow. Summary justifies the "critical" label, then entry point, steps, exit/success state, failure modes, and a History section. Edited in place when extending; written-new-and-deleted-old when superseding; created fresh when brand new. |
+| `templates/critical-path.md` | `docs/critical-path/{critical-path-name}.md` | A single critical user flow: `## Summary` (why-critical rationale) → frozen `## Journey (Gherkin)` golden path (release-gate spec + seam-decider) → `## History`. ONE golden happy path; failure scenarios are slice-owned ACs, not in the journey. Edited in place when extending; written-new-and-deleted-old when superseding; created fresh when brand new. |
 | `templates/glossary-entry.md` | `docs/GLOSSARY.md` (appended) | One entry per domain term: definition in the project's voice plus disambiguation notes. Append; never overwrite an existing term unless the user explicitly reframed it. |
 | `templates/claude-md-product-context.md` | `CLAUDE.md` (the `## Product context` section) | **Only when** the requirement reveals a product pivot, scope expansion, new core user, or shift in success criteria. Edit the product-context section in place; never append a per-feature changelog. The goal: a new agent reading this should know what the product is, who it's for, and the current strategic focus at a glance. |
