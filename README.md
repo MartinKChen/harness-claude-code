@@ -2,7 +2,7 @@
 
 An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a pickup / close-out lifecycle command (`/implement-feature`) backed by pure-shell discovery scripts that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD, coding / frontend / backend / container / observability patterns, git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
 
-> **New here?** Start with [`DESIGN.md`](DESIGN.md) — the two ideas this harness is built on (specs-as-contract + orchestration over prompting). This README is the full per-surface catalogue; [`docs/workflow.html`](docs/workflow.html) is the visual walkthrough.
+> **New here?** Start with [`DESIGN.md`](DESIGN.md) — the two ideas this harness is built on (specs-as-contract + orchestration over prompting). This README is the full per-surface catalogue; [`docs/workflow.html`](docs/workflow.html) is the visual walkthrough. [`docs/test-layering-and-gates.md`](docs/test-layering-and-gates.md) sharpens where each acceptance criterion is proven (its owning layer) and which gate blocks what (implementation gate vs. release gate).
 
 ## Scope & assumptions
 

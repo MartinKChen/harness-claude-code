@@ -159,6 +159,12 @@ No `TaskCreate`, no `Agent`. Never `--force`; never push directly to `main`; nev
 
 ---
 
+### Milestone release gate (a release gate, not an implementation gate — placement DEFERRED)
+
+The feature's frozen `## Journey (Gherkin)` golden path (in `docs/critical-path/<flow>.md`) is the **milestone's release-gate spec**. At the milestone boundary the slice-owned segment-E2Es are stitched into one continuous full-journey walk against a single seed and run as the **release gate** — it may sit red while every slice is already merged-green ("the parts exist but don't compose; don't ship"), and it **NEVER** blocks an individual slice's PR (the per-slice gates own slice merge). See `docs/test-layering-and-gates.md` (Principles 5–6) for the full split, and `/ship` for the canonical description. **Placement is OPEN (Decision 2, deferred)** — extension of `close-pr`, a dedicated step, or a CI job keyed on the milestone's last slice merging — so this command does **not** yet compose or run the walk; do not fabricate a milestone-close step here.
+
+---
+
 ### Step 3 — Emit one summary line
 
 After Stage 9, print exactly one summary line:
