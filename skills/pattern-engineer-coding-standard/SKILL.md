@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-coding-standard
-description: "Language-agnostic coding standards. Contract is iron: implement the task's `Done criteria`, `docs/api-contract/*`, `docs/data-model/*`, and binding ADRs verbatim — halt on ambiguity, never invent. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names with boolean predicates; immutable data by default (prefer `map`/`filter`/`reduce`); narrow error handling at boundaries; parallel-by-default async (`Promise.all` / `asyncio.gather` / `errgroup`); strongest types (no `any`); AAA tests with behavior-stating names; files 200–400 lines (800 cap); refactor and feature stay in separate commits; flag long functions, deep nesting, magic numbers. Activate when writing or reviewing source code."
+description: "Language-agnostic coding standards. Contract is iron: implement the task's `Done criteria`, `docs/api-contract/*`, `docs/data-model/*`, and binding ADRs verbatim — halt on ambiguity, never invent. Priority: Readability → KISS → DRY → YAGNI. Verb-noun names; immutable data by default; narrow error handling at boundaries; parallel-by-default async; strongest types (no `any`); AAA tests; files 200–400 lines; feature/refactor in separate commits. Activate when writing or reviewing source code."
 ---
 
 # pattern-engineer-coding-standard

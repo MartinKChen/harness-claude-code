@@ -1,6 +1,6 @@
 ---
 name: axis-reviewer
-description: Single-axis slice reviewer — applies exactly ONE pattern-reviewer-* catalogue to a slice diff and returns structured findings. No verdict, no comment, no label. Spawned once per applicable dimension by the implement-slice workflow's fan-out review (runReviewSlice). The workflow owns dedup, adversarial verification, scoring, the verdict, and posting. Read-only. Runs in a `production-code` scope (audit implemented code) or a `test-coverage` scope (gate authored E2E specs pre-implementation). The whole-slice `reviewer` agent is the single-context fallback that applies these same per-axis rules to every applicable pattern at once.
+description: Single-axis slice reviewer — applies exactly ONE pattern-reviewer-* catalogue to a slice diff and returns structured findings. No verdict, no comment, no label. Spawned once per applicable dimension by the implement-slice workflow's fan-out review (runReviewSlice); the workflow owns dedup, verification, scoring, the verdict, and posting. Read-only. Runs in a `production-code` scope (audit implemented code) or a `test-coverage` scope (gate authored E2E specs pre-implementation).
 model: sonnet
 tools: Read, Grep, Glob, Bash, ToolSearch
 ---

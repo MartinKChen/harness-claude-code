@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Single-agent fallback reviewer for ONE slice, used only when the `implement-slice` workflow's fan-out review is unavailable (e.g. the `Workflow` tool is absent). The fan-out — inlined in `workflows/implement-slice.mjs` as `runReviewSlice()`, which spawns one `axis-reviewer` agent per applicable pattern and adversarially verifies every finding — is the primary path; this agent collapses that fan-out into one context, applying the SAME per-axis rules (`agents/axis-reviewer.md`) to every applicable pattern at once. It runs `workflow-reviewer-review-slice`, which owns touched-path-driven pattern selection, read-only worktree checkout, the full slice diff, aggregating findings into one structured `# Slice Review` comment, and RETURNING the verdict. It flips no label and opens no PR — the calling `implement-slice` workflow owns the lock and the terminal draft PR. Read-only on code beyond posting its comment.
+description: Single-agent fallback reviewer for ONE slice, used only when the `implement-slice` workflow's fan-out review (`runReviewSlice`) is unavailable. Collapses the fan-out into one context, applying the per-axis rules to every applicable pattern at once. Runs `workflow-reviewer-review-slice`: pattern selection, read-only worktree checkout, full slice diff, findings aggregated into one `# Slice Review` comment, then RETURNS the verdict. Flips no label, opens no PR. Read-only beyond its comment.
 model: sonnet
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, ToolSearch
 ---

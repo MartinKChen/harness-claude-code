@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-database
-description: "Migration audit: code-first (models drive migration, not the reverse); autogenerate review (server defaults / check constraints / type changes / data migrations the autogenerate missed); `pytest-alembic` round-trip; post-state assertions by **name** (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`); extensions installed by the upgrade are dropped by the downgrade; ORM `__table_args__` carries `name=` matching the migration; no pre-create of extensions in `conftest.py`; migration runs in a `migrate` compose service, not the backend entrypoint. Runtime DB audit: column types (`bigint`/`text`/`timestamptz`/`numeric`); FK indexing; RLS policy indexes + `(SELECT auth.uid())`; `OFFSET` on large tables; `SKIP LOCKED` for worker queues; lock-acquisition order; transactions holding external I/O; `EXPLAIN ANALYZE` evidence on hot queries."
+description: "Migration audit: code-first (models drive migration); autogenerate review; `pytest-alembic` round-trip; post-state assertions by **name** (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`); extensions dropped by downgrade; migration in a `migrate` compose service. Runtime DB audit: column types; FK + RLS-policy indexing; `OFFSET`; `SKIP LOCKED` queues; lock order; `EXPLAIN ANALYZE`. Activate when the diff touches `alembic/versions/*`, ORM models, the `migrate` service, or `pytest-alembic`."
 ---
 
 # pattern-reviewer-database

@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-typescript
-description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + `noImplicitReturns` + `noFallthroughCasesInSwitch` + `noImplicitOverride`; `compilerOptions.types` includes test-matcher types; no `any` (use `unknown` at boundaries, narrow); no `!` non-null without documented invariant; `type` for unions, `interface` for extendable shapes; discriminated unions over together-optional fields; biome owns import order; `JSON.parse` always wrapped; `===` not `==`; never `forEach(async)`; no sync fs in handlers; schema-validate before merging untrusted objects (prototype pollution); explicit return types on public exports. Activate when editing TypeScript or `tsconfig.json`."
+description: "TypeScript bullets: `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` + the no-implicit/no-fallthrough flags; no `any` (use `unknown` at boundaries, narrow); no `!` without a documented invariant; `type` for unions, `interface` for extendable shapes; discriminated unions; wrap `JSON.parse`; never `forEach(async)`; schema-validate untrusted objects before merge; explicit return types on public exports. Activate when editing TypeScript or `tsconfig.json`."
 ---
 
 # pattern-engineer-typescript

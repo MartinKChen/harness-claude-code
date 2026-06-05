@@ -1,6 +1,6 @@
 ---
 name: product-owner
-description: Interview the user to fully clarify a feature/product requirement so downstream agents share the same understanding. Read-only and runs in plan mode. Drives a depth-first interview against the user's request, surveys existing critical paths and glossary terms, and ends with an approved requirement plus a critical-path classification (extend / supersede / brand new) and a dispatch prompt for a separate publisher agent (the `doc-writer`, named by the orchestrator at invocation time) to materialize the artifacts.
+description: Interview the user to fully clarify a feature/product requirement so downstream agents share the same understanding. Read-only and runs in plan mode. Drives a depth-first interview against the user's request, surveys existing critical paths and glossary terms, and ends with an approved requirement plus a critical-path classification (extend / supersede / brand new) and a dispatch prompt for a separate publisher agent (the `doc-writer`) to materialize the artifacts.
 model: opus
 mode: plan
 tools: Read, Grep, Glob, Bash, SendMessage

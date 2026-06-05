@@ -15,7 +15,7 @@
 **Fix:** Add an integration test that posts a valid order body and asserts `response.status_code == 202` and `response.json()["job_id"]` is a non-empty string.
 
 ### [MEDIUM] Scenario "Cancels pending order" not exercised by an E2E spec
-**Test file:** `e2e/tests/orders/cancel.spec.ts` (missing) — parent slice body, `### Scenarios (Gherkin)` → "Cancels pending order"
+**Test file:** `e2e/tests/orders/cancel.spec.ts` (missing) — slice body task `e2e.1` `scenario:` → "Cancels pending order"
 **Gap:** No Playwright spec walks the Given (pending order exists) → When (user clicks Cancel) → Then (order disappears from the list and a confirmation toast shows).
 **Fix:** Add `e2e/tests/orders/cancel.spec.ts` that signs in as a user with a pending order, clicks the Cancel button (`getByRole('button', { name: /cancel/i })`), and asserts the order is no longer in the list (`expect(page.getByRole('row', { name: order.id })).toHaveCount(0)`) and the success toast is visible.
 

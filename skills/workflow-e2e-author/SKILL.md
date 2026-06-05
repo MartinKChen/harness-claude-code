@@ -20,7 +20,7 @@ Do NOT activate to address coverage-gate findings on a slice (use `workflow-e2e-
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the journey scenario to walk) plus the realized critical-path Journey step / `entry-source:` / `done:`). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; follow the pointer for the unit spec. An e2e task exists only because the slice closes a cross-surface journey segment — assert **user-visible** state through the UI, never a backend internal (those are proven at the backend layer).
+Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the journey scenario to walk) plus the realized critical-path Journey step / `entry-source:` / `done:`). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS) plus the e2e task's own `scenario:` Gherkin for behavior; follow the pointer for the unit spec. An e2e task exists only because the slice closes a cross-surface journey segment — assert **user-visible** state through the UI, never a backend internal (those are proven at the backend layer).
 
 ## Workflow
 
@@ -39,7 +39,7 @@ Fetch the slice issue (number, title, body, labels, url) via `bash skills/operat
 
 ### 3. Author / extend Playwright specs from the slice AC
 
-For each named e2e task, translate its mapped Gherkin scenario (the task's `covers:` pointer names the AC/scenario it walks) into a Playwright spec inside the worktree — plus the pattern-mandated non-happy-paths (`pattern-test-coverage`). The agent's loaded pattern set owns the conventions (semantic selectors, fixture identity, extend-vs-fragment, what to assert). Read the slice's Acceptance criteria (EARS + Gherkin) for the behavior under test.
+For each named e2e task, translate its own `scenario:` Gherkin block (the task carries the Given/When/Then it walks; `covers:` names the AC clause it discharges) into a Playwright spec inside the worktree — plus the pattern-mandated non-happy-paths (`pattern-test-coverage`). The agent's loaded pattern set owns the conventions (semantic selectors, fixture identity, extend-vs-fragment, what to assert). Read the slice's Acceptance criteria (EARS) plus the task's `scenario:` Gherkin for the behavior under test.
 
 Smoke-run touched specs (`npx playwright test <files>`) and confirm each spec reaches a real assertion. Parse / load / locator-API errors → fix and re-run. Assertion failures (production code missing) → expected; don't patch production code.
 

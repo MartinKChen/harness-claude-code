@@ -34,31 +34,38 @@ Acceptance criteria are ALWAYS present — every enhancement carries ACs, includ
 - [ ] AC1 — WHEN `<trigger>`, the `<system>` SHALL `<new/changed response>`.
 - [ ] AC2 — IF `<condition>`, THEN the `<system>` SHALL `<response>`.
 
-### Scenarios (Gherkin)
-```gherkin
-Scenario: <name tied to AC1>
-  Given <existing state>
-  When <trigger>
-  Then the <system> MUST <new/changed response>
-```
-
 ## Tasks
 <!--
 Same format + static-ID convention as a feature slice (see slice-body.md): short ids (`e2e.1`, `be.1`, `fe.1`), a `blocked-by:` field (1-up DAG, `—` for none), and a follow-on pointer line that tags, uniformly across task types:
   - `covers:` the AC clause id(s) this task discharges.
-  - `scenario:` the Gherkin scenario this task walks at ITS owning layer.
-  - e2e      → also the mapped AC scenario (+ non-happy-path per pattern-test-coverage).
+  - `scenario:` a Gherkin block (Given / When / Then) this task walks at ITS owning layer — written per task, never at the slice level.
+  - e2e      → its Gherkin walks the user-visible flow through the UI (+ non-happy-path per pattern-test-coverage).
   - backend  → also `contract:` the api-contract file it conforms to (NOT a new/changed contract).
   - frontend → also `design:` tokens; for a PAGE also entry-source + reached-from.
   - contract-less utility → a single `done:` one-line criterion.
 Emit an `e2e.*` task ONLY when the enhancement closes a cross-surface journey segment — there is NO mandatory `e2e.* → be.*/fe.*` prerequisite. An enhancement may have just one task (e.g. a single backend tweak, no e2e) or several.
 -->
 - [ ] `be.1` · **backend** · blocked-by: — · "<the backend change>"
-      covers: AC2 · scenario: "<what the endpoint/worker does at the backend layer>" · contract: docs/api-contract/<entity>.yaml  (conform to — do not change)
+      covers: AC2
+      scenario:
+        Given <existing state>
+        When <trigger>
+        Then the `<system>` SHALL <new/changed response at the backend layer>
+      contract: docs/api-contract/<entity>.yaml  (conform to — do not change)
 - [ ] `fe.1` · **frontend** · blocked-by: `be.1` · "<the frontend change>"
-      covers: AC1 · scenario: "<what the rendered tree shows>" · design: docs/design-system/tokens.md
+      covers: AC1
+      scenario:
+        Given <rendered state>
+        When <user action>
+        Then the UI SHALL show <new/changed result>
+      design: docs/design-system/tokens.md
 - [ ] `e2e.1` · **e2e** · blocked-by: `fe.1` · "<user-visible behavior through the UI — only if a journey segment>"
-      covers: AC1 · scenario: "<the mapped AC scenario>"  (+ non-happy-path per pattern-test-coverage)
+      covers: AC1
+      scenario:
+        Given <existing state>
+        When <trigger through the UI>
+        Then the user SHALL see <new/changed response>
+      (+ non-happy-path per pattern-test-coverage)
 
 ## Don't break
 <The existing behavior this enhancement must NOT regress — the guard rail. An enhancement changes live behavior, so name the existing E2E specs / critical-path flows that must still pass after the change.>

@@ -1,6 +1,6 @@
 ---
 name: operation-git
-description: "Single source of truth for every git / GitHub operation the workflow-* skills and the implement-slice Workflow perform. Owns the shared `gh` + `git` scripts (setup-worktree, resolve-slice-branch, list-issues, the four task-finder stage scripts, flip-label, post-comment, post-and-flip, blocker-count, draft-PR creation, PR-status check), the shared templates (commit-messages, dispatch-prompt, pr-body), the gh-command and versioning references, and the release/label-init scripts. Activate whenever the user works with git or GitHub directly (commits, branches, PRs, issues, releases, `.gitignore`), and load this skill from inside any workflow that needs to mutate GitHub state or move work to a worktree."
+description: "Single source of truth for every git / GitHub operation the workflow-* skills and the implement-slice Workflow perform. Owns the shared `gh` + `git` scripts (worktree setup, slice-branch resolve, issue listing, task-finder stages, label flips, comment posting, draft-PR creation, PR-status checks), the shared templates, and the gh-command / versioning / release references. Activate whenever the user works with git or GitHub directly, or from inside any workflow that mutates GitHub state."
 ---
 
 # operation-git

@@ -1,6 +1,6 @@
 ---
 name: workflow-implement-slice
-description: The per-slice Workflow that drives ONE slice through its entire inner lifecycle — author E2E → E2E coverage gate → plan → implement → pass E2E → slice review → fix → open draft PR — inside a single background `Workflow` run. Realized by `workflows/implement-slice.mjs` (invoked by `scriptPath`, not loaded as an agent skill). Launched by `/implement-feature` Stage 1 once per eligible slice after the orchestrator flips `status:ready-to-implement` → `status:in-progress` (the slice lock). Activate to understand or invoke the slice cycle, or on '/workflow-implement-slice'.
+description: The per-slice Workflow that drives ONE slice through its entire inner lifecycle — author E2E → E2E coverage gate → plan → implement → pass E2E → slice review → fix → open draft PR — inside a single background `Workflow` run. Realized by `workflows/implement-slice.mjs`. Launched once per eligible slice after the orchestrator flips `status:ready-to-implement` → `status:in-progress`. Activate to understand or invoke the slice cycle, or on '/workflow-implement-slice'.
 ---
 
 # workflow-implement-slice

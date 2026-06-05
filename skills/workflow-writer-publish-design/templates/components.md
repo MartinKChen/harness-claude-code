@@ -1,14 +1,10 @@
 # Component Patterns — <Product / Feature Name>
 
-> How the product's recurring UI parts look and behave. Each pattern names the tokens it
-> consumes (from `tokens.md`) and its interaction states. Prefer native semantic elements
-> (`<button>`, `<a>`, `<dialog>`, `<nav>`) over `role` on a generic tag. Components implemented
-> downstream MUST match these patterns and pull from the token scale — no ad-hoc values.
+> How the product's recurring UI parts look and behave. Each pattern names the tokens it consumes (from `tokens.md`) and its interaction states. Prefer native semantic elements (`<button>`, `<a>`, `<dialog>`, `<nav>`) over `role` on a generic tag. Components implemented downstream MUST match these patterns and pull from the token scale — no ad-hoc values.
 
 ## Navigation
 
-> The global navigation container — the app shell's primary surface. This is the component
-> the foundation/shell slice (see `surfaces.md`) owns. Spell out the desktop and mobile forms.
+> The global navigation container — the app shell's primary surface. This is the component the foundation/shell slice (see `surfaces.md`) owns. Spell out the desktop and mobile forms.
 
 - **Desktop:** <top bar / side rail — placement, contents, active-item treatment>
 - **Mobile:** <hamburger sheet / bottom bar at `breakpoint/md` — open/close behavior>

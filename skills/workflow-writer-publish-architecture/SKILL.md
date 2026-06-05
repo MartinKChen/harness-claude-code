@@ -1,6 +1,6 @@
 ---
 name: workflow-writer-publish-architecture
-description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md` under `docs/product-requirement-document/<feature-name>/`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`, and durable operational runbooks under `docs/runbooks/{ops,dev}/`. Commits on the current branch; no PR, no scaffold. Activate on '/workflow-writer-publish-architecture'."
+description: "Materialize and commit every artifact for an approved architectural design: ADRs under `docs/architecture-decision-record/`, the feature's `implement-detail.md`, C4 diagrams under `docs/architecture/`, OpenAPI 3.1 contracts under `docs/api-contract/`, ODCS v3.1 data models under `docs/data-model/`, and runbooks under `docs/runbooks/{ops,dev}/`. Commits on the current branch; no PR, no scaffold. Activate on '/workflow-writer-publish-architecture'."
 ---
 
 # workflow-writer-publish-architecture

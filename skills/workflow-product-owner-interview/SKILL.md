@@ -1,6 +1,6 @@
 ---
 name: workflow-product-owner-interview
-description: "Drive a depth-first product-requirement discovery interview for a single feature. Walks a one-question-per-turn conversation with a recommendation plus 1–2 alternatives, surfaces unstated assumptions, tracks glossary terms as they appear, classifies the new flow against existing critical paths (extend / supersede / brand new), requests explicit approval (lock requirements), then composes one scoped dispatch prompt for a writer teammate (named by the orchestrator at invocation time) to materialize the artifacts. Writes nothing. Activate on '/workflow-product-owner-interview'."
+description: "Drive a depth-first product-requirement discovery interview for a single feature. Walks a one-question-per-turn conversation, surfaces unstated assumptions, tracks glossary terms, classifies the new flow against existing critical paths (extend / supersede / brand new), requests explicit approval to lock requirements, then composes one scoped dispatch prompt for a writer teammate to materialize the artifacts. Writes nothing. Activate on '/workflow-product-owner-interview'."
 ---
 
 # workflow-product-owner-interview

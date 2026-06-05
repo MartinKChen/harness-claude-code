@@ -1,6 +1,6 @@
 ---
 name: pattern-test-coverage
-description: "Role-neutral catalogue of what makes a test set *complete* — the shared substance both the engineer (when authoring tests in the TDD red phase) and the reviewer (when gating the code) judge against. Every AC in `Acceptance criteria (EARS)` is *discharged* by the cheapest durable proof at its **owning layer** (backend integration / frontend / true-E2E) — a compound AC fans across layers, and each clause is pushed to the lowest layer that can prove it and asserted once; every `Scenarios (Gherkin)` (and `Migration scenarios`) walks Given→When→Then at its owning layer; new code paths cover the edge breadth (boundary, error, empty, concurrency, idempotency, authz); emitted artifacts are asserted against the consuming contract; a `type:e2e` task's scenario is walked through the UI via semantic selectors asserting user-visible state, while backend invariants are proven at the backend layer (never re-walked through the UI). The spine is the deletable-code lens: a test set is complete only when deleting any single production branch, mutation, derivation, log, or parameter makes a test fail. Activate when writing or reviewing tests."
+description: "Role-neutral catalogue of what makes a test set *complete* — the shared substance both the engineer (authoring tests in the TDD red phase) and the reviewer (gating the code) judge against. Every EARS criterion is discharged by the cheapest durable proof at its owning layer (backend / frontend / E2E); new code paths cover edge breadth. The spine is the deletable-code lens: complete only when deleting any single production branch makes a test fail. Activate when writing or reviewing tests."
 ---
 
 # pattern-test-coverage
@@ -64,7 +64,7 @@ A test fails this lens when it:
 
 ## Catalogue — what a complete test set covers
 
-The spec is the **slice issue body** plus each task's checklist pointer. The slice body carries the `## Acceptance criteria (EARS)` block (AC1, AC2, …) and its `### Scenarios (Gherkin)` block — the single AC ceremony for the whole slice. Per task, the `## Tasks` checklist entry adds the unit spec via its pointer: a `backend` task points at `docs/api-contract/<entity>.yaml` (+ `docs/data-model/<entity>.yaml`, whose migration scenarios apply when it introduces an entity); an `e2e` / `frontend` task points at the mapped slice Gherkin scenario (`covers:`); a contract-less utility task carries a one-line `done:` criterion. For `e2e` work the canonical scenario text is the slice's own Gherkin.
+The spec is the **slice issue body** plus each task's checklist pointer. The slice body carries the `## Acceptance criteria (EARS)` block (AC1, AC2, …) — the single AC ceremony for the whole slice; there is no upfront slice-level Gherkin block. The Gherkin scenarios live **per task**: each `## Tasks` checklist entry carries its own `scenario:` Gherkin block (Given / When / Then) walked at that task's owning layer, plus the unit-spec pointer — a `backend` task points at `docs/api-contract/<entity>.yaml` (+ `docs/data-model/<entity>.yaml`, whose migration scenarios apply when it introduces an entity); an `e2e` / `frontend` task discharges the AC clause(s) it `covers:` via its own scenario; a contract-less utility task carries a one-line `done:` criterion. For `e2e` work the canonical scenario text is the e2e task's own Gherkin.
 
 ### 1. Acceptance-criteria coverage (every `type:*`)
 
@@ -76,7 +76,7 @@ For every AC in `## Acceptance criteria (EARS)`:
 
 ### 2. Scenario coverage (every `type:*`)
 
-For every `scenario:` a task names (and every `Scenario:` block in the slice body): a test walks the full `Given → When → Then` **at that task's owning layer**. Given+When with no asserted Then (or a different Then than the spec) is a partial scenario. A backend task's `scenario:` is walked at the endpoint/worker (the ledger delta, the 409, "no row created"); a frontend task's at the rendered tree. Only a `type:e2e` task's scenario is walked through the UI: a Playwright spec drives the browser through the journey and asserts **user-visible** state. Not every slice scenario is an E2E walk — a backend invariant's scenario is proven by an API-level test, and demanding it be re-walked through the UI is the layering error this catalogue exists to prevent.
+For every `scenario:` Gherkin block a task carries: a test walks the full `Given → When → Then` **at that task's owning layer**. Given+When with no asserted Then (or a different Then than the spec) is a partial scenario. A backend task's `scenario:` is walked at the endpoint/worker (the ledger delta, the 409, "no row created"); a frontend task's at the rendered tree. Only a `type:e2e` task's scenario is walked through the UI: a Playwright spec drives the browser through the journey and asserts **user-visible** state. Not every task scenario is an E2E walk — a backend invariant's scenario is proven by an API-level test, and demanding it be re-walked through the UI is the layering error this catalogue exists to prevent.
 
 ### 3. Migration-scenario coverage (only when `### Migration scenarios (Gherkin)` is present)
 

@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-frontend-standard
-description: "React-specific code-quality audit for a frontend diff: component design, hook correctness, route registration + entry-source reachability (a real inbound path from the shell or parent per the page's declared kind — reachability, not menu-membership), TanStack Query route-param guards, mutation `onSuccess` invalidation + return stability, idempotency-key rotation on 4xx, sticky one-shot UI state, API-access through `src/lib/api`, error boundaries per route, native semantic a11y elements, Tailwind ↔ tokens, App.test.tsx wholesale-replacement trap, empty-state inside `<main>` landmark. Each finding cites `file:line` with BAD/GOOD snippets. Activate on frontend diffs."
+description: "React-specific code-quality audit for a frontend diff: component design, hook correctness, route registration + entry-source reachability (a real inbound path from the shell or parent), TanStack Query route-param guards, mutation `onSuccess` invalidation + return stability, idempotency-key rotation on 4xx, API access through `src/lib/api`, per-route error boundaries, native a11y elements, Tailwind ↔ tokens. Each finding cites `file:line`. Activate on frontend diffs."
 ---
 
 # pattern-reviewer-frontend-standard

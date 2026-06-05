@@ -1,10 +1,6 @@
 # Design Tokens — <Product / Feature Name>
 
-> Source of truth for every design value. Token names use the `category/role/step` convention.
-> `scaffold-project` compiles each token here into a CSS custom property in
-> `frontend/src/styles/tokens.css` (e.g. `color/brand/500` → `--color-brand-500`),
-> and `tailwind.config` mirrors these rows. Every color, font, spacing, radius, shadow,
-> and motion value the frontend uses MUST appear here — no hard-coded values downstream.
+> Source of truth for every design value. Token names use the `category/role/step` convention. `scaffold-project` compiles each token here into a CSS custom property in `frontend/src/styles/tokens.css` (e.g. `color/brand/500` → `--color-brand-500`), and `tailwind.config` mirrors these rows. Every color, font, spacing, radius, shadow, and motion value the frontend uses MUST appear here — no hard-coded values downstream.
 
 ## Color
 

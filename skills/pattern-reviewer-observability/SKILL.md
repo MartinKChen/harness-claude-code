@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-observability
-description: "OTel instrumentation audit: vendor SDKs (Datadog/New Relic/Sentry/Honeycomb/Splunk) in `src/` → CRITICAL (Collector-only). `print` / `console.log` / `fmt.Println` in committed paths → HIGH. Span names with route params baked in (high cardinality) → HIGH. Metric labels with `user.id` / `request.id` / raw URL → HIGH. Logs without trace_id/span_id when active span exists → MEDIUM. Synchronous exporters → HIGH. SDK bootstrap not single-place → MEDIUM. App-level head-sampling at fixed ratio → HIGH (sampling is Collector's job). Holds the architectural background — Collector pipeline, topology, deployment boundary, signal cost model — so audits can be grounded in the *why*, not just the rule."
+description: "OTel instrumentation audit: vendor SDKs (Datadog/Sentry/etc.) in `src/` → CRITICAL (Collector-only); `print`/`console.log` in committed paths → HIGH; high-cardinality span names or metric labels → HIGH; logs without trace_id/span_id under an active span → MEDIUM; synchronous exporters → HIGH; app-level fixed-ratio head-sampling → HIGH (Collector's job). Holds the architectural background so audits are grounded in the why. Activate when reviewing instrumentation or `OTEL_*` env vars."
 ---
 
 # pattern-reviewer-observability
