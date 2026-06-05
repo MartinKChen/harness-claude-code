@@ -20,7 +20,7 @@ Do NOT activate to address coverage-gate findings on a slice (use `workflow-e2e-
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; follow the pointer (api-contract / data-model / Gherkin scenario / design tokens) for the unit spec.
+Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the journey scenario to walk) plus the realized critical-path Journey step / `entry-source:` / `done:`). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; follow the pointer for the unit spec. An e2e task exists only because the slice closes a cross-surface journey segment — assert **user-visible** state through the UI, never a backend internal (those are proven at the backend layer).
 
 ## Workflow
 
