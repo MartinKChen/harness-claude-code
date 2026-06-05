@@ -48,7 +48,7 @@ else
   cmd=(gh issue edit "$number")
 fi
 
-for l in "${removes[@]}"; do cmd+=(--remove-label "$l"); done
-for l in "${adds[@]}";    do cmd+=(--add-label "$l"); done
+for l in ${removes[@]+"${removes[@]}"}; do cmd+=(--remove-label "$l"); done
+for l in ${adds[@]+"${adds[@]}"};       do cmd+=(--add-label "$l"); done
 
 "${cmd[@]}"

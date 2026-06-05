@@ -36,7 +36,7 @@ out="$(bash "$script_dir/list-issues.sh" \
     --missing-label status:ready-to-implement \
     --missing-label status:fix-in-progress \
     --missing-label status:need-attention \
-    "${milestone_args[@]}" \
+    ${milestone_args[@]+"${milestone_args[@]}"} \
   | jq -c '.[]' \
   | while read -r row; do
       number="$(printf '%s' "$row" | jq -r .number)"

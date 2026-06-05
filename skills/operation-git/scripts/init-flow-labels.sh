@@ -41,14 +41,14 @@ done
 
 create() {
   local name="$1" color="$2"
-  gh label create "$name" -c "$color" --force "${repo_args[@]}" >/dev/null
+  gh label create "$name" -c "$color" --force ${repo_args[@]+"${repo_args[@]}"} >/dev/null
   echo "  ✓ $name"
 }
 
 # Delete a retired label. A 404 (already gone / never existed) is benign.
 remove() {
   local name="$1"
-  if gh label delete "$name" --yes "${repo_args[@]}" >/dev/null 2>&1; then
+  if gh label delete "$name" --yes ${repo_args[@]+"${repo_args[@]}"} >/dev/null 2>&1; then
     echo "  ✗ $name (deleted)"
   else
     echo "  · $name (absent)"

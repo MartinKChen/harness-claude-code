@@ -176,7 +176,7 @@ while read -r row; do
   fi
 done < <(bash "$script_dir/list-issues.sh" \
             --kind kind:feature --kind kind:enhancement --kind kind:bug \
-            --label status:in-progress "${milestone_args[@]}" \
+            --label status:in-progress ${milestone_args[@]+"${milestone_args[@]}"} \
           | jq -c '.[]')
 
 # --- PR orphans (fix-pr) ---------------------------------------------------
@@ -195,7 +195,7 @@ while read -r row; do
   [[ -n "$m" ]] || continue
   emit "- pr:#${number} | release:clear-fix-pr | issue:${issue} | stale:${m}m | \"${title}\""
 done < <(bash "$script_dir/list-draft-prs.sh" \
-            --label status:fix-in-progress "${milestone_args[@]}" \
+            --label status:fix-in-progress ${milestone_args[@]+"${milestone_args[@]}"} \
           | jq -c '.[]')
 
 # --- output ----------------------------------------------------------------

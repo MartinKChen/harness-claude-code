@@ -44,6 +44,6 @@ here="$(dirname "$0")"
 bash "$here/post-comment.sh" "$number" "$body_file"
 
 flip_args=("$number")
-for l in "${removes[@]}"; do flip_args+=(--remove "$l"); done
-for l in "${adds[@]}";    do flip_args+=(--add "$l"); done
+for l in ${removes[@]+"${removes[@]}"}; do flip_args+=(--remove "$l"); done
+for l in ${adds[@]+"${adds[@]}"};       do flip_args+=(--add "$l"); done
 bash "$here/flip-label.sh" "${flip_args[@]}"
