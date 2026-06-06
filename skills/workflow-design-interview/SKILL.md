@@ -1,6 +1,6 @@
 ---
 name: workflow-design-interview
-description: "Drive a depth-first design discovery interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and any existing `docs/design-system/`, walk a one-question-per-turn conversation with a recommendation plus alternatives, lock the product's visual language (brand, color, typography, spatial rhythm, motion), its platform priority and accessibility targets, AND a surface + navigation inventory, request approval, then compose a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/workflow-design-interview'."
+description: "Drive a depth-first design discovery interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and any existing `docs/design-system/`, walk a one-question-per-turn conversation, lock the product's visual language, platform priority, accessibility targets, and a surface + navigation inventory, request approval, then compose a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/workflow-design-interview'."
 ---
 
 # workflow-design-interview

@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-contract
-description: "Contract-conformance audit. Every implemented API endpoint matches its api contract at `docs/api-contract/<entity>.yaml` — path (with trailing-slash spelling), HTTP verb, request body schema, response body schema, status codes per outcome, error envelope shape, Idempotency-Key policy, rate-limit budget + headers. Every implemented ORM model matches its data-model contract at `docs/data-model/<entity>.yaml` — table name, columns (name / type / nullability / default), constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships and cardinality. Cites both the implementation `file:line` and the contract `file:line`. Activate when the diff includes API routes or ORM models AND a sibling contract file exists."
+description: "Contract-conformance audit. Every API endpoint matches its api contract at `docs/api-contract/<entity>.yaml` — path, verb, request/response schema, status codes, error envelope, Idempotency-Key + rate-limit policy. Every ORM model matches its data-model contract at `docs/data-model/<entity>.yaml` — table name, columns, constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships. Activate when the diff includes API routes or ORM models AND a sibling contract file exists."
 ---
 
 # pattern-reviewer-contract

@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-security
-description: "Detailed security-review catalogue + iteration flow for a scoped diff and a freshly built container image. Walks fourteen patterns in order across backend / frontend / dependencies / image (never test files): container CVEs, secrets handling, schema-validated input, parameterized queries, auth / sessions / cookies / IDOR / JWT / password reset, XSS + the security-header set, CSRF, rate limits, log + error redaction, dependency hygiene, SSRF / outbound requests, CORS, webhook + OAuth integrations, and race conditions on critical mutations. Each pattern carries an exact bar that becomes the `Required end state` quoted on every finding. Findings cite `file:line` or `image:<tag>`, include evidence + fix, and use a non-numeric handle (never `#N`). Comment shape under `# Security Review` lives in `templates/review-comment.md`. Skip for `type:e2e`."
+description: "Security-review catalogue + iteration flow for a scoped diff and a freshly built container image. Walks fourteen patterns across backend / frontend / deps / image (never test files): container CVEs, secrets, schema-validated input, parameterized queries, auth / cookies / IDOR / JWT, XSS + headers, CSRF, rate limits, redaction, dependency hygiene, SSRF, CORS, webhook + OAuth, race conditions. Each carries an exact bar. Activate on a security-gate review; skip for `type:e2e`."
 ---
 
 # pattern-reviewer-security

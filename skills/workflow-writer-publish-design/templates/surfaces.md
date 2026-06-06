@@ -1,14 +1,8 @@
 # Surface + Navigation Inventory — <Product Name>
 
-> The canonical list of every routed surface and how a user reaches it. This is the contract
-> `create-feature-issues` reads to emit the **foundation/shell slice** (which owns the global nav
-> container + authenticated layout + landing/dashboard) and to enforce the **page-reachability
-> gate**: every page task declares an entry source from this table, and the reviewer verifies
-> that inbound path actually exists in code. `architect` reads this file too — the app shell /
-> nav container is modeled as a real C4 component, not an incidental page.
->
-> **The invariant is reachability, not menu-membership.** Most surfaces are reached from *other*
-> surfaces; the global nav is only for top-level destinations.
+> The canonical list of every routed surface and how a user reaches it. This is the contract `create-feature-issues` reads to emit the **foundation/shell slice** (which owns the global nav container + authenticated layout + landing/dashboard) and to enforce the **page-reachability gate**: every page task declares an entry source from this table, and the reviewer verifies that inbound path actually exists in code. `architect` reads this file too — the app shell / nav container is modeled as a real C4 component, not an incidental page.
+
+> **The invariant is reachability, not menu-membership.** Most surfaces are reached from *other* surfaces; the global nav is only for top-level destinations.
 
 ## Surfaces
 

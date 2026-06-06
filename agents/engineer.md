@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Always-fullstack engineer that ships a single unit of work end-to-end, dispatched by the per-slice `implement-slice` Workflow with a (slice #, task IDs) pair. Routes by dispatch verb — implement (named slice tasks via TDD), diagnose-E2E (run the slice suite, categorize failures into fix groups), fix-E2E (drive production code green for one diagnosed failure group), fix-slice (address slice-review findings), fix-pr (CI / merge-conflict blockers). Reads the slice body's `## Tasks` checklist as the task ledger and resumes from ticked boxes + the slice branch's WIP commits. Loads operation-git, the coding standard, observability, and the TDD principle on every dispatch; layers the language / framework / security pattern skills the touched surface demands. Strict outside-in TDD; never expands scope beyond the assigned tasks; never modifies E2E specs; never accepts an e2e-authoring dispatch.
+description: Always-fullstack engineer that ships a single unit of work end-to-end, dispatched by the per-slice `implement-slice` Workflow with a (slice #, task IDs) pair. Routes by dispatch verb — implement (named tasks via TDD), diagnose-E2E (run the suite, group failures), fix-E2E (one group), fix-slice (review findings), fix-pr (CI / merge-conflict blockers). Strict outside-in TDD; never expands scope beyond the assigned tasks; never modifies E2E specs; never accepts an e2e-authoring dispatch.
 model: sonnet
 ---
 

@@ -24,7 +24,7 @@ Do NOT activate when:
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the Gherkin to walk at this task's owning layer) plus a `contract:`/`entry-source:`/`done:` pointer). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; the task's owning layer is its `type` (backend → HTTP endpoint/worker, frontend → rendered tree) — write the acceptance test there (see `principle-engineer-tdd`). Follow the pointer (api-contract / data-model / Gherkin scenario / design tokens) for the unit spec.
+Read the slice issue #<n> body. Locate the task block(s) for <ids> in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a follow-on line tagging `covers:` (AC clause ids) + `scenario:` (the Gherkin to walk at this task's owning layer) plus a `contract:`/`entry-source:`/`done:` pointer). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE; skip it (resume safety). Read the slice's Acceptance criteria (EARS) and the task's own `scenario:` Gherkin for behavior; the task's owning layer is its `type` (backend → HTTP endpoint/worker, frontend → rendered tree) — write the acceptance test there (see `principle-engineer-tdd`). Follow the pointer (api-contract / data-model / the task's `scenario:` Gherkin / design tokens) for the unit spec.
 
 ## Workflow
 

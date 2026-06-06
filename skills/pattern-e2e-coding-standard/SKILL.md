@@ -1,6 +1,6 @@
 ---
 name: pattern-e2e-coding-standard
-description: "E2E coding standard for data seeding. Contract is iron: when seeding via API (Playwright `request` fixture, raw HTTP), respect `docs/api-contract/<entity>.yaml` — path, verb, status codes, request/response body. When seeding directly to the database (SQL fixtures, ORM helpers, factory scripts), respect `docs/data-model/<entity>.yaml` — table name, column types, constraints, defaults, FKs. Halt on missing/contradictory contracts; never invent shape. Activate on any E2E spec / fixture / seed helper."
+description: "E2E coding standard for data seeding. Contract is iron: when seeding via API (Playwright `request` fixture, raw HTTP), respect `docs/api-contract/<entity>.yaml` — path, verb, status codes, request/response body. When seeding directly to the DB (SQL fixtures, ORM helpers, factory scripts), respect `docs/data-model/<entity>.yaml` — table, column types, constraints, defaults, FKs. Halt on missing/contradictory contracts; never invent shape. Activate on any E2E spec / fixture / seed helper."
 ---
 
 # pattern-e2e-coding-standard

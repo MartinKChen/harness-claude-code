@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-security
-description: "Engineer-facing security guardrails to follow while writing or editing production code. Encodes the non-negotiables — env-only secrets, schema-validated input at the boundary, parameterized queries, HttpOnly+Secure+SameSite cookies, authorize-before-act + ownership checks, sanitized output + the full security-header set, CSRF + per-route rate limits on cookie-auth state changes, redacted logs, generic 5xx + correlation id, locked dependencies, SSRF allowlists, locked-down CORS, HMAC verification on webhooks, OAuth state + PKCE, atomic balance/quota/token mutations. Reads as a quick-lookup catalogue keyed by the surface being touched (new endpoint, new query, auth path, rendering user content, dependency add, container build, logs, outbound HTTP, webhook, CORS, file upload). Activate when writing code."
+description: "Engineer-facing security guardrails for production code. The non-negotiables — env-only secrets, schema-validated input at the boundary, parameterized queries, HttpOnly+Secure+SameSite cookies, authorize-before-act + ownership checks, sanitized output + security headers, CSRF + per-route rate limits, redacted logs, locked dependencies, SSRF allowlists, locked-down CORS, HMAC webhook verification, OAuth state + PKCE. A quick-lookup catalogue keyed by the surface touched. Activate on code."
 ---
 
 # pattern-engineer-security

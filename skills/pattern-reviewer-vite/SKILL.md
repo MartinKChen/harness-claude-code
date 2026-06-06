@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-vite
-description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO — pick wrong is HIGH); `VITE_` prefix on every `import.meta.env` reading client-exposed value (no prefix means Vite won't inline; a non-VITE var read in client code is dead); `VITE_` prefix is NOT a security boundary (secret-shaped value in `VITE_*` is HIGH); `loadEnv(..., '')` empty-prefix exposes server secrets (HIGH); `.env.example` mirrors every `VITE_*`; `vite.config.ts` owns build target + dev proxy + plugins + alias (not route logic); type-check gap (no `tsc --noEmit` / `vite-plugin-checker`) → HIGH; production `build.sourcemap: true` without Sentry upload (HIGH); containerized dev without `server.host: true` (HIGH); barrel-file dev slowdown; vitest config aligned with tsconfig types; lazy-load at route boundaries with meaningful Suspense; static-asset imports for hashed URLs."
+description: "Vite audit: stack choice (Vite for CSR, Next for SSR/SSG/SEO); `VITE_` prefix on every client-exposed `import.meta.env` read; `VITE_` is NOT a security boundary (secret-shaped `VITE_*` is HIGH); `loadEnv(..., '')` leaks server secrets; `.env.example` mirrors every `VITE_*`; type-check gap (no `tsc --noEmit`); prod sourcemap without Sentry; route-boundary lazy-load. Activate when the diff touches `vite.config.*`, `vitest.config.*`, or `import.meta.env` reads."
 ---
 
 # pattern-reviewer-vite

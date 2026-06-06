@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-typescript
-description: "TypeScript audit: `tsconfig.json` strictness (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`); `compilerOptions.types` includes test-matcher types; `any` usage (and `as any` laundering); `!` non-null assertions without documented invariant; `interface` vs `type` choice; together-optional fields that should be discriminated unions; biome `organizeImports` violations; `import type` consistency; `eval` / `new Function` / `child_process` on user input (CRITICAL); prototype pollution; `JSON.parse` without try/catch; throwing non-Error values; `==` vs `===`; `forEach(async)`; sync fs in handlers; explicit return types on public exports. Cites `file:line` with BAD/GOOD snippets."
+description: "TypeScript audit: `tsconfig.json` strictness (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); `any` / `as any` laundering; `!` non-null without documented invariant; `interface` vs `type`; together-optional fields that should be discriminated unions; `eval` / `child_process` on user input (CRITICAL); prototype pollution; unguarded `JSON.parse`; `==` vs `===`; `forEach(async)`; return types on exports. Activate when the diff includes `.ts` / `.tsx` / `tsconfig.json`."
 ---
 
 # pattern-reviewer-typescript

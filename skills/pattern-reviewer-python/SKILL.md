@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-python
-description: "Python audit: f-string SQL injection (CRITICAL); pickle/yaml.load unsafe deserialization (CRITICAL); bandit-banned APIs (B310 urlopen, B602 shell=True, B314 xml.etree, B506 yaml.load, B101 assert); mutable default arguments (HIGH); MD5/SHA1 for security (HIGH); sync-blocking calls in async funcs; full type annotations on every signature; EAFP discipline (narrow except, `raise ... from e`); modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for seams (not ABCs); `@dataclass(frozen=True, slots=True)` as DTOs at boundaries; `with` for every acquired resource; isinstance vs type==; `is None`; comprehensions over C-style loops; no shadowed builtins; no `import *`. Cites `file:line` with BAD/GOOD snippets."
+description: "Python audit: f-string SQL injection (CRITICAL); pickle/yaml.load deserialization (CRITICAL); bandit-banned APIs (shell=True, yaml.load, urlopen); mutable default args (HIGH); MD5/SHA1 for security (HIGH); sync-blocking calls in async funcs; full type annotations; EAFP (narrow except, `raise ... from e`); modern type hints (PEP 604/695); `Protocol` seams; frozen-slots DTOs; `with` for resources; `is None`. Cites `file:line`. Activate when the diff includes `.py` files."
 ---
 
 # pattern-reviewer-python

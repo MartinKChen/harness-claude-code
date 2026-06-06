@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-coding-standard
-description: "Language-agnostic code-quality review patterns: Pre-Report Gate (cite line, name failure mode, read context, defend severity); HIGH/CRITICAL require proof; zero findings is valid; common-false-positives list; code-quality bars (large functions / files / deep nesting / missing error handling / mutation / dead code); performance (algorithmic, repeated work); best practices (TODO without ticket, single-letter vars, magic numbers, inconsistent formatting); AI-generated-code addendum. Each finding is >80% confidence-filtered, severity-graded, cited as `file:line` with BAD/GOOD snippets, named with a non-numeric handle. Comment shape under `# Code Review` in `templates/review-comment.md`. Skip for `type:e2e`."
+description: "Language-agnostic code-quality review patterns: Pre-Report Gate (cite line, name failure mode, read context, defend severity); HIGH/CRITICAL require proof; zero findings is valid; common-false-positives list; code-quality bars (large functions/files, deep nesting, missing error handling, mutation, dead code); plus performance, best-practices, and AI-code checks. Each finding is confidence-filtered, severity-graded, cited as `file:line`. Activate when reviewing source code; skip `type:e2e`."
 ---
 
 # pattern-reviewer-coding-standard
