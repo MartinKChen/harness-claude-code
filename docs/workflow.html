@@ -917,6 +917,7 @@
         <li>Runs <strong>first</strong>; launches nothing</li>
         <li>Finds orphaned locks: a slice <code>status:in-progress</code> whose <code>implement-slice</code> Workflow died, or a draft PR <code>status:fix-in-progress</code> whose <code>fix-pr</code> engineer died</li>
         <li>Gated by a runtime-telemetry liveness heartbeat (a fresh <code>last_seen</code> vetoes the reap) with GitHub-activity staleness as fallback</li>
+        <li>Residual gap: the default-typed workflow agents (review-prep, plan, the 3-lens verify batches, publish) emit no heartbeat, so a long verify phase is heartbeat-quiet — but it's bracketed by axis-reviewer activity and stays inside the ~30-min threshold, so it won't false-reap in practice</li>
         <li>Releases the lock so a <em>fresh</em> run relaunches next pass from durable state (WIP commits + checklist + resume journal)</li>
       </ul>
     </div>
