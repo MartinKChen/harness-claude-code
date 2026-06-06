@@ -1,6 +1,6 @@
 # harness-claude-code
 
-An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a pickup / close-out lifecycle command (`/implement-feature`) backed by pure-shell discovery scripts that drive issues and PRs through their lifecycle, a roster of role-based agents, a curated skill library covering TDD, coding / frontend / backend / container / observability patterns, git, database migrations, security, and API/module design, and a pre-push hook that gates engineer-driven pushes on lint/type/security/test checks.
+An opinionated Claude Code plugin that wraps a full product → architecture → implementation → validation workflow. Ships a unified pickup / close-out lifecycle command (`/ship`, covering feature, enhancement, and bug work — `/implement-feature` remains as a feature-only fallback) backed by pure-shell discovery scripts that drive GitHub issues and PRs through their lifecycle and by deterministic multi-agent `Workflow` scripts that own each unit's inner cycle, a roster of role-based agents, a curated skill library covering TDD, coding / frontend / backend / container / observability patterns, git, database migrations, security, and API/module design, and hooks that gate engineer-driven pushes (lint/type/security/test) and capture runtime telemetry.
 
 > **New here?** Start with [`DESIGN.md`](DESIGN.md) — the two ideas this harness is built on (specs-as-contract + orchestration over prompting). This README is the full per-surface catalogue; [`docs/workflow.html`](docs/workflow.html) is the visual walkthrough.
 
@@ -24,6 +24,21 @@ Read this before adopting — it sets expectations honestly.
 
 **Maturity.** This is a young, opinionated harness under active development on a private project; treat it as a reference implementation to adapt, not a turnkey drop-in. The greenfield feature lifecycle is the most exercised path; bug and enhancement lanes are newer.
 
+## Prerequisites
+
+The discovery + agent layer is portable, but the **execution layer has hard dependencies** — check these before running `/ship` or `/implement-feature`, or a run will stall partway. A preflight `/doctor`-style command is on the roadmap; until then, verify manually.
+
+**Always required**
+- **Claude Code with the `Workflow` tool.** The entire execution layer (`implement-slice.mjs`, `fix-bug.mjs`) runs as background `Workflow` scripts. Without the tool, only the single-context `reviewer` fallback survives — discovery, kickoff, and the whole inner slice cycle do not. There is no graceful degradation for the rest.
+- **Model access** to `opus`, `sonnet`, and `haiku` — agents and workflow phases pin specific tiers.
+- **`gh`, authenticated** (`gh auth status` clean) — GitHub issues are the source of truth; every label flip, comment, and PR goes through `gh`.
+- **`git`**, **`jq`**, and **`node`** — used by every discovery / telemetry script and to run the `.mjs` workflows.
+
+**Required for the implementation + scaffold paths** (the FastAPI + React/Vite stack the pattern catalogue and `/scaffold-project` templates codify)
+- **`docker` + `docker compose`** — the engineer pre-push gate boots the stack, and `/scaffold-project` + the E2E pass run containers.
+- **`uv`** (Python backend) and **`npm` / `npx`** (frontend).
+- **Security scanners the pre-push gate runs:** `gitleaks`, `trivy`, `semgrep` — plus `ruff` / `mypy` / `bandit` / `pytest` and `biome` / `tsc`.
+
 ## Install from GitHub
 
 In Claude Code:
@@ -35,6 +50,16 @@ In Claude Code:
 
 The first command registers this repo as a marketplace (it reads `.claude-plugin/marketplace.json`). The second installs the plugin defined in `.claude-plugin/plugin.json`. To update later, run `/plugin marketplace update martinchen-marketplace`.
 
+### What installing wires up (hooks run shell on your machine)
+
+Installing wires the hooks in [`hooks/hooks.json`](hooks/hooks.json), which execute shell locally. Two of the three groups are **scoped to the plugin's own engineer worktrees** under `/tmp/harness-claude-code/<repo>/worktrees/` and are silent no-ops everywhere else — they do **not** run against your normal working tree:
+
+- **`engineer-pre-push.sh`** (`PreToolUse` on `Bash`) — no-ops unless the command is a `git push` *from* an engineer worktree, then runs the full CI gate (dep bootstrap, `ruff`/`mypy`/`bandit`/`pytest`, `biome`/`tsc`/`npm audit`/`jest`, container smoke, Playwright E2E, and `gitleaks`/`trivy`/`semgrep`). This is the only hook that runs Docker / scanners, and only inside that sandbox.
+- **`post-edit-checks.sh` / `post-edit-dockerfile.sh`** (`PostToolUse` on edits) — no-op unless the edited file is inside an engineer worktree, then auto-format the file (`ruff format` / `biome format`) or `docker build` a changed Dockerfile.
+- **`runtime-telemetry/*`** (`SubagentStart` / `PreToolUse` / `SubagentStop`) — write one per-dispatch JSON signal under `/tmp/harness-claude-code/<repo>/signals/` for engineer / reviewer / axis-reviewer / e2e-author subagents only; a no-op for main-thread tool calls, and never blocks a call.
+
+Nothing phones home — all writes are local `/tmp`. Skim [`hooks/`](hooks/) before installing if your environment is sensitive.
+
 ## Status
 
 **As-is — what the harness covers today:** end-to-end automation of the greenfield feature lifecycle. Spec / contract generation (product → design → architecture, each a locked interview) → project scaffold (seeds the locked design tokens) → planning → outside-in TDD implementation → code & security review → fix loop → draft PR → merge. GitHub issues are the source of truth; every lifecycle step is idempotent — the orchestrator can re-enter safely. Discovery for each pass runs as pure shell (`task-finder.sh`) so the loop costs no LLM tokens until there is actual work to dispatch.
@@ -45,6 +70,19 @@ A visual walkthrough of how the commands, agents, and labels fit together lives 
 - **Design / UX as a continuous lane.** The design system is now locked up front: `/deep-dive-feature` runs a `design-lead` interview (product → **design** → architecture) that locks the visual language and a surface + navigation inventory, `/scaffold-project` seeds the resulting tokens, and `create-feature-issues` emits a foundation/shell slice plus a page-reachability gate. Still missing: a dedicated per-feature design *review* phase (visual polish on shipped pages).
 - **SRE in the workflow.** The agent exists; nothing dispatches it yet. CI/CD ownership is still manual.
 - **Enhancement and bug-fix lifecycles.** ✅ Driven by the unified `/ship` command (superset of `/implement-feature`, which stays as a feature-only fallback). **Bugs:** `/ship` dispatches a read-only `analyze` engineer that reproduces (browser MCP preferred, Playwright fallback, stack booted either way) and posts a `# Bug Analysis` comment → human approves the approach → the lighter `fix-bug.mjs` workflow writes the regression test first, drives it green, reviews, and opens a PR. **Enhancements:** `/create-enhancement-issue` creates one feature-shaped `kind:enhancement` issue (+ linked `enhancement/<n>-…` branch) without the `/deep-dive-feature` interview or doc-lock, and `/ship` routes it through the same `implement-slice.mjs` cycle as a feature slice. Both lanes run repo-wide (no milestone needed) via `/ship` with no argument. The only guard: anything that would change an API contract / data model is a feature, not a bug or enhancement — `/deep-dive-feature` owns those.
+
+## Cost
+
+Honest answer: it is **not cheap**, and per-unit cost scales with slice size — there's no flat number because a slice's cost is driven by how many review dimensions apply and how many fix rounds it takes to converge. The shape:
+
+- **Discovery is free.** `ship-finder.sh` / `task-finder.sh` are pure shell — no LLM tokens are spent until there is work to dispatch.
+- **The expensive unit is a slice.** Per `implement-slice` run: E2E authoring (only when the slice has an `e2e` task) + a coverage-gate fan-out + implementation + the pass-E2E loop + a production-code review fan-out of up to ~14 `pattern-reviewer-*` dimensions, each confirmed by a 3-lens adversarial verify (batched ≤10 findings/agent). Fix loops are **bounded by progress, not a fixed round cap** — they halt to a human after `STALL_ROUNDS` (3) consecutive non-progressing rounds, so a pathological slice escalates rather than burning unboundedly.
+- **Model tiers cut the bill.** Review prep/publish run on `haiku`, judgment-bearing review on `sonnet`, only the discovery interviews + architecture on `opus` (see the model-tier table under [Workflows](#workflows)).
+- **You can measure your own.** Every fix round logs its token delta (a cost meter in the workflow log), and the runtime-telemetry signals capture per-dispatch and per-skill token usage under `/tmp/harness-claude-code/<repo>/signals/`.
+
+> _TODO: publish a representative tokens / $ range per slice from private project runs._
+
+Run a single slice first and read its telemetry before turning `/loop /ship` loose on a whole milestone.
 
 ## Commands
 
@@ -121,6 +159,18 @@ Each phase fans out, **dedups, then verifies** before the next consumes it — s
 
 Scoring (`severity → Impact`, `(Impact, Effort) → Fix/Defer/Nit/Drop`, `full verdict = BLOCK iff any surviving I:H`) runs as plain deterministic JS, not an LLM step, so it is identical across runs.
 
+## Worked example: one slice, issue → PR
+
+There's no recorded demo yet (a demo repo / asciinema is on the roadmap). Here is what one feature slice looks like going end to end under `/loop /ship <milestone>`, traced by GitHub state:
+
+1. **Issue created** — `create-feature-issues` opens `#42` labeled `kind:feature` + `status:ready-to-review`, body carrying the EARS ACs + a typed task checklist (`e2e` → backend → frontend), plus a linked `feature/42-<intent>` branch and any `Blocked by` chains.
+2. **Human marks it ready** — flip `status:ready-to-review` → `status:ready-to-implement`. With zero open blockers, `ship-finder.sh`'s kickoff stage now lists it.
+3. **Kickoff** — `/ship` locks it (`status:in-progress`) and launches one background `implement-slice.mjs`. From here the workflow owns the inner cycle; the command only reaps it if it dies and handles the PR afterward.
+4. **Inner cycle** (one workflow): Prep derives the Scope Manifest → `e2e-author` writes Playwright specs → coverage-gate fan-out (BLOCK → e2e-author fix loop) → engineers implement the tasks via outside-in TDD → pass-E2E loop (diagnose → per-group fix until green) → production-code review fan-out (BLOCK on any surviving `I:H` → fix loop) → on APPROVE the AC checkboxes are ticked and a `merge:manual` **draft PR** opens with `Closes #42`. The slice lock is released.
+5. **PR stages** — subsequent `/ship` passes clear merge blockers (`fix-pr`) and, once the PR is `MERGEABLE` with checks green, squash-merge it (`close-pr`), which closes `#42`.
+
+If anything stalls — infra failure, or the same blocker surviving 3 consecutive fix rounds — the workflow flips `status:need-attention` and stops: the path to a human.
+
 ## Skills
 
 Skills live in [`skills/`](skills/) and auto-activate when their triggers match the task at hand.
@@ -192,7 +242,7 @@ Loaded by the `implement-slice` fan-out's `axis-reviewer` agents (one per dimens
 
 Engineer and reviewer dispatches start from the baseline pattern skills shipped here, but each consuming project grows its own memory — auto-created on the first engineer/reviewer dispatch, never flowing back upstream into this plugin. Memory has two roots split by lifetime: **ephemeral runtime signals** under `/tmp/harness-claude-code/<repo>/signals/` and **durable pattern overlays** under `$MAIN_ROOT/.claude/memory/` (where `<repo>` is `basename "$MAIN_ROOT"` and `$MAIN_ROOT` is the consuming project's main worktree root). There are three concerns:
 
-- **Writing (telemetry).** Every engineer / reviewer dispatch writes exactly one signal: `/tmp/harness-claude-code/<repo>/signals/<agent-id>.meta.json` (keyed on `agent_id`, not the shared `session_id`, so parallel dispatches don't collide), recording session/agent id + initial prompt, start / end / duration, invoked skills, token usage (total **and** per-skill via active-window attribution), a `tool → count` histogram, and stop reason. Captured entirely by the bundled `hooks/runtime-telemetry/` scripts — seeded by a `SubagentStart` hook whose `matcher` is the regex `^(.+:)?(engineer|reviewer)$` (Claude Code only treats a matcher as a regex when it contains characters outside `[A-Za-z0-9_|]`, so a bare `engineer|reviewer` would be exact-string alternation and miss the namespaced `agent_type` plugin agents arrive with). No other agent type produces telemetry.
+- **Writing (telemetry).** Every engineer / reviewer / axis-reviewer / e2e-author dispatch writes exactly one signal: `/tmp/harness-claude-code/<repo>/signals/<agent-id>.meta.json` (keyed on `agent_id`, not the shared `session_id`, so parallel dispatches don't collide), recording session/agent id + initial prompt, start / end / duration, invoked skills, token usage (total **and** per-skill via active-window attribution), a `tool → count` histogram, and stop reason. Captured entirely by the bundled `hooks/runtime-telemetry/` scripts — seeded by a `SubagentStart` hook whose `matcher` is the regex `^(.+:)?(engineer|reviewer|axis-reviewer|e2e-author)$` (Claude Code only treats a matcher as a regex when it contains characters outside `[A-Za-z0-9_|]`, so a bare `engineer|reviewer` would be exact-string alternation and miss the namespaced `agent_type` plugin agents arrive with). `axis-reviewer` and `e2e-author` are included — not just `engineer` / `reviewer` — because they own the two longest GitHub-quiet phases (the review fan-out and E2E authoring); their `last_seen` heartbeat is what keeps the Stage-0 reconcile reaper from false-reaping a live workflow during those phases. No other agent type produces telemetry.
 - **Dreaming.** `/dream-summary-memory` (on demand now, schedulable later) reads the project's GitHub issues **and PRs** closed in the last 24h — issue review/fix comment threads + fix commits, plus PR CI-failure and merge-conflict history — distills the **recurring, pattern-wise** mistakes, and writes them as additive rule overlays under `.claude/memory/patterns/<skill>.md`. It writes autonomously and logs every run to `.claude/memory/dream-log.md`. One-off bugs and lone merge conflicts are dropped; only generalizable patterns (including repeat CI failures and shared-file conflict hotspots) become memory.
 - **Consuming.** Every pattern skill (`pattern-engineer-*`, `pattern-reviewer-*`) checks `.claude/memory/patterns/<skill-name>.md` at load time and applies its rules additively (sharpened triggers, project-specific carve-outs, new rules, BAD/GOOD examples worth pinning).
 
@@ -207,7 +257,9 @@ Hooks live in [`hooks/`](hooks/) and are wired up by `hooks/hooks.json`.
 | Hook | When it fires | What it does |
 | --- | --- | --- |
 | `engineer-pre-push.sh` | `PreToolUse` on every `Bash` call, but no-ops unless the command contains `git push` *and* the cwd is an engineer worktree under `/tmp/harness-claude-code/<repo>/worktrees/`. | Runs the **fullstack** check set against the engineer's worktree before allowing the push — each stack's runner is internally gated on its directory existing, so a backend-only or frontend-only project still runs cleanly. Container presence + lockfile-tracked + dep-bootstrap, then backend = `ruff` / `mypy` / `bandit` / `pytest`, frontend = `biome` / `tsc --noEmit` / `npm audit` / `jest`, then container smoke + Playwright E2E + security scans (gitleaks / trivy / semgrep). On failure, denies the `Bash` tool call so the engineer sees the failure summary, fixes it, and retries the push. |
-| `runtime-telemetry/bootstrap.sh` | `SubagentStart` with `matcher: "^(.+:)?(engineer\|reviewer)$"` (regex form — must contain non-`[A-Za-z0-9_\|]` chars or Claude Code falls back to exact-string alternation and misses the namespaced `agent_type`) — fires automatically when one of those subagents starts. | Reads `agent_id` / `agent_type` / `cwd` from the payload, derives the `<repo>` basename from the main worktree root, auto-creates `/tmp/harness-claude-code/<repo>/signals/`, and seeds `<agent-id>.meta.json` with agent identity, started timestamp, cwd, session id, and empty `tool_calls` / `per_skill_tokens` / `skills_invoked` (`dispatch_prompt` backfilled at stop). Silent no-op if no `agent_id`. This marker file is the gate (with the matcher) that limits all runtime-telemetry capture to engineer + reviewer dispatches. |
+| `post-edit-checks.sh` | `PostToolUse` on `Edit` / `Write` / `MultiEdit` / `NotebookEdit`, but no-ops unless the edited file is inside an engineer worktree under `/tmp/harness-claude-code/<repo>/worktrees/`. | Runs the language-appropriate **auto-formatter** in place on the edited file (`*.py` → `ruff format`; `*.ts`/`*.tsx`/`*.js`/`*.jsx` → `biome format --write`) so trivial format issues are fixed without round-tripping through the agent. Deliberately does **not** run lint auto-fixers (`ruff check --fix` / `biome check --write`) — their unused-import pruning races with multi-step edits; those stay on the pre-push gate. |
+| `post-edit-dockerfile.sh` | `PostToolUse` on `Edit` / `Write` / `MultiEdit` when the file is a `Dockerfile` / `Dockerfile.*`, and only inside an engineer worktree. | Attempts a `docker build` against the changed Dockerfile and returns success or the failure tail as `additionalContext`, so the engineer learns a broken Dockerfile at edit time rather than at pre-push. Gracefully no-ops when `docker` is not on `PATH`. |
+| `runtime-telemetry/bootstrap.sh` | `SubagentStart` with `matcher: "^(.+:)?(engineer\|reviewer\|axis-reviewer\|e2e-author)$"` (regex form — must contain non-`[A-Za-z0-9_\|]` chars or Claude Code falls back to exact-string alternation and misses the namespaced `agent_type`) — fires automatically when one of those subagents starts. | Reads `agent_id` / `agent_type` / `cwd` from the payload, derives the `<repo>` basename from the main worktree root, auto-creates `/tmp/harness-claude-code/<repo>/signals/`, and seeds `<agent-id>.meta.json` with agent identity, started timestamp, cwd, session id, and empty `tool_calls` / `per_skill_tokens` / `skills_invoked` (`dispatch_prompt` backfilled at stop). Silent no-op if no `agent_id`. This marker file is the gate (with the matcher) that limits all runtime-telemetry capture to the four heartbeat-bearing dispatch types. `axis-reviewer` / `e2e-author` are matched so their `last_seen` heartbeat keeps the reconcile reaper from false-reaping a live workflow during the long, GitHub-quiet review and E2E-authoring phases. |
 | `runtime-telemetry/pre-tool-use.sh` | `PreToolUse` on every tool call (no matcher). | If a `<agent-id>.meta.json` exists for the firing `agent_id`, increments `meta.json#tool_calls[<tool>]` and, when the tool is `Read` on a `*/skills/*/SKILL.md` file or `Skill` with a `skill` parameter, appends the skill name to `meta.json#skills_invoked` (first-seen order). No `agent_id` (main-thread call) → no-op. Always exits 0; never blocks a tool call. |
 | `runtime-telemetry/subagent-stop.sh` | `SubagentStop` once per subagent termination. | If a `<agent-id>.meta.json` exists for the firing `agent_id`, finalizes it with `ended_at`, `duration_ms`, total `token_usage` (summed across all assistant turns), `per_skill_tokens` (active-window attribution from the transcript), `stop_reason`, and `dispatch_prompt` (backfilled from the transcript's first user turn). |
 
@@ -221,7 +273,7 @@ agents/                # role-based subagents
 commands/              # slash commands
 skills/                # auto-activating skills (one directory per skill)
 workflows/             # deterministic multi-agent Workflow scripts (implement-slice + fix-bug, each with inlined review fan-out)
-hooks/                 # PreToolUse hooks (engineer pre-push gate) + hooks.json
+hooks/                 # PreToolUse / PostToolUse / Subagent hooks (pre-push gate, post-edit fixers, runtime telemetry) + hooks.json
 ```
 
 ## Prior art
