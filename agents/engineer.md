@@ -46,6 +46,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 |-------|----------------|
 | `memory-convention` | When loading any conditional pattern skill below AND `.claude/memory/patterns/<that-skill>.md` exists in the repo. Defines how to apply the durable improvement overlay on top of the baseline pattern. Skip the load when no overlay file exists — there is nothing to apply. |
 | `pattern-engineer-security` | When the task touches any of: a new HTTP endpoint, a new DB query or migration, an auth/login/session path, rendering user-supplied content, adding or upgrading a dependency, container build / Dockerfile / compose, log writes that may carry user data, outbound HTTP / SSRF surface, webhook receiver, CORS config, file upload. |
+| `pattern-engineer-non-functional` | When the task touches any of: a DB query, a list/collection endpoint, a request-body or file-upload boundary, an outbound HTTP/DB call, an async handler or worker/consumer, a large rendered UI collection — OR the slice declares a non-functional acceptance criterion (a latency / throughput / capacity / availability / resource clause). Build in the thin floor always (bounds, no N+1, timeouts); build the heavier target only when an NFR AC names it. |
 | `pattern-engineer-backend-standard` | When implementing or fixing backend code. |
 | `pattern-engineer-database` | When implementing or fixing backend code that touches ORM models or migrations. |
 | `pattern-engineer-frontend-standard` | When implementing or fixing frontend code. |
