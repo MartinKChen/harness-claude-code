@@ -2,7 +2,7 @@
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "^(.+:)?(engineer|reviewer)$",
+        "matcher": "^(.+:)?(engineer|reviewer|axis-reviewer|e2e-author)$",
         "hooks": [
           {
             "type": "command",

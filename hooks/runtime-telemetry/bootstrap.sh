@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
-# Runtime-telemetry bootstrap — SubagentStart hook for engineer / reviewer agents.
+# Runtime-telemetry bootstrap — SubagentStart hook for the heartbeat-bearing agents.
 #
 # Wired in hooks/hooks.json as a SubagentStart hook with matcher
-# "^(.+:)?(engineer|reviewer)$" — a regex anchored so it accepts both the bare
-# `engineer` / `reviewer` form and the plugin-namespaced
-# `harness-claude-code:engineer` / `:reviewer` form the harness actually emits.
+# "^(.+:)?(engineer|reviewer|axis-reviewer|e2e-author)$" — a regex anchored so it
+# accepts both the bare form (`engineer`) and the plugin-namespaced form the
+# harness actually emits (`harness-claude-code:engineer`, `:axis-reviewer`, …).
 # The regex form is load-bearing: Claude Code only treats a matcher as a regex
 # when it contains characters outside `[A-Za-z0-9_|]`; a bare `engineer|reviewer`
 # would be parsed as exact-string alternation and silently never match the
 # namespaced agent_type. Fires automatically inside the subagent's context when
-# an engineer or reviewer subagent starts, and seeds the per-dispatch metadata
-# file that the PreToolUse / SubagentStop hooks key off of. Without this marker
-# file, those hooks no-op — which is how telemetry stays limited to engineer +
-# reviewer.
+# one of those subagents starts, and seeds the per-dispatch metadata file that
+# the PreToolUse / SubagentStop hooks key off of. Without this marker file, those
+# hooks no-op — which is how telemetry stays limited to these four types.
+#
+# axis-reviewer and e2e-author are matched (not just engineer / reviewer) to
+# close a false-reap race: they own the two longest, GitHub-quiet phases of a
+# slice — the review fan-out and E2E authoring — during which no engineer /
+# reviewer agent is live. Their dispatch prompts both carry `slice #<n>`, so the
+# PreToolUse last_seen heartbeat below backfills issue_number and the Stage-0
+# reconcile reaper sees the workflow is alive during those phases instead of
+# falling through to the 30-min GitHub-staleness fallback and relaunching a live
+# run onto the same branch.
 #
 # Two fields exist for the Stage-0 reconcile reaper (task-finder-stage-0-reconcile.sh):
 #   - issue_number: null here; PreToolUse backfills it (once) from the dispatch
@@ -60,18 +68,24 @@ if [ -z "$cwd" ]; then
   exit 0
 fi
 
-# Defensive type gate (in case the matcher is ever broadened): only engineer /
-# reviewer dispatches emit telemetry. Normalize the (possibly namespaced, e.g.
-# "harness-claude-code:engineer") agent type to a bare canonical value. If the
-# payload doesn't carry agent_type at all (some harnesses omit it), trust the
-# hooks.json matcher to have already filtered — proceed as a generic "subagent".
+# Defensive type gate (a backstop for the hooks.json matcher): only the four
+# heartbeat-bearing dispatches emit telemetry. Normalize the (possibly
+# namespaced, e.g. "harness-claude-code:axis-reviewer") agent type to a bare
+# canonical value, keeping axis-reviewer / e2e-author distinct from the plain
+# engineer / reviewer roles (so per-type attribution survives). The two specific
+# patterns are tested BEFORE the generic *reviewer* / *engineer* arms because a
+# case statement takes the first match and "axis-reviewer" also contains
+# "reviewer". If the payload doesn't carry agent_type at all (some harnesses omit
+# it), trust the hooks.json matcher to have already filtered.
 agent_type=""
 case "$raw_type" in
-  *reviewer*) agent_type="reviewer" ;;
-  *engineer*) agent_type="engineer" ;;
-  "")         agent_type="unknown" ; note "raw agent_type empty — trusting hooks.json matcher; proceeding with agent_type=unknown" ;;
+  *axis-reviewer*) agent_type="axis-reviewer" ;;
+  *e2e-author*)    agent_type="e2e-author" ;;
+  *reviewer*)      agent_type="reviewer" ;;
+  *engineer*)      agent_type="engineer" ;;
+  "")              agent_type="unknown" ; note "raw agent_type empty — trusting hooks.json matcher; proceeding with agent_type=unknown" ;;
   *)
-    note "raw agent_type='${raw_type}' does not match engineer/reviewer — skipping"
+    note "raw agent_type='${raw_type}' does not match a heartbeat-bearing type — skipping"
     exit 0
     ;;
 esac
