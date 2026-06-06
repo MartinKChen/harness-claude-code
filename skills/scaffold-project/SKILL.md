@@ -1,6 +1,6 @@
 ---
 name: scaffold-project
-description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` for stack + topology, creates a scaffold branch, materializes backend, frontend, e2e, and `docker-compose.yaml` from templates, verifies the stack boots end-to-end, asserts the design system locked upstream by `/deep-dive-feature` exists and seeds its tokens into the frontend, then pushes and opens a PR. Activate on '/scaffold-project', 'scaffold the project'. Do NOT activate if any scaffold surface already exists."
+description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` for stack + topology, creates a scaffold branch, materializes backend, frontend, e2e, and `docker-compose.yaml` from templates, verifies the stack boots end-to-end, asserts the upstream-locked design system exists and seeds its tokens into the frontend, then pushes and opens a PR. Activate on '/scaffold-project', 'scaffold the project'. Do NOT activate if any scaffold surface already exists."
 ---
 
 # scaffold-project

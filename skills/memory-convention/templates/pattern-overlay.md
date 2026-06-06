@@ -16,11 +16,5 @@ but prefer letting the dreaming pass propose changes.
 <BAD/GOOD snippets from this project's own history that make a rule clearer than the baseline's generic examples>
 
 ## Hard-gate candidates
-<advisory to humans, NOT an agent-consumed rule — does not participate in overlay precedence.
-Recurring, mechanically-checkable mistakes that should graduate from a soft overlay rule into the
-project's deterministic gate. Each entry names: the tool + exact rule code / config key, the target
-config file (pyproject.toml ruff `select`, biome.json, tsconfig.json), and one BAD example from history.
-dream-summary records these; a human (or a follow-up engineer task) makes the actual config change in
-lockstep with the scaffold template and the matching pattern-engineer-* skill. dream-summary never edits
-the gate config itself.>
+<advisory to humans, NOT an agent-consumed rule — does not participate in overlay precedence. Recurring, mechanically-checkable mistakes that should graduate from a soft overlay rule into the project's deterministic gate. Each entry names: the tool + exact rule code / config key, the target config file (pyproject.toml ruff `select`, biome.json, tsconfig.json), and one BAD example from history. dream-summary records these; a human (or a follow-up engineer task) makes the actual config change in lockstep with the scaffold template and the matching pattern-engineer-* skill. dream-summary never edits the gate config itself.>
 - e.g. `ruff E711` (`== None` → `is None`) — enable in `[tool.ruff.lint] select`; seen 4× across #123, #131, #140.

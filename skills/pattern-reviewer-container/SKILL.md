@@ -1,6 +1,6 @@
 ---
 name: pattern-reviewer-container
-description: "Docker / compose audit: Dockerfile is multi-stage (`base`/`build`/`final`); tags pinned (no `:latest`) and `docker scout` shows zero MEDIUM+ CVEs with available fixes; non-root user with every writable path redirected (PID, cache, nginx `*_temp_path`); `.dockerignore` excludes secrets / build outputs / IDE folders; backend entrypoint runs `alembic upgrade head` before exec'ing the server; `/healthz` endpoint exists and is no-dep; frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback; no secrets baked into the image."
+description: "Docker / compose audit: Dockerfile is multi-stage (`base`/`build`/`final`); tags pinned (no `:latest`) with `docker scout` clean of fixable MEDIUM+ CVEs; non-root user with writable paths redirected; `.dockerignore` excludes secrets/build outputs; backend entrypoint runs `alembic upgrade head` before the server; no-dep `/healthz` exists; frontend nginx puts API `location` blocks ABOVE the SPA `try_files` fallback. Activate on Dockerfile, compose, or `.dockerignore` diffs."
 ---
 
 # pattern-reviewer-container

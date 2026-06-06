@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-vite
-description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SEO needs); env vars via `import.meta.env` with `VITE_` prefix (NOT a security boundary); `loadEnv(mode, root, ['VITE_'])` always with explicit prefix; `vite-plugin-checker` (or `tsc --noEmit` in CI) — `vite build` does not type-check; `vite-tsconfig-paths` over hand-rolled aliases; `build.sourcemap: false` in prod unless uploading to Sentry; `server.host: true` for containerized dev; avoid barrel files (dev slowdown); explicit import extensions; clear `node_modules/.vite` after dep changes; Vitest for unit tests; route-boundary code splitting via `lazy(() => import())` + `<Suspense>`; static-asset imports for hashed URLs. Activate when editing `vite.config.*`, `vitest.config.*`, or scaffolding a Vite-based React app."
+description: "Vite implementation bullets: pick Vite for pure CSR (no SSR/SSG/SEO); env vars via `import.meta.env` with `VITE_` prefix (NOT a security boundary); `vite-plugin-checker` or `tsc --noEmit` in CI — `vite build` does not type-check; `vite-tsconfig-paths` over hand-rolled aliases; `build.sourcemap: false` in prod; `server.host: true` for containerized dev; avoid barrel files; route-boundary splitting via `lazy()` + `<Suspense>`. Activate when editing `vite.config.*` or scaffolding a Vite React app."
 ---
 
 # pattern-engineer-vite

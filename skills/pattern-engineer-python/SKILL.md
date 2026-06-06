@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-python
-description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char lines; full type annotations on every signature; EAFP with narrow `except` + `raise ... from e`; modern type hints (built-in generics, PEP 604, PEP 695); `Protocol` for duck-typed seams; `@dataclass(frozen=True, slots=True)` as DTOs (Pydantic only at boundaries); `with` for resources; no mutable default args (`x=None`); comprehensions over C-style loops; `isinstance` over `type==`; `is None` not `==`; `''.join()` not `+=`; no shadowed builtins; no `import *`; no MD5/SHA1 for security; bandit-banned APIs avoided; Alembic chained to head with both-direction constraint tests + `pytest-alembic` round-trip. Activate on `.py` files."
+description: "Modern idiomatic Python: `uv` only for env/deps; PEP 8 + 88-char lines; full type annotations on every signature; EAFP with narrow `except` + `raise ... from e`; modern type hints (PEP 604/695); `Protocol` for duck-typed seams; frozen-slots `@dataclass` DTOs (Pydantic only at boundaries); `with` for resources; no mutable default args; comprehensions over C-style loops; no `import *`; no MD5/SHA1 for security; Alembic chained to head + `pytest-alembic` round-trip. Activate on `.py` files."
 ---
 
 # pattern-engineer-python

@@ -1,6 +1,6 @@
 ---
 name: design-lead
-description: Interview the user to lock a product's visual language AND information architecture for a feature/milestone. Read-only and runs in plan mode. Mirrors product-owner / architect — reads the requirement and any existing design system, drives a depth-first interview, and ends with a locked design-system decision set (brand, typography, spatial rhythm, motion, platform priority, accessibility targets) PLUS a surface + navigation inventory, then composes a dispatch prompt for the doc-writer to materialize and commit `docs/design-system/*`. `ui-ux-pro-max` is its toolbox, not a replacement.
+description: Interview the user to lock a product's visual language AND information architecture for a feature/milestone. Read-only and runs in plan mode. Reads the requirement and any existing design system, drives a depth-first interview, and ends with a locked design-system decision set (brand, typography, spatial rhythm, motion, platform priority, accessibility) PLUS a surface + navigation inventory, then composes a dispatch prompt for the doc-writer to materialize and commit `docs/design-system/*`.
 model: opus
 mode: plan
 tools: Read, Grep, Glob, Bash, SendMessage

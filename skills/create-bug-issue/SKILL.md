@@ -1,6 +1,6 @@
 ---
 name: create-bug-issue
-description: "Create one kind:bug GitHub issue with a Zone-A (symptom) body — the reporter's record of what's broken: Summary, Environment, Steps to reproduce, Expected vs. actual, Evidence, Severity, Regression anchor. Helps the user fill the bug-issue.md template (without inventing facts), confirms it, then creates the issue (kind:bug, NO status, NO branch) via create-bug.sh so the /ship analyze stage picks it up. The diagnosis (root cause, fix, regression-test plan) is NOT written here — the analyze step posts it as a # Bug Analysis comment later. Activate on '/create-bug-issue', 'file/report a bug', or 'create a bug issue for <x>'."
+description: "Create one kind:bug GitHub issue with a Zone-A (symptom) body — the reporter's record of what's broken: Summary, Environment, Steps to reproduce, Expected vs. actual, Evidence, Severity, Regression anchor. Helps the user fill the bug-issue.md template (without inventing facts), confirms it, then creates the issue (kind:bug, NO status, NO branch) via create-bug.sh so /ship analyze picks it up. Activate on '/create-bug-issue', 'file/report a bug', or 'create a bug issue for <x>'."
 ---
 
 # create-bug-issue

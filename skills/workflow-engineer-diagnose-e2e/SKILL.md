@@ -1,6 +1,6 @@
 ---
 name: workflow-engineer-diagnose-e2e
-description: "Integrate origin/main, boot the slice's stack, run every E2E spec created or modified on the slice branch via testcontainers, and CATEGORIZE any failures into correlated production-fix groups — without writing a fix. Returns the diagnosis structurally (status green | failures + groups | need-attention); the calling workflow dispatches one engineer per group. Edits no production code and no specs; the only write is the origin/main integration merge. A failure that needs a spec change is a test-case constraint → need-attention. Activate when dispatched with `Diagnose E2E acceptance for slice #<n>` or '/workflow-engineer-diagnose-e2e'."
+description: "Integrate origin/main, boot the slice's stack, run every E2E spec created or modified on the slice branch via testcontainers, and CATEGORIZE any failures into correlated production-fix groups — without writing a fix. Returns the diagnosis structurally (green | failures + groups | need-attention); the calling workflow dispatches one engineer per group. Edits no code or specs. Activate when dispatched with `Diagnose E2E acceptance for slice #<n>` or '/workflow-engineer-diagnose-e2e'."
 ---
 
 # workflow-engineer-diagnose-e2e
@@ -32,7 +32,7 @@ E2E specs (`workflow-e2e-author` / `workflow-e2e-fix`), to fix reviewer findings
 
 ## Input contract
 
-Read the slice issue #<n> body. The slice's Acceptance criteria (EARS + Gherkin) are the
+Read the slice issue #<n> body. The slice's Acceptance criteria (EARS) plus each `e2e` task's own `scenario:` Gherkin are the
 behavior the E2E specs assert; the `## Tasks` checklist's `e2e` entries name the specs under
 test. The checklist is the durable task ledger — this phase does not tick boxes (it drives
 nothing in the checklist).

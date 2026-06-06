@@ -70,7 +70,7 @@ const TASK = {
     blockedBy: { type: 'array', items: { type: 'string' }, description: 'task ids this one waits on (intra-slice)' },
     delivery:  { type: 'string', description: 'the one-line delivery text from the checklist entry' },
     covers:    { type: 'array', items: { type: 'string' }, description: 'AC clause ids this task discharges, from the `covers:` field ([] if none)' },
-    scenario:  { type: ['string', 'null'], description: 'the Gherkin scenario this task walks at its owning layer, from the `scenario:` field (null if absent)' },
+    scenario:  { type: ['string', 'null'], description: 'the Gherkin scenario block (Given/When/Then) this task walks at its owning layer, from the `scenario:` field — collect all indented lines under the `scenario:` key as one newline-joined string (null if absent)' },
   },
   required: ['id', 'type', 'done', 'blockedBy', 'delivery', 'covers', 'scenario'],
 }
@@ -727,10 +727,15 @@ const prep = await agent(
 
 Steps:
 1. Fetch the slice: \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,title,body,labels,url,milestone\`. If closed/unreadable, return ok=false + haltReason; best-effort the rest.
-2. Parse the \`## Tasks\` checklist from the body. Each entry is a checkbox line plus a follow-on line, e.g.:
+2. Parse the \`## Tasks\` checklist from the body. Each entry is a checkbox line plus follow-on lines, e.g.:
    \`- [ ] \\\`be.1\\\` · **backend** · blocked-by: \\\`e2e.1\\\` · "POST /widgets …"\` (or \`[x]\` when done)
-   \`      covers: AC1, AC3 · scenario: "Schedule moves 1 credit to held" · contract: docs/api-contract/...\`
-   For each task return { id (short form, e.g. be.1), type (e2e|backend|frontend), done (true iff [x]), blockedBy (the ids in the blocked-by field, [] if "—"), delivery (the quoted text), covers (the AC ids in the \`covers:\` field, e.g. ["AC1","AC3"]; [] if absent), scenario (the quoted \`scenario:\` text, or null if absent) }.
+   \`      covers: AC1, AC3\`
+   \`      scenario:\`
+   \`        Given a valid payload\`
+   \`        When POST /widgets is called\`
+   \`        Then a row SHALL be created\`
+   \`      contract: docs/api-contract/...\`
+   For each task return { id (short form, e.g. be.1), type (e2e|backend|frontend), done (true iff [x]), blockedBy (the ids in the blocked-by field, [] if "—"), delivery (the quoted text), covers (the AC ids in the \`covers:\` field, e.g. ["AC1","AC3"]; [] if absent), scenario (the Gherkin block under the \`scenario:\` key — join its indented Given/When/Then lines with newlines into one string, or null if absent) }.
 3. Resolve the slice branch: \`bash skills/operation-git/scripts/resolve-slice-branch.sh ${SLICE}\` → sliceBranch.
 4. typeScope = the conventional PR-title prefix you infer from the slice (e.g. feat(auth)). smokeHint = one short manual smoke a reviewer would run. milestone = the slice's milestone title (or null).
 5. Derive the **Scope Manifest** from the same body — this is the closed authority the downstream reviews are bounded by, so transcribe it faithfully and do NOT invent entries:

@@ -20,7 +20,7 @@ Do NOT activate to pass E2E acceptance (use `workflow-engineer-diagnose-e2e` / `
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE. Read the slice's Acceptance criteria (EARS + Gherkin) for behavior; follow each touched task's pointer (api-contract / data-model / Gherkin scenario / design tokens) for the unit spec the finding bears on.
+Read the slice issue #<n> body. Locate the task block(s) in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE. Read the slice's Acceptance criteria (EARS) and each touched task's own `scenario:` Gherkin for behavior; follow each touched task's pointer (api-contract / data-model / the task's `scenario:` Gherkin / design tokens) for the unit spec the finding bears on.
 
 ## Workflow
 

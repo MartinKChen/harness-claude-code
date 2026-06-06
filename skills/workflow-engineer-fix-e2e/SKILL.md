@@ -1,6 +1,6 @@
 ---
 name: workflow-engineer-fix-e2e
-description: "Fix ONE diagnosed E2E failure group on the slice branch via outside-in TDD on production code only — never the specs. The dispatch carries the group's root cause, failing tests, and fix hint (produced by `workflow-engineer-diagnose-e2e`). Write a failing unit/integration test mirroring the symptom, drive it green with the minimal change, propagate the class-of-bug to every sibling site, commit with a `Refs #<slice#>` trailer, and push. Never boots or runs the full E2E suite — the diagnose step re-runs it next round. Activate when dispatched with `Fix E2E failures on slice #<n>` or '/workflow-engineer-fix-e2e'."
+description: "Fix ONE diagnosed E2E failure group on the slice branch via outside-in TDD on production code only — never the specs. The dispatch carries the group's root cause, failing tests, and fix hint. Write a failing unit/integration test mirroring the symptom, drive it green with the minimal change, propagate the class-of-bug to every sibling site, commit with a `Refs #<slice#>` trailer, and push. Activate when dispatched with `Fix E2E failures on slice #<n>` or '/workflow-engineer-fix-e2e'."
 ---
 
 # workflow-engineer-fix-e2e

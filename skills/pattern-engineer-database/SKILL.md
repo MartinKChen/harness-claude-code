@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-database
-description: "Ship migrations safely. Models are the source of truth; generate with `alembic revision --autogenerate`. Test every migration via `pytest-alembic` (round-trip + post-state assertions by name + extension cleanup). Migration runs in a dedicated `migrate` compose service before the backend starts — never in the backend entrypoint. Commit model + migration together. Plus runtime DB patterns: types (`bigint`/`text`/`timestamptz`/`numeric`); always index FKs + RLS-policy columns; partial / covering indexes; RLS with `(SELECT auth.uid())`; project columns (no `SELECT *`); cursor pagination over `OFFSET`; `SKIP LOCKED` for worker queues; consistent lock order; short transactions; `EXPLAIN ANALYZE` on hot queries. Activate on `alembic/versions/*`, `pytest-alembic`, the `migrate` service, schema design, or query/index work."
+description: "Ship migrations safely. Models are the source of truth; generate with `alembic revision --autogenerate`; test each via `pytest-alembic` (round-trip + post-state assertions); run in a `migrate` compose service before the backend, never the entrypoint; commit model + migration together. Plus runtime DB patterns: index FKs + RLS columns; RLS with `(SELECT auth.uid())`; project columns; cursor pagination; `SKIP LOCKED` queues. Activate on `alembic/versions/*`, the `migrate` service, or query work."
 ---
 
 # pattern-engineer-database

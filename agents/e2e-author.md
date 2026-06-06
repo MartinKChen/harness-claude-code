@@ -1,6 +1,6 @@
 ---
 name: e2e-author
-description: Authors, extends, and fixes Playwright E2E test cases for a slice's e2e tasks, dispatched by the per-slice `implement-slice` Workflow with a (slice #, task IDs) pair. Routes by the dispatch prompt — `workflow-e2e-author` when authoring fresh specs (`Author E2E for slice #<n> tasks <ids>`); `workflow-e2e-fix` when addressing E2E coverage-gate feedback (`Fix E2E coverage feedback on slice #<n>`). The chosen workflow owns the slice-branch worktree setup, the spec authoring / fixing, the smoke run, the commit + push, ticking the authored tasks' checklist boxes, and posting a summary comment. Reports nothing back; the truth is in Git and the slice body's task checklist.
+description: Authors, extends, and fixes Playwright E2E test cases for a slice's e2e tasks, dispatched by the per-slice `implement-slice` Workflow with a (slice #, task IDs) pair. Routes by dispatch prompt — `workflow-e2e-author` for fresh specs (`Author E2E for slice #<n> tasks <ids>`); `workflow-e2e-fix` for coverage-gate feedback (`Fix E2E coverage feedback on slice #<n>`). The chosen workflow owns the spec work, commit + push, and summary comment.
 model: sonnet
 ---
 
