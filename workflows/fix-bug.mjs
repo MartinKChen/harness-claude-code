@@ -132,6 +132,7 @@ const DIMENSIONS = [
   { key: 'coding-standard',   phase: 'quality', skill: 'pattern-reviewer-coding-standard',   applies: s => s.backend || s.frontend },
   { key: 'observability',     phase: 'quality', skill: 'pattern-reviewer-observability',     applies: s => s.backend || s.frontend },
   { key: 'security',          phase: 'quality', skill: 'pattern-reviewer-security',          applies: s => s.backend || s.frontend },
+  { key: 'non-functional',    phase: 'quality', skill: 'pattern-reviewer-non-functional',    applies: s => s.backend || s.frontend },
   { key: 'backend-standard',  phase: 'quality', skill: 'pattern-reviewer-backend-standard',  applies: s => s.backend },
   { key: 'database',          phase: 'quality', skill: 'pattern-reviewer-database',          applies: s => s.database },
   { key: 'frontend-standard', phase: 'quality', skill: 'pattern-reviewer-frontend-standard', applies: s => s.frontend },
