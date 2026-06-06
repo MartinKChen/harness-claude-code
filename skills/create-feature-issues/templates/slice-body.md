@@ -49,43 +49,58 @@ The task ledger. Each line is a checklist entry; the engineer ticks the box on i
 
 EMIT AN `e2e.*` TASK ONLY WHEN THIS SLICE CLOSES (a segment of) a cross-surface journey worth walking. There is NO mandatory `e2e.* → be.*/fe.*` prerequisite — a backend-only or pure-layout slice legitimately has ZERO e2e tasks, and its be.*/fe.* tasks have no e2e blocker. Do not invent an e2e task to "cover" a backend invariant; that invariant is discharged at the backend layer.
 
-The follow-on indented line tags, uniformly across task types:
-  - `covers:` the AC clause id(s) this task discharges (e.g. `AC1, AC3`).
-  - `scenario:` a Gherkin block (Given / When / Then, indented under the `scenario:` key) this task walks at ITS owning layer — written per task, never at the slice level. RFC 2119 keywords (SHALL/MUST/SHOULD) appear UPPERCASE in Then/And outcome lines; Given/When state facts.
-  - e2e      → its Gherkin walks the user-visible journey step through the UI (+ non-happy-path per pattern-test-coverage); also names the realized critical-path `## Journey` step.
-  - backend  → also `contract:` the api-contract file (+ data-model file when it introduces the model).
-  - frontend → also `design:` tokens; for a PAGE also `entry-source:` (route) + `reached-from:` (the inbound control/nav), copied verbatim from docs/design-system/surfaces.md (the reachability gate).
+Each task is a header line `[ ] \`<id>\` · **<type>** · blocked-by <ids|—>` followed by indented continuation lines, uniformly across task types:
+  - the one-line delivery (what the task ships), unquoted, on its own line.
+  - a metadata line: `covers:` the AC clause id(s) this task discharges (e.g. `AC1, AC3`) · the type pointer (below).
+  - `scenario:` then a fenced ```gherkin block of one or more named `Scenario:` entries this task walks at ITS owning layer — written per task, never at the slice level. SPLIT a compound flow into separate `Scenario:` blocks (one happy path + one per non-happy-path) — never chain `And when … Then …` inside one scenario. RFC 2119 keywords (SHALL/MUST/SHOULD) appear UPPERCASE in Then/And outcome lines; Given/When state facts.
+The type pointer rides the `covers:` metadata line (or its own line when long):
+  - e2e      → `realizes Journey step <N>` of the critical-path `## Journey`; its Scenarios walk the user-visible journey through the UI (+ non-happy-path per pattern-test-coverage).
+  - backend  → `contract:` the api-contract file (+ data-model file when it introduces the model).
+  - frontend → `design:` tokens; for a PAGE also `entry-source:` (route) + `reached-from:` (inbound control/nav) on their own line, copied verbatim from docs/design-system/surfaces.md (the reachability gate).
   - contract-less utility → a single `done:` one-line criterion (the ONLY place a task carries its own AC).
 -->
-- [ ] `e2e.1` · **e2e** · blocked-by: — · "User creates a `<entity>` through the UI"
-      covers: AC2
+- [ ] `e2e.1` · **e2e** · blocked-by —
+      User creates a `<entity>` through the UI
+      covers: AC2 · realizes Journey step <N> of docs/critical-path/<flow>.md
       scenario:
-        Given the user is on /`<entities>`
-        When they create a `<entity>` through the UI
-        Then the new `<entity>` SHALL appear in the list
-      (+ non-happy-path per pattern-test-coverage) · realizes Journey step <N> of docs/critical-path/<flow>.md
-- [ ] `be.1` · **backend** · blocked-by: — · "POST /`<entities>` (introduces `<Entity>` model + migration)"
-      covers: AC1, AC3
+      ```gherkin
+      Scenario: create a <entity> (happy path)
+        Given the user is on /<entities>
+        When they create a <entity> through the UI
+        Then the new <entity> SHALL appear in the list
+      ```
+      (+ non-happy-path Scenarios in the same fence per pattern-test-coverage)
+- [ ] `be.1` · **backend** · blocked-by —
+      POST /`<entities>` (introduces `<Entity>` model + migration)
+      covers: AC1, AC3 · contract: docs/api-contract/<entity>.yaml · docs/data-model/<entity>.yaml
       scenario:
-        Given a valid `<entity>` payload
-        When POST /`<entities>` is called
-        Then a row SHALL be created in state `<state>`
-      contract: docs/api-contract/<entity>.yaml · docs/data-model/<entity>.yaml
-- [ ] `fe.1` · **frontend** · blocked-by: — · "useCreate`<Entity>` hook"
-      covers: AC2
+      ```gherkin
+      Scenario: create a <entity>
+        Given a valid <entity> payload
+        When POST /<entities> is called
+        Then a row SHALL be created in state <state>
+      ```
+- [ ] `fe.1` · **frontend** · blocked-by —
+      useCreate`<Entity>` hook
+      covers: AC2 · design: docs/design-system/tokens.md
       scenario:
+      ```gherkin
+      Scenario: list cache invalidated after create
         Given the create mutation succeeds
         When the hook resolves
         Then the list cache SHALL be invalidated
-      design: docs/design-system/tokens.md
-- [ ] `fe.2` · **frontend** · blocked-by: `fe.1` · "`<Entity>`CreateForm component"
-      covers: AC2
+      ```
+- [ ] `fe.2` · **frontend** · blocked-by `fe.1`
+      `<Entity>`CreateForm component
+      covers: AC2 · design: docs/design-system/tokens.md
+      entry-source: route /<entities>/new · reached-from: control "New" on /<entities>
       scenario:
+      ```gherkin
+      Scenario: submit valid input
         Given the form is rendered
         When the user submits valid input
         Then it SHALL post via the hook
-      entry-source: route /`<entities>`/new
-      reached-from: control "New" on /`<entities>`
+      ```
 
 ## Notes
 <Any relevant ADRs, glossary terms, feature-flag names, or rollout caveats.>

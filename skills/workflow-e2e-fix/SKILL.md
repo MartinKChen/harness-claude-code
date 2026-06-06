@@ -18,7 +18,7 @@ Do NOT activate to author fresh E2E specs (use `workflow-e2e-author`), or to fix
 
 ## Input contract
 
-Read the slice issue #<n> body. Locate the task block(s) in the `## Tasks` checklist (each entry is `[ ] \`<id>\` · **<type>** · blocked-by: … · "<delivery>"` with a `covers:`/`contract:`/`entry-source:`/`done:` pointer line). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE. Read the slice's Acceptance criteria (EARS) and each e2e task's own `scenario:` Gherkin for the behavior the specs must cover; follow each e2e task's `scenario:` Gherkin for the unit spec.
+Read the slice issue #<n> body. Locate the task block(s) in the `## Tasks` checklist (each entry is a header `[ ] \`<id>\` · **<type>** · blocked-by <ids|—>`, the delivery on the next line, a `covers:` + `contract:`/`entry-source:`/`done:` pointer line, then `scenario:` and a fenced ```gherkin block of named Scenarios). The checklist is the durable task ledger — a box already checked `[x]` means that task is DONE. Read the slice's Acceptance criteria (EARS) and each e2e task's own `scenario:` Gherkin for the behavior the specs must cover; follow each e2e task's `scenario:` Gherkin for the unit spec.
 
 ## Workflow
 

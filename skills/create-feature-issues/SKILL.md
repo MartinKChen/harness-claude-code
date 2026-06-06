@@ -189,7 +189,7 @@ For each task, decide:
   - `frontend` → **one** page, **or** **one** component, **or** **one** hook. If a task description needs the word "and" between two of these, split it.
 - **Spec pointer** — each task's checklist follow-on line tags, **uniformly across all three types**, the AC clause(s) it discharges and the scenario it walks at its layer; it does NOT duplicate the AC text. The slice-level AC is EARS only; Gherkin scenarios are written **per task**, not in an upfront slice-level block.
   - `covers:` (every type) — the AC clause id(s) this task discharges (e.g. `AC1, AC3`). This is what lets the reviewer tick an AC box once every task tagged with it passes.
-  - `scenario:` (every type) — a Gherkin block (Given / When / Then, indented under the `scenario:` key) this task walks at **its owning layer** (the §2 obligation, named "scenario"; this is the only place Gherkin lives): for `backend`, what the endpoint/worker proves (a ledger delta, a 409, "no row created"); for `frontend`, what the rendered tree shows; for `e2e`, the user-visible journey step. RFC 2119 keywords (SHALL/MUST/SHOULD) appear UPPERCASE in Then/And outcome lines.
+  - `scenario:` (every type) — a fenced ```gherkin block of one or more named `Scenario:` entries (Given / When / Then) under the `scenario:` key, walked at the task's **owning layer** (the §2 obligation, named "scenario"; this is the only place Gherkin lives): for `backend`, what the endpoint/worker proves (a ledger delta, a 409, "no row created"); for `frontend`, what the rendered tree shows; for `e2e`, the user-visible journey step. Split a compound flow into separate `Scenario:` blocks (one happy path + one per non-happy-path) rather than chaining `And when … Then …`. RFC 2119 keywords (SHALL/MUST/SHOULD) appear UPPERCASE in Then/And outcome lines.
   - `backend` → also `contract:` the binding `docs/api-contract/<entity>.yaml` (+ `docs/data-model/<entity>.yaml` when this task introduces the entity). The contract is the unit spec — the task delivers the endpoint that file already describes.
   - `e2e` → also the mapped journey scenario (plus the pattern-mandated non-happy-path the spec must also exercise), and which **critical-path Journey step(s)** the segment realizes.
   - `frontend` → also `design:` `docs/design-system/tokens.md`; a **page** task additionally carries `entry-source:` (route) and `reached-from:` (the inbound nav/control), copied verbatim from `docs/design-system/surfaces.md` per the page-reachability gate.
@@ -358,42 +358,57 @@ Good — vertical tracer bullets, each merge leaves the product working. Each sl
       ## Acceptance criteria (EARS)   ← always present; reviewer-ticked
       - [ ] AC1 — WHEN the flag is on, the page SHALL render the empty state.   (frontend layer)
       ## Tasks                         ← closes a journey segment ⇒ has an e2e task
-      - [ ] `e2e.1` · **e2e** · blocked-by: — · "User opens the page behind the flag and sees the empty state"
-            covers: AC1
+      - [ ] `e2e.1` · **e2e** · blocked-by —
+            User opens the page behind the flag and sees the empty state
+            covers: AC1 · realizes Journey step 1 of docs/critical-path/<flow>.md
             scenario:
+            ```gherkin
+            Scenario: empty state behind the flag
               Given the flag is on
               When the user opens /<entities>
               Then the empty state SHALL render
-            realizes Journey step 1 of docs/critical-path/<flow>.md
-      - [ ] `be.1`  · **backend** · blocked-by: `e2e.1` · "GET /<entities> returning an empty list"
-            covers: AC1
+            ```
+      - [ ] `be.1`  · **backend** · blocked-by `e2e.1`
+            GET /<entities> returning an empty list
+            covers: AC1 · contract: docs/api-contract/<entity>.yaml
             scenario:
+            ```gherkin
+            Scenario: list with no entities
               Given no <entities> exist
               When GET /<entities> is called
               Then it SHALL return an empty list
-            contract: docs/api-contract/<entity>.yaml
-      - [ ] `fe.1`  · **frontend** · blocked-by: `e2e.1` · "page shell behind the feature flag"
-            covers: AC1
+            ```
+      - [ ] `fe.1`  · **frontend** · blocked-by `e2e.1`
+            page shell behind the feature flag
+            covers: AC1 · design: docs/design-system/tokens.md
+            entry-source: route /<entities> · reached-from: global-nav "Entities"
             scenario:
+            ```gherkin
+            Scenario: page renders empty state
               Given the flag is on
               When the page renders
               Then it SHALL show the empty state
-            design: docs/design-system/tokens.md
-            entry-source: route /<entities> · reached-from: global-nav "Entities"
+            ```
 
 #151  Hold a credit when a <session> is scheduled (slice issue — backend-only, NO e2e task)
       ## Acceptance criteria (EARS)   ← backend invariants ARE ACs (backend owning layer)
       - [ ] AC1 — WHEN a <session> is scheduled, the system SHALL move 1 credit from available to held in the same transaction.
       - [ ] AC2 — IF the trainer has 0 available credits, THEN the system SHALL reject with 409 and create no row.
       ## Tasks                         ← no journey segment closed ⇒ no e2e task
-      - [ ] `be.1`  · **backend** · blocked-by: — · "POST /<sessions> (introduces <Session> model + migration)"
-            covers: AC1, AC2
+      - [ ] `be.1`  · **backend** · blocked-by —
+            POST /<sessions> (introduces <Session> model + migration)
+            covers: AC1, AC2 · contract: docs/api-contract/session.yaml · docs/data-model/session.yaml
             scenario:
+            ```gherkin
+            Scenario: scheduling holds a credit
               Given a trainer with 1 available credit
               When a <session> is scheduled
               Then 1 credit SHALL move from available to held in the same transaction
-              And IF the trainer has 0 available credits THEN it SHALL reject with 409 and create no row
-            contract: docs/api-contract/session.yaml · docs/data-model/session.yaml
+            Scenario: insufficient credit is rejected
+              Given a trainer with 0 available credits
+              When a <session> is scheduled
+              Then the system SHALL reject with 409 and create no row
+            ```
 ```
 
 ### Iron rules
