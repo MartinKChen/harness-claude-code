@@ -27,6 +27,18 @@
 #              broke because `e2e/package-lock.json` was generated but never
 #              `git add`-ed; the lockfile referenced by a CI cache key must
 #              be visible to the workflow.
+#   worktree-committed: the general case of lockfile-tracked — the slice branch
+#              must leave the worktree with NOTHING uncommitted (no untracked,
+#              no unstaged, no staged-but-uncommitted path). The failure this
+#              closes: a TDD engineer that stages each commit by explicit path
+#              while wrongly believing a module is pre-existing never names the
+#              one file it authored at GREEN to `git add`. The file stays on
+#              disk, so every local gate that reads the worktree — the test
+#              suite AND this hook's own backend/frontend/smoke/e2e steps —
+#              stays green; only a clean CI checkout that lacks the file fails,
+#              after the branch has already left the worktree. `git status
+#              --porcelain` honors .gitignore, so build output / .venv /
+#              node_modules never trip it.
 #   bootstrap: deps must be installed before any --no-install / uv run check
 #              fires. Missing .venv → `uv sync`; missing node_modules →
 #              `npm ci` (falls back to `npm install` if no lockfile yet).
@@ -205,6 +217,52 @@ Stage and commit the lockfile(s) (\`chore(deps): commit <name>\` or fold into th
   fi
 
   note "lockfile-tracked check OK"
+}
+
+run_worktree_committed_check() {
+  # The general case of run_lockfile_tracked_check. The most dangerous gap a
+  # TDD engineer can leave is a file it AUTHORED but never `git add`-ed: it
+  # staged each commit by explicit path while wrongly believing the module was
+  # pre-existing, so the new file was never named to `git add`. Because the
+  # file is still present on disk, every local gate that reads the worktree —
+  # the test suite, and this hook's own backend/frontend/smoke/e2e steps —
+  # stays green and never notices it was never committed. Only a clean CI
+  # checkout (which doesn't have the file) fails, after the branch has left
+  # the worktree.
+  #
+  # Invariant: the slice branch must leave the worktree with NOTHING
+  # uncommitted. Runs BEFORE run_dep_bootstrap so an in-hook `uv sync` /
+  # `npm ci` can't muddy the signal. `git status --porcelain` already honors
+  # .gitignore, so an explicitly-ignored path (build output, .venv,
+  # node_modules) never trips this — only tracked-but-modified and
+  # untracked-not-ignored paths do.
+
+  local dirty
+  dirty="$(git -C "$cwd" status --porcelain 2>/dev/null || true)"
+  if [ -z "$dirty" ]; then
+    note "worktree-committed check OK"
+    return
+  fi
+
+  # Partition for a more actionable message: `??` = untracked (the authored-
+  # but-never-added smoking gun); anything else = a tracked path with staged
+  # or unstaged changes that was never committed.
+  local untracked="" tracked=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      '??'*) untracked+=$'\n  - untracked:   '"${line:3}" ;;
+      *)     tracked+=$'\n  - uncommitted: '"${line:3}" ;;
+    esac
+  done <<EOF
+${dirty}
+EOF
+
+  deny \
+    "engineer-pre-push: blocking git push for ${slice_branch} — worktree is not clean; authored changes were never committed" \
+    "The slice branch must leave the worktree with nothing uncommitted. Local gates (the test suite, this hook's own checks) read files from disk, so a file you authored but never \`git add\`-ed stays green here and only fails on a clean CI checkout that doesn't have it. Never assume a module is pre-existing — \`git add\` every path you touched and confirm \`git status\` is empty before pushing. Uncommitted now:${untracked}${tracked}
+
+Stage and commit the listed path(s) onto the slice branch (same \`Task:\` / \`Refs\` trailers as your other commits), or — if a path is genuinely build output or scratch — add it to .gitignore, then retry the push."
 }
 
 run_dep_bootstrap() {
@@ -551,6 +609,7 @@ Scaffold the missing files (multi-stage, pinned tags, non-root user, secrets via
 
 run_container_presence_checks
 run_lockfile_tracked_check
+run_worktree_committed_check
 run_dep_bootstrap
 run_backend_checks
 run_frontend_checks
