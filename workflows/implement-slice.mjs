@@ -689,8 +689,19 @@ ${taskLedger.map(t => `- \`${t.id}\` · ${t.type} → owning layer: ${layerOf(t)
 
 Judge each task against its owning layer: the \`covers:\` AC clause must be discharged THERE (deletable-code lens — deleting the production branch/mutation/derivation makes some test fail), the \`scenario:\` must be walked THERE, and it is asserted ONCE. Do NOT flag a backend invariant for "missing E2E coverage" — a ledger delta / token-state / "no row created" clause is owned by the backend layer and proven by an API-level test, never through the UI.` : ''
 
+    // Refactor slice: a production-code review of a slice with NO acceptance criteria
+    // and NO e2e tasks is a behavior-preserving REFACTOR (a triaged kind:refactor issue),
+    // not new behavior. The test-coverage dimension must not demand new AC/E2E coverage
+    // there — the bar is "existing suite still exercises the touched code" + "unit test any
+    // newly-extracted seam". Without this note the gate would BLOCK every refactor for a
+    // "missing tests" gap that does not apply.
+    const isRefactor = scope === 'production-code' && (sm.acIds?.length ?? 0) === 0 && (tasks || []).every(t => t.type !== 'e2e')
+    const refactorBlock = isRefactor ? `
+## Refactor slice (behavior-preserving — no acceptance criteria, no E2E)
+This slice has NO acceptance criteria and NO E2E tasks: it is a code-quality REFACTOR, not new behavior. For the test-coverage dimension specifically, do NOT report "missing AC coverage", "missing E2E", or "missing integration test" — there is no new behavior to cover. The coverage bar is narrower: (1) behavior is PRESERVED — the pre-existing test suite must still exercise the touched code (it is run green at push by the engineer pre-push hook), and (2) any newly-EXTRACTED seam (a function/class/module the refactor pulls out) has a focused UNIT test. Flag ONLY those two as gaps; pre-existing coverage satisfies the rest. Quality dimensions still apply normally.` : ''
+
     const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.
-${manifestBlock}${ledgerBlock}`
+${manifestBlock}${ledgerBlock}${refactorBlock}`
 
     // ── Spec: fan out phase-1 dimensions, dedup, then VERIFY *before* the gate, so
     // the gate trips only on a blocker that actually survives scrutiny. ──
@@ -1167,36 +1178,53 @@ Return ok=true (or error set on failure). prNumber=null.`,
     )
   }
 
-  // ── Debt triage: file residual non-gating findings as enhancement issues, ONE per
-  // GROUP (group = review dimension). After the one polish pass, leftover code-quality
-  // debt is recorded as `kind:enhancement` issues (created at `status:ready-to-review`
-  // — the human gate, so they do NOT auto-implement) for the /ship maintenance lane,
-  // rather than holding this slice open. Grouping by dimension bounds issue/branch
-  // sprawl; each issue's body is a per-finding checklist. Deduped against open
-  // enhancements. Triage runs on the stronger model: it authors bodies + dedups.
+  // ── Debt triage: file residual non-gating findings for the /ship maintenance lane,
+  // ROUTED BY DIMENSION. After the one polish pass, leftover debt is recorded as issues
+  // at `status:ready-to-review` (the human gate — they do NOT auto-implement until a
+  // human flips them to `status:ready-to-implement`), rather than holding this slice:
+  //   • `non-functional` findings → `kind:enhancement` — they add observable behavior
+  //     (pagination, caps, timeouts, capacity), so they earn a feature-shaped body with
+  //     ACs + an e2e task and the full E2E/integration treatment.
+  //   • every OTHER non-gating dimension → `kind:refactor` — behavior-preserving, so the
+  //     body is a `## Tasks` checklist of backend/frontend tasks with NO e2e tasks and NO
+  //     ACs (implement-slice then skips all E2E machinery). The only new tests are unit
+  //     tests for extracted seams; the existing suite staying green is the regression net.
+  // One issue per dimension in each bucket, deduped against open issues of that kind.
+  // Triage runs on the stronger model: it authors bodies + dedups.
   const debt = (lastReview?.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
   if (debt.length) {
-    const byDim = new Map()
-    for (const f of debt) {
-      if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
-      byDim.get(f.dimension).push(f)
+    const groupByDim = (arr) => {
+      const m = new Map()
+      for (const f of arr) { if (!m.has(f.dimension)) m.set(f.dimension, []); m.get(f.dimension).push(f) }
+      return m
     }
-    log(`Slice review: triaging ${debt.length} residual code-quality finding(s) in ${byDim.size} group(s) into enhancement issues.`)
-    const groupBlock = [...byDim.entries()].map(([dim, fs], gi) =>
-      `### Group ${gi + 1} — dimension \`${dim}\` (${fs.length} finding(s))\n` +
+    const render = (m) => [...m.entries()].map(([dim, fs]) =>
+      `### dimension \`${dim}\` (${fs.length} finding(s))\n` +
       fs.map(f => `  - (I:${f.impact}/E:${f.effort}) ${f.title}\n    file: ${f.file}\n    impact: ${f.impactStatement}\n    fix: ${f.fix}`).join('\n'),
     ).join('\n\n')
+    const reDims = groupByDim(debt.filter(f => f.dimension !== 'non-functional'))
+    const nfDims = groupByDim(debt.filter(f => f.dimension === 'non-functional'))
+    log(`Slice review: triaging debt — ${reDims.size} group(s) → kind:refactor, ${nfDims.size} → kind:enhancement.`)
     await agent(
-      `Triage residual code-quality debt from slice #${SLICE} into enhancement issues. The slice's acceptance / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, GROUPED BY REVIEW DIMENSION. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch the slice's \`status:*\` labels.
+      `Triage residual code-quality debt from slice #${SLICE} (branch \`${prep.sliceBranch}\`) into tracking issues. Its acceptance / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, grouped by review dimension. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch slice #${SLICE}'s \`status:*\` labels.
 
-File ONE \`kind:enhancement\` issue PER GROUP below (one group = one review dimension's residual findings) — UNLESS an open enhancement already covers that group:
-1. Dedupe first: list open enhancements with \`gh issue list --label kind:enhancement --state open --limit 100\`. Skip a group an open issue already captures (note each skip in your summary).
-2. For a NEW group, author a short body — a one-line **Context** (the dimension + that this is non-blocking debt surfaced by slice #${SLICE}, branch \`${prep.sliceBranch}\`), a **checklist** with one \`- [ ]\` per finding carrying its \`file:line\` + the fix, then a one-line **Acceptance** (behavior preserved, the smells gone). Write it to \`/tmp/enh-${SLICE}-<group>.md\`.
-3. Create it: \`bash skills/operation-git/scripts/create-enhancement.sh --title "<dimension> debt from slice #${SLICE}" --body-file /tmp/enh-${SLICE}-<group>.md --intent <kebab-intent>\` (intent e.g. \`<dimension>-debt-slice-${SLICE}\`).
+Create ONE issue per dimension group, deduped FIRST against open issues of the SAME kind (\`gh issue list --label <kind> --state open --limit 100\`; skip a group an open issue already captures and note the skip). Intent = a short kebab slug, e.g. \`<dimension>-debt-slice-${SLICE}\`.
 
-Groups to triage:
+=== REFACTOR groups -> \`kind:refactor\` (behavior-preserving) ===
+For each group below, write a body to \`/tmp/refactor-${SLICE}-<dim>.md\` containing:
+  - a one-line **Context** (behavior-preserving \`<dimension>\` debt surfaced by slice #${SLICE});
+  - a \`## Tasks\` section — ONE checklist task per finding, in this EXACT shape (NO e2e tasks, NO \`covers:\`, NO \`scenario:\`, NO acceptance criteria):
+      \`- [ ] \\\`be.1\\\` · **backend** · blocked-by: — · "<imperative fix, citing file:line>"\`
+    (use \`fe.N\` · **frontend** for client-side files; number per type starting at 1; infer backend vs frontend from each finding's file path);
+  - a \`## Don't break\` section with one line: "Behavior is preserved — the existing test suite MUST stay green; add unit tests only for any newly-extracted seam."
+Then create it: \`bash skills/operation-git/scripts/create-refactor.sh --title "<dimension> debt from slice #${SLICE}" --body-file /tmp/refactor-${SLICE}-<dim>.md --intent <kebab-intent>\`.
 
-${groupBlock}
+${reDims.size ? render(reDims) : '(no refactor groups)'}
+
+=== NON-FUNCTIONAL group -> \`kind:enhancement\` (adds observable behavior) ===
+For the non-functional group below (if any), write a FEATURE-shaped body to \`/tmp/enh-${SLICE}-non-functional.md\` containing **Context**, **Proposed change**, a \`## Acceptance criteria (EARS)\` section enumerating the new behavior as \`AC1 …\`, and a \`## Tasks\` checklist that INCLUDES an \`e2e.1\` task plus the backend/frontend tasks (this change earns real E2E/integration coverage — same task shape as above, but the e2e task carries its \`covers:\` + \`scenario:\`). Then create it: \`bash skills/operation-git/scripts/create-enhancement.sh --title "<concise title> (slice #${SLICE})" --body-file /tmp/enh-${SLICE}-non-functional.md --intent <kebab-intent>\`.
+
+${nfDims.size ? render(nfDims) : '(no non-functional group)'}
 
 Set ok=true if every group was either filed or intentionally skipped (put any per-group failure in error). prNumber=null.`,
       { label: 'triage-debt', phase: 'Slice review', schema: SIDE_EFFECT, model: AGENT_MODEL },

@@ -66,6 +66,7 @@ echo "kind:"
 create "kind:feature"               0075CA
 create "kind:bug"                   D73A4A
 create "kind:enhancement"           A2EEEF
+create "kind:refactor"              D4C5F9
 
 echo "merge:"
 create "merge:auto"                 0E8A16

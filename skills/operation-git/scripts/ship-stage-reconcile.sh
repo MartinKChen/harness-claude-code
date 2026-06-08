@@ -8,7 +8,7 @@
 # Three orphan signatures (the bug lifecycle overloads status:in-progress as both
 # the analyze lock and the fix lock, disambiguated by the # Bug Analysis comment):
 #
-#   SLICE  (kind:feature|enhancement) status:in-progress
+#   SLICE  (kind:feature|enhancement|refactor) status:in-progress
 #            -> orphaned implement-slice Workflow      -> release:ready-to-implement
 #   BUG    kind:bug status:in-progress, HAS # Bug Analysis comment
 #            -> orphaned fix-bug Workflow              -> release:ready-to-implement
@@ -175,7 +175,7 @@ while read -r row; do
     emit "- issue:#${number} | release:ready-to-implement | stale:${m}m | \"${title}\""
   fi
 done < <(bash "$script_dir/list-issues.sh" \
-            --kind kind:feature --kind kind:enhancement --kind kind:bug \
+            --kind kind:feature --kind kind:enhancement --kind kind:refactor --kind kind:bug \
             --label status:in-progress ${milestone_args[@]+"${milestone_args[@]}"} \
           | jq -c '.[]')
 
@@ -186,8 +186,8 @@ while read -r row; do
   title="$(printf '%s' "$row" | jq -r .title)"
   branch="$(printf '%s' "$row" | jq -r '.headRefName // empty')"
   body="$(printf '%s' "$row" | jq -r '.body // empty')"
-  # Linked issue: feature/<n>- | enhancement/<n>- | fix/<n>- branch prefix, else the body's Closes #.
-  issue="$(printf '%s' "$branch" | sed -n -E 's#^(feature|enhancement|fix)/([0-9]+)-.*#\2#p')"
+  # Linked issue: feature/<n>- | enhancement/<n>- | refactor/<n>- | fix/<n>- branch prefix, else the body's Closes #.
+  issue="$(printf '%s' "$branch" | sed -n -E 's#^(feature|enhancement|refactor|fix)/([0-9]+)-.*#\2#p')"
   [[ -n "$issue" ]] || issue="$(printf '%s' "$body" | grep -oiE 'closes[[:space:]]+#[0-9]+' | head -1 | grep -oE '[0-9]+')"
   [[ -n "$issue" ]] || issue="?"
   act="$(max_epoch "$(branch_last_commit_epoch "$branch")")"
