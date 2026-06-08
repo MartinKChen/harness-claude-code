@@ -27,6 +27,13 @@ export const meta = {
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const SLICE = input.slice
 const TODAY = input.today ?? 'unknown-date'
+// Adversarial verify is OPT-IN, default OFF. The verify lenses re-judge the
+// dimension reviewer's own findings — itself a form of self-review — so by
+// default we trust the reviewer's severity and skip them (correctness + context
+// bypassed). The orchestrator reads $HCC_VERIFY_LENSES (the workflow sandbox has
+// no env access — same reason args.today is threaded in) and passes
+// verifyLenses=true to turn the three lenses back on.
+const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
@@ -39,10 +46,12 @@ if (!/^\d+$/.test(String(SLICE)))
 // — the SAME blocker surviving its own targeted fix for STALL_ROUNDS rounds — not on
 // round count. The other halts are genuine infra failures (a review step that can't
 // set up its worktree, a verdict that never posted). The review fan-out is tuned to
-// surface findings aggressively, and its adversarial verify phase keeps these loops
-// from chasing phantom findings: only a finding that survives refutation holds the
-// gate open, and `full` review blocks on I:H alone, so once the real blockers are
-// fixed the loop converges.
+// surface findings aggressively; its adversarial verify phase (OPT-IN via
+// VERIFY_ENABLED, default OFF — see the input block) keeps these loops from chasing
+// phantom findings when on: only a finding that survives refutation holds the gate
+// open. With verify OFF the dimension reviewer's own severity stands. Either way
+// `full` review blocks on I:H alone, so once the real blockers are fixed the loop
+// converges.
 
 // Subagent types — the plugin's real agents (each loads its own skill stack), not
 // the default workflow dimension agent.
@@ -276,6 +285,9 @@ const DIMENSIONS = [
   { key: 'vite',              phase: 'quality', skill: 'pattern-reviewer-vite',              applies: s => s.vite },
 ]
 
+// The three adversarial verify lenses — applied ONLY when VERIFY_ENABLED. With
+// verify OFF (default) none of them run: correctness + context are bypassed and
+// the dimension reviewer's own severity stands unchallenged.
 const VERIFY_LENSES = [
   { key: 'correctness', ask: 'Is the claimed defect actually present in THIS code? Read the cited file:line and its surroundings. If the code does not in fact do what the finding claims, it is refuted.' },
   { key: 'context',     ask: 'Did the finder miss surrounding code — a guard, an early return, a caller-side check, an existing test, a framework default — that already neutralises this? If such context exists, it is refuted.' },
@@ -328,6 +340,7 @@ const chunk = (arr, n) => {
 //      uncapped exactly as before.
 const STALL_ROUNDS = 3
 const kb = n => Math.round(n / 1000)
+const verifyNote = VERIFY_ENABLED ? 'survived verification' : 'kept (verify off)'
 const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
 const sameBlocker = (a, b) => fileNoLine(a.file) === fileNoLine(b.file) && jaccard(a.title, b.title) >= 0.5
 const trackStall = (prev, blockers) => blockers.map(b => {
@@ -495,6 +508,9 @@ Return one verdict per finding ({ index, refuted, reason }), covering every inde
 // dispatch count from 3×findings to 3×chunks-per-dimension WITHOUT touching the
 // cross-lens majority vote — and the prompt still forces per-finding investigation.
 async function verifyFindings(list, tag, diffCtx, phaseTitle) {
+  // Verify OFF (default): no self-review pass — trust each finding exactly as the
+  // dimension reviewer graded it (its severity drives the gate/verdict downstream).
+  if (!VERIFY_ENABLED) return list.map(f => ({ ...f, survives: true }))
   const byDim = new Map()
   for (const f of list) {
     if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
@@ -636,7 +652,7 @@ ${manifestBlock}${ledgerBlock}`
     const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
     const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx))
     const specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
-    log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} survived verification.`)
+    log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
 
     // GATE (on VERIFIED spec findings). A confirmed blocking spec finding means the
     // implementation will be reworked, so auditing quality now is churn. Coverage
@@ -654,7 +670,7 @@ ${manifestBlock}${ledgerBlock}`
       qualMerged = qualDedup.merged
       qualDedupKept = qualDedup.kept.length
       qualConfirmed = (await verifyFindings(qualDedup.kept, 'quality', diffCtx, phaseTitle)).filter(f => f.survives)
-      log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} survived verification.`)
+      log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
     // ── Compose (plain code). Final cross-phase dedup collapses the rare case a

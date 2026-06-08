@@ -29,6 +29,13 @@ export const meta = {
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const ISSUE = input.issue
 const TODAY = input.today ?? 'unknown-date'
+// Adversarial verify is OPT-IN, default OFF. The verify lenses re-judge the
+// dimension reviewer's own findings — itself a form of self-review — so by
+// default we trust the reviewer's severity and skip them (correctness + context
+// bypassed). The orchestrator reads $HCC_VERIFY_LENSES (the workflow sandbox has
+// no env access — same reason args.today is threaded in) and passes
+// verifyLenses=true to turn the three lenses back on.
+const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
 if (!/^\d+$/.test(String(ISSUE)))
   throw new Error(`fix-bug: args.issue must be a bug issue number; got ${typeof ISSUE}: ${JSON.stringify(ISSUE) ?? String(ISSUE)}`)
 
@@ -143,6 +150,9 @@ const DIMENSIONS = [
   { key: 'vite',              phase: 'quality', skill: 'pattern-reviewer-vite',              applies: s => s.vite },
 ]
 
+// The three adversarial verify lenses — applied ONLY when VERIFY_ENABLED. With
+// verify OFF (default) none of them run: correctness + context are bypassed and
+// the dimension reviewer's own severity stands unchallenged.
 const VERIFY_LENSES = [
   { key: 'correctness', ask: 'Is the claimed defect actually present in THIS code? Read the cited file:line and its surroundings. If the code does not in fact do what the finding claims, it is refuted.' },
   { key: 'context',     ask: 'Did the finder miss surrounding code — a guard, an early return, a caller-side check, an existing test, a framework default — that already neutralises this? If such context exists, it is refuted.' },
@@ -176,6 +186,7 @@ function jaccard(a, b) {
 // runs uncapped.
 const STALL_ROUNDS = 3
 const kb = n => Math.round(n / 1000)
+const verifyNote = VERIFY_ENABLED ? 'survived verification' : 'kept (verify off)'
 const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
 const sameBlocker = (a, b) => fileNoLine(a.file) === fileNoLine(b.file) && jaccard(a.title, b.title) >= 0.5
 const trackStall = (prev, blockers) => blockers.map(b => {
@@ -279,6 +290,9 @@ Follow your single-axis review contract exactly — read that one skill, apply O
 }
 
 async function verifyFindings(list, tag, diffCtx, phaseTitle) {
+  // Verify OFF (default): no self-review pass — trust each finding exactly as the
+  // dimension reviewer graded it (its severity drives the gate/verdict downstream).
+  if (!VERIFY_ENABLED) return list.map(f => ({ ...f, survives: true }))
   return parallel(list.map(f => () =>
     parallel(VERIFY_LENSES.map(lens => () =>
       agent(
@@ -364,7 +378,7 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
     const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
     const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, diffCtx))
     const specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
-    log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} survived verification.`)
+    log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
 
     const gateTripped = specConfirmed.some(f => sevToImpact(f.severity) === 'H')
 
@@ -376,7 +390,7 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
       const qualDedup = dedupeFindings(await runDimensions(qualDims, 'quality', phaseTitle, diffCtx))
       qualMerged = qualDedup.merged
       qualConfirmed = (await verifyFindings(qualDedup.kept, 'quality', diffCtx, phaseTitle)).filter(f => f.survives)
-      log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} survived verification.`)
+      log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
     const finalDedup = dedupeFindings([...specConfirmed, ...qualConfirmed])

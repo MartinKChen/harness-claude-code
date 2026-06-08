@@ -106,8 +106,9 @@ For each eligible slice `#<slice-#>` (line format: `- #<slice-#> | "<title>"`):
 3. **`Workflow` + `TaskUpdate(owner)` in the same batched response**:
    - **Tool**: `Workflow`
    - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs` (plugin-shipped, not a consuming-project `.claude/workflows/` entry — resolve `$CLAUDE_PLUGIN_ROOT` from the environment the same way the plugin's hooks do, then pass the absolute path)
-   - `args`: `{ "slice": <slice-#>, "today": "<YYYY-MM-DD>" }`
+   - `args`: `{ "slice": <slice-#>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false> }`
      - `today` — pass today's date explicitly; the workflow runtime has no clock and stamps the PR body's review-verdict line.
+     - `verifyLenses` — pass it explicitly too (the workflow sandbox has no env access — same reason `today` is threaded in). Read `$HCC_VERIFY_LENSES` from the environment (e.g. `printenv HCC_VERIFY_LENSES`) and set `verifyLenses: true` only when it is one of `1` / `true` / `on` / `yes` (case-insensitive); otherwise `false`. **Default is OFF** — unset / empty / any other value means `false`. When off, the inlined review skips the adversarial correctness/context/severity lenses (a self-review pass) and the dimension reviewer's own severity stands; turn it on to re-enable the three-lens refutation.
      - There is no `reviewScriptPath`: the fan-out review is inlined in `implement-slice.mjs` as the `runReviewSlice()` function (it spawns one `axis-reviewer` agent per pattern), so there is no child workflow to resolve by path.
    - Pair with `TaskUpdate({ taskId, owner: "implement-slice-<slice-#>" })` in the same batched response.
 

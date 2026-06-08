@@ -1083,8 +1083,10 @@
     <strong>Fix loops are uncapped</strong> — each (coverage gate, implement
     re-dispatch, slice review) loops until it reaches confidence to pass (review
     <code>APPROVE</code>, or every task ticked <code>[x]</code>). Aggressive
-    reviewer recall plus the fan-out's adversarial verify keep them convergent:
-    only a finding that survives refutation holds a gate open, and a
+    reviewer recall keeps them convergent; the fan-out's adversarial verify is
+    <strong>opt-in (<code>verifyLenses</code> arg, default OFF)</strong> — when on,
+    only a finding that survives refutation holds a gate open, and when off the
+    dimension reviewer's own severity stands. Either way a
     <code>full</code> review blocks on <code>I:H</code> alone.
     <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
@@ -1102,11 +1104,14 @@
     <strong>both</strong> the pre-implementation coverage gate
     (<code>scope:'test-coverage'</code>) and the post-implementation slice review
     (<code>scope:'production-code'</code>). It isolates each review dimension onto its own
-    <code>axis-reviewer</code> agent and adversarially verifies every finding
-    before it can block — verification batches same-dimension findings (≤10 per
-    agent) through three independent skeptic lenses, so dispatch scales with
-    dimensions × chunks rather than one agent per finding while the cross-lens
-    majority vote stays intact.
+    <code>axis-reviewer</code> agent and — <strong>only when the
+    <code>verifyLenses</code> arg is on (default OFF)</strong> — adversarially
+    verifies every finding before it can block: verification batches
+    same-dimension findings (≤10 per agent) through three independent skeptic
+    lenses, so dispatch scales with dimensions × chunks rather than one agent per
+    finding while the cross-lens majority vote stays intact. With verify off (the
+    default) findings are trusted as the reviewer graded them and this pass is
+    skipped — it is itself a self-review, so it is opt-in.
   </p>
   <p>
     <strong>The new boundary (changed in 0.40):</strong> it <strong>posts the
