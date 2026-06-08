@@ -261,6 +261,21 @@ const PUBLISH = {
   properties: { posted: { type: 'boolean' }, error: { type: ['string', 'null'] } },
   required: ['posted', 'error'],
 }
+// Returned by the resume probe (reviewEntryAction) that runs ONCE before each
+// review loop. `review` = run the fan-out (the default — fresh slice, or a fix
+// already landed since the last verdict). `fix-first` = a standing BLOCK verdict
+// that nothing has been done about, so skip the redundant re-review and dispatch
+// the fix straight away.
+const REVIEW_ENTRY = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action:      { type: 'string', enum: ['review', 'fix-first'] },
+    lastVerdict: { type: ['string', 'null'], enum: ['APPROVE', 'BLOCK', null] },
+    reason:      { type: 'string', description: 'one line citing the commit / comment timestamps compared' },
+  },
+  required: ['action', 'lastVerdict', 'reason'],
+}
 
 // ── Review catalogue + verify lenses ─────────────────────────────────────────
 // One row per pattern-reviewer-* lens. `phase` buckets it into the spec gate vs
@@ -716,6 +731,54 @@ ${body}
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// reviewEntryAction — the resume probe that runs ONCE before a review loop and
+// decides whether to run the (expensive) fan-out review or skip straight to a fix.
+//
+// On a FRESH slice there is no prior verdict → review. But on a RELAUNCH (the
+// reconcile reaper restarted a dead run), the slice may already carry a standing
+// BLOCK verdict that NOTHING has been done about: no commit and no fix-summary
+// comment landed on the branch after it. Re-running the whole fan-out there only
+// reproduces the identical BLOCK and burns the fan-out cost, so we dispatch the fix
+// first and let the next loop iteration re-review the landed fix.
+//
+// A PARTIAL fix that DID land (a commit on origin after the BLOCK) → review: the
+// re-review re-evaluates the CURRENT diff and naturally catches whatever remains
+// undone. Because every setup-worktree.sh hard-resets the worktree to
+// origin/<branch>, the ONLY durable proof a fix landed is a PUSHED commit — a
+// partial-or-complete fix that was never committed+pushed is gone on relaunch, so
+// "no commit after the BLOCK" is the correct trigger to (re)dispatch the fix.
+//   scope        — 'test-coverage' | 'production-code' (for labels/logging)
+//   branch       — the slice branch to inspect for landed commits
+//   reviewHeader — the verdict comment's leading header ('# E2E Coverage Gate' or
+//                  '# Slice Review') used to find the latest verdict
+// Returns { action, lastVerdict, reason }; a missing/garbled probe defaults to the
+// pre-existing behavior (review).
+// ─────────────────────────────────────────────────────────────────────────────
+async function reviewEntryAction(scope, branch, reviewHeader, phaseTitle) {
+  const r = await agent(
+    `Decide how to RESUME the ${scope} review of slice #${SLICE}: re-run the review, or dispatch a fix first. This is a READ-ONLY probe — do NOT edit code, push, run destructive git, or flip labels.
+
+Steps:
+1. Read what has landed on the branch \`${branch}\`:
+   - \`git fetch origin ${branch}\` (ignore failure if the branch is missing — treat as no commits).
+   - Branch tip commit date: \`git log -1 --format=%cI origin/${branch}\`.
+   - Dates of the slice's own commits: \`git log --format=%cI --grep "Refs #${SLICE}" origin/${branch}\`.
+2. Read the issue comments: \`gh issue view ${SLICE} --comments\`. Find the NEWEST comment whose body begins with the header \`${reviewHeader}\` — the latest ${scope} verdict. Parse its verdict from the \`**Verdict:**\` line (APPROVE or BLOCK) and note its timestamp. Set lastVerdict to that verdict, or null if NO such review comment exists.
+3. Decide the action:
+   - No prior \`${reviewHeader}\` comment → action="review" (first pass; nothing reviewed yet).
+   - Newest verdict is APPROVE → action="review" (let the loop re-confirm and break).
+   - Newest verdict is BLOCK → check whether ANYTHING has been done about it since that comment:
+     • a commit on \`origin/${branch}\` authored AFTER the BLOCK comment's timestamp (compare the ISO dates from step 1), OR
+     • a later comment that is a fix / work summary (NOT itself a \`${reviewHeader}\` review comment, and not a halt / need-attention notice).
+     If NEITHER exists → action="fix-first" (the BLOCK stands unaddressed; re-reviewing would only reproduce it). If EITHER exists → action="review" (a fix — possibly partial — landed; re-evaluate the current diff).
+
+Return { action, lastVerdict, reason } where reason is one line citing the timestamps / commit you compared.`,
+    { label: `review-entry:${scope}`, phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
+  )
+  return r ?? { action: 'review', lastVerdict: null, reason: 'resume probe returned nothing — defaulting to review' }
+}
+
 // ── halt(): the only path to a human ────────────────────────────────────────────
 // Flip the slice to status:need-attention (the durable, user-owned halt) and post
 // a diagnostic comment. The outer /loop never recovers this — the user does.
@@ -806,6 +869,18 @@ phase('Coverage gate')
 if (e2eTasks.length && !allE2EAlreadyDone) {
   let stall = []
   let lastSpent = tokensSpent()
+  // Resume optimization: if a prior (dead) run left a standing BLOCK coverage
+  // verdict that nothing has been done about — no e2e-author commit and no fix
+  // comment landed on the branch since — re-gating would only reproduce the same
+  // BLOCK. Dispatch the e2e-author fix first; the loop below then re-gates it.
+  const entry = await reviewEntryAction('test-coverage', prep.sliceBranch, '# E2E Coverage Gate', 'Coverage gate')
+  if (entry.action === 'fix-first') {
+    log(`Coverage gate: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an e2e-author fix before the first gate.`)
+    await agent(
+      `Fix E2E coverage feedback on slice #${SLICE}.`,
+      { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: 'coverage-fix:resume' },
+    )
+  }
   for (let round = 1; ; round++) {
     const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks)
     if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
@@ -978,6 +1053,19 @@ phase('Slice review')
 {
   let stall = []
   let lastSpent = tokensSpent()
+  // Resume optimization (see reviewEntryAction): a relaunch onto a slice that
+  // already carries a standing BLOCK slice-review with no landed fix skips the
+  // redundant re-review and dispatches the engineer fix first; the loop below then
+  // re-reviews. A partial fix that DID land falls through to review, which catches
+  // whatever remains.
+  const entry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Review', 'Slice review')
+  if (entry.action === 'fix-first') {
+    log(`Slice review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
+    await agent(
+      `Fix the review feedback on slice #${SLICE}.`,
+      { agentType: ENGINEER, phase: 'Slice review', label: 'fix:resume' },
+    )
+  }
   for (let round = 1; ; round++) {
     const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch, prep.scopeManifest, prep.tasks)
     if (r?.error) return halt(`slice review could not run: ${r.error}`)

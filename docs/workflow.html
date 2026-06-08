@@ -1094,7 +1094,14 @@
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
     <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
     checklist + the <code>Workflow</code> resume journal. There are no handoff
-    docs.
+    docs. Each review loop also runs a one-shot read-only
+    <code>reviewEntryAction</code> probe before its first review: when the branch
+    already carries a standing <code>BLOCK</code> verdict that nothing landed
+    against — <strong>no commit and no fix-summary comment after it</strong> — it
+    returns <code>fix-first</code>, dispatching the fix straight away instead of
+    re-running the fan-out only to reproduce the same <code>BLOCK</code>. A fix
+    that <em>did</em> land (even a partial commit after the BLOCK) falls through to
+    <code>review</code>, which re-evaluates the current diff and catches the rest.
   </p>
 
   <h3><code>runReviewSlice()</code> — inlined fan-out review</h3>
