@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-frontend-standard
-description: "React frontend bullets: composition-first components, custom hooks, route registration + entry-source reachability (a real inbound path, not just a passing URL-render test) in one slice, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, per-route error boundaries, native a11y elements, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+description: "React frontend bullets: composition-first components, custom hooks, route registration + entry-source reachability (a real inbound path, not just a passing URL-render test) in one slice, render to the surface's `docs/ui-contract/<screen>.yaml` (declared role+accessible-name interface; extend its `states` per slice), route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, per-route error boundaries, native a11y elements, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
 ---
 
 # pattern-engineer-frontend-standard
@@ -40,6 +40,16 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
   - **`external-entry`** page (login, magic-link) → entered via typed URL / email link; exempt from in-app linking. The URL-render test alone suffices.
   - **`redirect-system`** (`/` → home, `*` → 404) → assert the redirect/fallback resolves.
 - Cross-page navigation links (e.g. "Forgot password?" on `/login` + "Back to login" on `/forgot`) ship in the same slice as the page they reference.
+
+### UI interaction contract
+
+The surface's `docs/ui-contract/<screen>.yaml` is the **published source** for the interface your page must expose — the UI analogue of `docs/api-contract/<entity>.yaml`. Render to it; it is what the E2E specs query and what `pattern-reviewer-contract` audits against. (When present — a project without `docs/ui-contract/` falls back to the a11y floor below and the E2E specs as the affordance reference.)
+
+- **Render every declared `region` and `action` with its exact `role` + accessible `name`.** The name comes through visible text, `aria-label`, or a labelled control — exact wording and casing. A `<div onClick>` labelled "Post" where the contract declares a `button` named "Publish" is a conformance failure, not a style nit.
+- **The skeleton is fixed; render to it, don't diverge.** `design-lead` owns `regions`, primary `actions`, and the accessibility baseline. If your page genuinely needs an element the skeleton lacks, surface it as a contract gap (an off-skeleton render is a one-way code→contract finding) — don't invent an off-contract control.
+- **You own the behavioral `states` — extend the contract in THIS slice.** When your slice adds a behavior (a save toast, a validation banner, a redirect), add the matching `states` entry to `docs/ui-contract/<screen>.yaml` in the same commit set, naming the queryable proof: the `status`/`alert` role+name, the `field_errors` message tied to its field, the `redirects_to` route. This is the sanctioned per-slice extension — the reviewer clears the state by your *adding* it, never by an undocumented render. Build the UI to match what you declare.
+- **Honor declared behavioral promises** — `disabled_when` predicates, `combobox`/`radiogroup` `options`, `required` fields — exactly as published.
+- **`data-testid` only where the contract lists it** under `test_ids` (with its reason); everywhere else native role + accessible name is mandatory — the same a11y floor below, now contract-anchored.
 
 ### TanStack Query
 
@@ -112,7 +122,7 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - Visible focus styles required (`:focus-visible`); never `outline: none` without a replacement.
 - Trap focus inside modals; restore to the opener on close.
 - Empty-state copy, loading skeletons, "no results" panels render inside the same semantic landmark (`<main>`) the loaded state would — so Playwright's `getByRole('main').getByRole(...)` queries work.
-- Match the slice's already-authored E2E specs as your **affordance contract**: read them read-only (see the implement-task workflow's context step) and expose the exact accessible names, ARIA roles, and navigation path they query — don't guess the conventions blind. This is interface-matching only (selectors, labels, the click path), not behavior: the Gherkin AC stays the source of *what the UI must do*, and a spec asserting behavior the AC never specified is a divergence to surface at the pass-E2E gate, not something to bake into the UI.
+- The surface's `docs/ui-contract/<screen>.yaml` is your **published affordance source** (see "UI interaction contract" above) — expose the accessible names, roles, and regions it declares. The slice's already-authored E2E specs are the **secondary cross-check**: read them read-only (see the implement-task workflow's context step) and confirm your rendered interface matches the names/roles/click-path they query — and where the project has no UI contract yet, the specs are the affordance reference. This is interface-matching only (selectors, labels, the click path), not behavior: the Gherkin AC stays the source of *what the UI must do*, and a spec asserting behavior the AC never specified is a divergence to surface at the pass-E2E gate, not something to bake into the UI.
 
 ### Responsive
 
