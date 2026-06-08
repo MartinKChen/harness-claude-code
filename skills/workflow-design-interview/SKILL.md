@@ -1,13 +1,13 @@
 ---
 name: workflow-design-interview
-description: "Drive a depth-first design discovery interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and any existing `docs/design-system/`, walk a one-question-per-turn conversation, lock the product's visual language, platform priority, accessibility targets, and a surface + navigation inventory, request approval, then compose a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/workflow-design-interview'."
+description: "Drive a depth-first design discovery interview against a single requirement. Read `docs/product-requirement-document/<feature-name>/requirement.md` and any existing `docs/design-system/`, walk a one-question-per-turn conversation, lock the product's visual language, platform priority, accessibility targets, a surface + navigation inventory, and a per-surface UI interaction contract skeleton (the semantic interface E2E specs drive against), request approval, then compose a dispatch prompt for a separate publisher agent. Writes nothing. Activate on '/workflow-design-interview'."
 ---
 
 # workflow-design-interview
 
 Drive a depth-first design discovery interview against a single requirement. Read the requirement and any existing design system, then walk a one-question-at-a-time conversation with the user until the product's **visual language** and **information architecture** are both locked. Once the user approves, compose a dispatch prompt for the publisher agent that will materialize the artifacts.
 
-This skill **writes nothing** — no `overview.md`, no `tokens.md`, no `components.md`, no `accessibility.md`, no `surfaces.md`, no `CLAUDE.md` edit, no commit. The lock (step 7) and approval request (step 8) are bookkeeping in conversation context only; the artifacts themselves are written downstream by a separate publisher agent (the `doc-writer`, named by the orchestrator at invocation time).
+This skill **writes nothing** — no `overview.md`, no `tokens.md`, no `components.md`, no `accessibility.md`, no `surfaces.md`, no `docs/ui-contract/*.yaml`, no `CLAUDE.md` edit, no commit. The lock (step 7) and approval request (step 8) are bookkeeping in conversation context only; the artifacts themselves are written downstream by a separate publisher agent (the `doc-writer`, named by the orchestrator at invocation time).
 
 `ui-ux-pro-max` is the **toolbox** for this interview, not a replacement: its 50+ styles, 161 palettes, font pairings, UX guidelines, and product-type patterns are the option-space you draw on when presenting visual-language recommendations. Load it before the style / palette / typography / component questions.
 
@@ -123,11 +123,29 @@ Then settle the **global navigation model**:
 
 If any surface has no entry source, surface it to the user and force a decision before moving on. Do not lock an inventory with an orphan in it.
 
+### 6b. Lock the per-surface UI interaction contract skeleton
+
+For **every routed surface** in the inventory from step 6 (and any cross-screen reused component — a shared table, date-picker, etc.), lock the **skeleton** of its UI interaction contract — the publisher materializes one `docs/ui-contract/<screen-slug>.yaml` per surface. This is the UI analogue of the architect's `api-contract`: it declares the stable semantic interface (roles + accessible names + outcome states) the frontend guarantees and the E2E specs drive/assert through, so the E2E author is decoupled from whatever DOM the engineer emits.
+
+For each surface, settle the **skeleton only**:
+
+- `regions` — the landmark roles + accessible names an E2E scopes to (`main` "…", `navigation` "…", `toolbar` "…").
+- `actions` — the **primary** user-actionable elements, each as `role` + accessible `name` (`button` "Publish", `textbox` "Title"), plus any behavioral promise the IA already establishes (`required`, `options`, `disabled_when`).
+- the accessibility baseline carried from step 5 (contrast / focus / target / reduced-motion).
+
+Hold three lines firmly:
+
+- **Declare interface, not coverage or build order.** What gets tested is the slice's Gherkin + `pattern-test-coverage`; when a surface ships is slice ordering. Neither belongs here.
+- **Surface-level complete, element-level only where known.** Every surface gets an entry; populate `actions` only with controls the requirement and critical paths genuinely establish — never invent a control to fill the file. The behavioral `states` block is left to engineers, who extend it per slice as each adds behavior.
+- **Accessible names are the contract.** Names must match the component patterns you're locking; querying by CSS/DOM structure is out of scope by construction.
+
+Don't interview this as a separate ceremony — derive it from the surfaces and components you just locked, and only ask the user where a surface's primary controls are genuinely ambiguous.
+
 ### 7. Request approval to proceed
 
 Once the visual language and the surface/nav inventory are both locked, ask the user — in plain text, not a summary — for explicit approval. Use phrasing along these lines:
 
-> Ready to lock the design system — visual language (overview, tokens, components, accessibility) and the surface + navigation inventory (`docs/design-system/surfaces.md`). Approve?
+> Ready to lock the design system — visual language (overview, tokens, components, accessibility), the surface + navigation inventory (`docs/design-system/surfaces.md`), and the per-surface UI interaction contracts (`docs/ui-contract/*.yaml`). Approve?
 
 Do **NOT** recap the decisions; the user has been in the loop.
 
@@ -145,6 +163,7 @@ Compose **one dispatch prompt** as plain text. It must include:
 - The working directory of the worktree (the orchestrator surfaces this at readiness-signal time — leave it as a `{worktree_path}` placeholder until then).
 - The **locked visual language** — enough content to fill `overview.md` (taste prose, style family, emotional register, color philosophy, typography character, spatial rhythm, motion philosophy, interaction principles), `tokens.md` (every color / font / spacing / radius / shadow / motion token with its name and value), `components.md` (the component patterns and their states), and `accessibility.md` (contrast floor, focus treatment, tap-target minimum, reduced-motion stance).
 - The **surface + navigation inventory** — the full per-surface table from step 6 plus the global navigation model — for `surfaces.md`. Flag whether the system is `extend` (an existing `surfaces.md` is being added to) or `brand new`.
+- The **per-surface UI interaction contract skeletons** from step 6b — for every surface (and reused component), its `regions`, primary `actions` (role + accessible name + any known behavioral promise), and accessibility baseline — one `docs/ui-contract/<screen-slug>.yaml` each. On an `extend`, name only the surfaces newly added in this pass; existing contract files stay untouched.
 - Whether the **`CLAUDE.md` `## Design taste` section** warrants creation/update (a verbose, evocative statement of the visual intent plus machine-greppable reference paths) — and if so, the proposed wording.
 
 **Output and wait.** Surface the dispatch prompt in the same turn, then stop. The orchestrator will invite the writer teammate and message back to confirm it is ready, naming it explicitly (typically `design-writer`) and providing the worktree path.

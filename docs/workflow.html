@@ -651,7 +651,7 @@
         titled <code>feature-lockin</code>.
       </p>
       <ul>
-        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + design system + surface/nav inventory + ADRs + implement-detail + per-entity api-contract / data-model files + runbooks</li>
+        <li><code>/deep-dive-feature</code> — PRD + critical path + glossary + design system + surface/nav inventory + per-surface UI interaction contracts + ADRs + implement-detail + per-entity api-contract / data-model files + runbooks</li>
         <li><code>/scaffold-project</code> — greenfield only; reads the ADRs and brings up a bootable stack, seeding the locked design tokens</li>
       </ul>
     </div>
@@ -797,8 +797,8 @@
       <ul>
         <li>Orchestrator invites <code>design-lead</code> after the requirement is published</li>
         <li>User talks to <code>design-lead</code> directly</li>
-        <li>Locks the visual language + the surface / navigation inventory</li>
-        <li><code>design-writer</code> commits <code>docs/design-system/{overview,tokens,components,accessibility}.md</code> + <code>surfaces.md</code></li>
+        <li>Locks the visual language + the surface / navigation inventory + a per-surface UI interaction contract skeleton (the semantic interface E2E specs drive against)</li>
+        <li><code>design-writer</code> commits <code>docs/design-system/{overview,tokens,components,accessibility}.md</code> + <code>surfaces.md</code> + <code>docs/ui-contract/&lt;screen&gt;.yaml</code></li>
       </ul>
     </div>
     <div class="step">
