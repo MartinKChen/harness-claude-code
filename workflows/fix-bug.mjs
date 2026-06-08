@@ -227,11 +227,11 @@ function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, verdict
   const blocked = verdict === 'BLOCK'
 
   const matrix = [
-    '| Impact \\ Effort | E:L (Low) | E:M (Medium) | E:H (High) |',
-    '|-----------------|-----------|--------------|------------|',
-    `| **I:H** (High)  | ${count('H', 'L')} | ${count('H', 'M')} | ${count('H', 'H')} |`,
-    `| **I:M** (Medium)| ${count('M', 'L')} | ${count('M', 'M')} | ${count('M', 'H')} |`,
-    `| **I:L** (Low)   | ${count('L', 'L')} | ${count('L', 'M')} | ${count('L', 'H')} |`,
+    '| Impact \\ Effort | E:H (High) | E:M (Medium) | E:L (Low) |',
+    '|-----------------|------------|--------------|-----------|',
+    `| **I:H** (High)  | ${count('H', 'H')} | ${count('H', 'M')} | ${count('H', 'L')} |`,
+    `| **I:M** (Medium)| ${count('M', 'H')} | ${count('M', 'M')} | ${count('M', 'L')} |`,
+    `| **I:L** (Low)   | ${count('L', 'H')} | ${count('L', 'M')} | ${count('L', 'L')} |`,
   ].join('\n')
 
   const renderFinding = f => {
