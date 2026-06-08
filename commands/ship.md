@@ -10,14 +10,14 @@ Run one full sweep across the five outer-loop stages, in order, for the whole re
 - **Discovery** is owned by `ship-finder.sh` (read-only, single run, no LLM).
 - **Every state mutation** — reconcile lock releases, the analyze lock + `Agent` dispatch, the kickoff lock + `Workflow` launch, the `fix-pr` `Agent` dispatch, draft → ready promotion, squash-merge — is owned by this command.
 
-The inner cycle is NOT this command's concern. Once kickoff launches a unit's workflow (`implement-slice.mjs` for a feature/enhancement slice, `fix-bug.mjs` for a bug), that one background run owns the whole inner cycle by itself. This command only kicks it off, reaps it if it dies, and handles the PR afterward.
+The inner cycle is NOT this command's concern. Once kickoff launches a unit's workflow (`implement-slice.mjs` for a feature/enhancement/refactor slice, `fix-bug.mjs` for a bug), that one background run owns the whole inner cycle by itself. This command only kicks it off, reaps it if it dies, and handles the PR afterward.
 
 ## Arguments
 
 Exactly zero or one positional argument: an optional `<milestone>`.
 
 - **With `<milestone>`** — scope every stage to that GitHub milestone (the feature flow, plus any enhancements/bugs tagged to it).
-- **Without** — the **repo-wide maintenance lane**: process all open `kind:bug` + `kind:enhancement` (and any milestone-less features) across the repo.
+- **Without** — the **repo-wide maintenance lane**: process all open `kind:bug` + `kind:enhancement` + `kind:refactor` (and any milestone-less features) across the repo.
 
 A named milestone that does not exist is a hard error from `ship-finder.sh` (surface and stop). No argument is NOT an error — it selects repo-wide mode.
 
@@ -114,7 +114,7 @@ For each eligible issue (line format: `- #<n> | kind:<feature|enhancement|bug> |
 2. **TaskCreate** (capture `taskId`). Subject/description name the kind and the workflow being launched.
 3. **`Workflow` + `TaskUpdate(owner)` in the same batched response**, routed by the line's `kind:`:
 
-   - **`kind:feature` or `kind:enhancement`** → `implement-slice.mjs`:
+   - **`kind:feature`, `kind:enhancement`, or `kind:refactor`** → `implement-slice.mjs`:
      - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs`
      - `args`: `{ "slice": <n>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false> }`
      - `TaskUpdate({ taskId, owner: "implement-slice-<n>" })`
@@ -127,7 +127,7 @@ For each eligible issue (line format: `- #<n> | kind:<feature|enhancement|bug> |
 
    Pass `verifyLenses` explicitly too (the workflow sandbox has no env access — same reason `today` is threaded in). Read `$HCC_VERIFY_LENSES` from the environment (e.g. `printenv HCC_VERIFY_LENSES`) and set `verifyLenses: true` only when it is one of `1` / `true` / `on` / `yes` (case-insensitive); otherwise `false`. **Default is OFF** — an unset / empty / any-other value means `false`. When off, the inlined review skips the adversarial correctness/context/severity lenses (a self-review pass) and the dimension reviewer's own severity stands; turn it on to re-enable the three-lens refutation. The workflow runs in the background and notifies on completion; it owns everything internally and either opens a `merge:manual` draft PR + releases the lock on success, or flips `status:in-progress` → `status:need-attention` on halt.
 
-   > **Enhancement prerequisite.** `implement-slice.mjs` resolves the slice branch via `gh issue develop` and reads a `## Tasks` checklist from the body. An enhancement issue must therefore carry a linked branch and a feature-shaped body (see the enhancement issue template) before kickoff routes it — otherwise the workflow halts to `status:need-attention`. Bugs need neither (their branch is created by `fix-bug.mjs` Prep; their spec is the approved analysis comment).
+   > **Enhancement / refactor prerequisite.** `implement-slice.mjs` resolves the slice branch via `gh issue develop` and reads a `## Tasks` checklist from the body. An enhancement **or refactor** issue must therefore carry a linked branch and a tasks checklist before kickoff routes it — otherwise the workflow halts to `status:need-attention`. A **refactor** issue's checklist carries NO `e2e` tasks and NO acceptance criteria (it is behavior-preserving), so `implement-slice`'s Author-E2E / coverage-gate / Pass-E2E phases all no-op; both kinds are created with branch + body already in place (`create-enhancement.sh` / `create-refactor.sh`, run by the review-debt triage or the `/create-enhancement-issue` command). Bugs need neither (their branch is created by `fix-bug.mjs` Prep; their spec is the approved analysis comment).
 
    > **Fallback.** If `Workflow` is unavailable in the running harness, there is no single-agent equivalent for a whole unit cycle. Surface that and stop — do NOT hand-drive the cycle.
 
@@ -201,7 +201,7 @@ A "pass" is everything Steps 0–3 just did. Three triggers fire the next pass; 
 
 - **Reconcile runs first, releases locks, launches nothing.** `clear-analyze` releases a dead analyze (→ no status, re-analyze); `ready-to-implement` releases a dead implement-slice/fix-bug (→ re-kickoff); `clear-fix-pr` releases a dead fix-pr. Released items are NOT eligible for later stages this pass.
 - **The inner unit cycle lives entirely in one Workflow.** This command launches `implement-slice` / `fix-bug` and they do the author/implement/review/fix/PR. The only agents this command dispatches directly are the read-only `analyze-bug` engineer (pre-approval) and the `fix-pr` engineer (external-wait) — both with a paired `TaskCreate`.
-- **Kickoff routes by `kind:`.** feature/enhancement → `implement-slice.mjs` (args `{slice}`); bug → `fix-bug.mjs` (args `{issue}`). Never launch the wrong workflow for a kind.
+- **Kickoff routes by `kind:`.** feature/enhancement/refactor → `implement-slice.mjs` (args `{slice}`); bug → `fix-bug.mjs` (args `{issue}`). Never launch the wrong workflow for a kind.
 - **The bug human gate is the user's, never the command's.** Analyze flips to `status:ready-to-review`; only a human flips it to `status:ready-to-implement`. The command never auto-approves and never blocks the loop waiting.
 - **Milestone is optional.** With one → scoped; without → repo-wide maintenance lane. Pass it (or omit it) identically to `ship-finder.sh` and to the `/loop /ship` backstop prompt.
 - **One `ship-finder.sh` run per pass.** Single shot, no LLM. Do NOT call it per stage or re-call mid-pass.

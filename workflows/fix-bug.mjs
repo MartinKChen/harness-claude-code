@@ -640,35 +640,50 @@ phase('Review')
     )
   }
 
-  // ── Debt triage: file residual non-gating findings as enhancement issues, ONE per
-  // GROUP (group = review dimension). After the one polish pass, leftover code-quality
-  // debt is recorded as `kind:enhancement` issues (created at `status:ready-to-review`
-  // — the human gate, so they do NOT auto-implement) for the /ship maintenance lane,
-  // rather than holding this fix. Grouping by dimension bounds issue/branch sprawl;
-  // each issue's body is a per-finding checklist. Deduped against open enhancements.
+  // ── Debt triage: file residual non-gating findings for the /ship maintenance lane,
+  // ROUTED BY DIMENSION. After the one polish pass, leftover debt is recorded as issues
+  // at `status:ready-to-review` (the human gate — they do NOT auto-implement until a
+  // human flips them to `status:ready-to-implement`), rather than holding this fix:
+  //   • `non-functional` findings → `kind:enhancement` — they add observable behavior, so
+  //     they earn a feature-shaped body with ACs + an e2e task and full E2E coverage.
+  //   • every OTHER non-gating dimension → `kind:refactor` — behavior-preserving, so the
+  //     body is a `## Tasks` checklist of backend/frontend tasks with NO e2e tasks and NO
+  //     ACs (implement-slice then skips all E2E machinery); new tests are unit-only.
+  // One issue per dimension in each bucket, deduped against open issues of that kind.
   const debt = (lastReview?.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
   if (debt.length) {
-    const byDim = new Map()
-    for (const f of debt) {
-      if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
-      byDim.get(f.dimension).push(f)
+    const groupByDim = (arr) => {
+      const m = new Map()
+      for (const f of arr) { if (!m.has(f.dimension)) m.set(f.dimension, []); m.get(f.dimension).push(f) }
+      return m
     }
-    log(`Review: triaging ${debt.length} residual code-quality finding(s) in ${byDim.size} group(s) into enhancement issues.`)
-    const groupBlock = [...byDim.entries()].map(([dim, fs], gi) =>
-      `### Group ${gi + 1} — dimension \`${dim}\` (${fs.length} finding(s))\n` +
+    const render = (m) => [...m.entries()].map(([dim, fs]) =>
+      `### dimension \`${dim}\` (${fs.length} finding(s))\n` +
       fs.map(f => `  - (I:${f.impact}/E:${f.effort}) ${f.title}\n    file: ${f.file}\n    impact: ${f.impactStatement}\n    fix: ${f.fix}`).join('\n'),
     ).join('\n\n')
+    const reDims = groupByDim(debt.filter(f => f.dimension !== 'non-functional'))
+    const nfDims = groupByDim(debt.filter(f => f.dimension === 'non-functional'))
+    log(`Review: triaging debt — ${reDims.size} group(s) → kind:refactor, ${nfDims.size} → kind:enhancement.`)
     await agent(
-      `Triage residual code-quality debt from bug #${ISSUE}'s fix into enhancement issues. The fix's regression / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, GROUPED BY REVIEW DIMENSION. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch the bug's \`status:*\` labels.
+      `Triage residual code-quality debt from bug #${ISSUE}'s fix (branch \`${prep.fixBranch}\`) into tracking issues. The fix's regression / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, grouped by review dimension. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch bug #${ISSUE}'s \`status:*\` labels.
 
-File ONE \`kind:enhancement\` issue PER GROUP below (one group = one review dimension's residual findings) — UNLESS an open enhancement already covers that group:
-1. Dedupe first: list open enhancements with \`gh issue list --label kind:enhancement --state open --limit 100\`. Skip a group an open issue already captures (note each skip).
-2. For a NEW group, author a short body — a one-line **Context** (the dimension + that this is non-blocking debt surfaced by the fix for bug #${ISSUE}, branch \`${prep.fixBranch}\`), a **checklist** with one \`- [ ]\` per finding carrying its \`file:line\` + the fix, then a one-line **Acceptance** (behavior preserved, the smells gone). Write it to \`/tmp/enh-${ISSUE}-<group>.md\`.
-3. Create it: \`bash skills/operation-git/scripts/create-enhancement.sh --title "<dimension> debt from bug #${ISSUE}" --body-file /tmp/enh-${ISSUE}-<group>.md --intent <kebab-intent>\` (intent e.g. \`<dimension>-debt-bug-${ISSUE}\`).
+Create ONE issue per dimension group, deduped FIRST against open issues of the SAME kind (\`gh issue list --label <kind> --state open --limit 100\`; skip a group an open issue already captures and note the skip). Intent = a short kebab slug, e.g. \`<dimension>-debt-bug-${ISSUE}\`.
 
-Groups to triage:
+=== REFACTOR groups -> \`kind:refactor\` (behavior-preserving) ===
+For each group below, write a body to \`/tmp/refactor-${ISSUE}-<dim>.md\` containing:
+  - a one-line **Context** (behavior-preserving \`<dimension>\` debt surfaced by the fix for bug #${ISSUE});
+  - a \`## Tasks\` section — ONE checklist task per finding, in this EXACT shape (NO e2e tasks, NO \`covers:\`, NO \`scenario:\`, NO acceptance criteria):
+      \`- [ ] \\\`be.1\\\` · **backend** · blocked-by: — · "<imperative fix, citing file:line>"\`
+    (use \`fe.N\` · **frontend** for client-side files; number per type starting at 1; infer backend vs frontend from each finding's file path);
+  - a \`## Don't break\` section with one line: "Behavior is preserved — the existing test suite MUST stay green; add unit tests only for any newly-extracted seam."
+Then create it: \`bash skills/operation-git/scripts/create-refactor.sh --title "<dimension> debt from bug #${ISSUE}" --body-file /tmp/refactor-${ISSUE}-<dim>.md --intent <kebab-intent>\`.
 
-${groupBlock}
+${reDims.size ? render(reDims) : '(no refactor groups)'}
+
+=== NON-FUNCTIONAL group -> \`kind:enhancement\` (adds observable behavior) ===
+For the non-functional group below (if any), write a FEATURE-shaped body to \`/tmp/enh-${ISSUE}-non-functional.md\` containing **Context**, **Proposed change**, a \`## Acceptance criteria (EARS)\` section enumerating the new behavior as \`AC1 …\`, and a \`## Tasks\` checklist that INCLUDES an \`e2e.1\` task plus the backend/frontend tasks (same task shape as above, but the e2e task carries its \`covers:\` + \`scenario:\`). Then create it: \`bash skills/operation-git/scripts/create-enhancement.sh --title "<concise title> (bug #${ISSUE})" --body-file /tmp/enh-${ISSUE}-non-functional.md --intent <kebab-intent>\`.
+
+${nfDims.size ? render(nfDims) : '(no non-functional group)'}
 
 Set ok=true if every group was either filed or intentionally skipped (put any per-group failure in error). prNumber=null.`,
       { label: 'triage-debt', phase: 'Review', schema: SIDE_EFFECT, model: AGENT_MODEL },

@@ -1170,10 +1170,15 @@
     <code>qualityPolished</code> flag keeps it to that one cycle (a gating regression
     the polish introduces is converged away by the normal BLOCK path, never
     re-polished). Whatever debt <em>remains</em> after that pass is then
-    <strong>triaged into <code>kind:enhancement</code> issues — one per review
-    dimension</strong> (each issue a per-finding checklist, created at
-    <code>status:ready-to-review</code> — the human gate — and deduped
-    against open enhancements), so the quality debt is recorded for the
+    <strong>triaged into tracking issues — one per review dimension, routed by
+    kind</strong>: <code>non-functional</code> findings → <code>kind:enhancement</code>
+    (they add observable behavior, so they earn a feature-shaped body with ACs + an
+    e2e task and the full E2E/integration treatment); every other dimension →
+    <code>kind:refactor</code> (behavior-preserving — a no-<code>e2e</code>
+    <code>## Tasks</code> checklist, so <code>implement-slice</code> skips all E2E
+    machinery and the only new tests are unit tests for extracted seams). Both are
+    created at <code>status:ready-to-review</code> (the human gate) and deduped
+    against open issues of that kind, so the quality debt is recorded for the
     <code>/ship</code> maintenance lane instead of holding the slice. <code>fix-bug.mjs</code>
     runs the identical polish-cycle + triage tail.
   </p>
@@ -1244,6 +1249,7 @@
       <ul>
         <li><span class="pill kind">kind:feature</span> — per-slice-Workflow lifecycle (<code>implement-slice.mjs</code>)</li>
         <li><span class="pill kind">kind:enhancement</span> — one feature-shaped issue, same <code>implement-slice.mjs</code> cycle, no interview</li>
+        <li><span class="pill kind">kind:refactor</span> — behavior-preserving debt auto-filed by review triage; <code>implement-slice.mjs</code> <em>minus</em> E2E (no-<code>e2e</code> task body)</li>
         <li><span class="pill kind">kind:bug</span> — <code>/ship</code> analyze → human gate → <code>fix-bug.mjs</code></li>
       </ul>
     </div>

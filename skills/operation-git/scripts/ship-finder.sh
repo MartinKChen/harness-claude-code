@@ -12,9 +12,9 @@
 #                / fix-pr runs) across all kinds.
 #   analyze-bug  freshly-filed kind:bug with no status -> dispatch the read-only
 #                analyze engineer (then a human approves its # Bug Analysis).
-#   kickoff      kind:feature|enhancement|bug at status:ready-to-implement, 0
-#                blockers, not locked -> launch the per-unit workflow
-#                (implement-slice for feature/enhancement, fix-bug for bug).
+#   kickoff      kind:feature|enhancement|refactor|bug at status:ready-to-implement,
+#                0 blockers, not locked -> launch the per-unit workflow
+#                (implement-slice for feature/enhancement/refactor, fix-bug for bug).
 #   fix-pr       draft PRs blocked on CI / conflict -> dispatch the fix-pr engineer.
 #   close-pr     mergeable draft PRs -> promote to ready (+ auto-merge merge:auto).
 #

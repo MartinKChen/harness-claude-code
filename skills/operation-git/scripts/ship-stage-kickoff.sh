@@ -2,18 +2,22 @@
 # ship-stage-kickoff.sh
 #
 # Discovery for the /ship kickoff stage: issues ready to launch their per-unit
-# workflow. Lists open `kind:feature` / `kind:enhancement` / `kind:bug` issues
-# that are `status:ready-to-implement`, NOT already `status:in-progress` (the
-# lock), and have zero open `Blocked by` dependencies. Each line carries its
-# `kind:` so the orchestrator routes the launch:
-#   - kind:feature / kind:enhancement -> implement-slice.mjs (args { slice })
-#   - kind:bug                        -> fix-bug.mjs         (args { issue })
+# workflow. Lists open `kind:feature` / `kind:enhancement` / `kind:refactor` /
+# `kind:bug` issues that are `status:ready-to-implement`, NOT already
+# `status:in-progress` (the lock), and have zero open `Blocked by` dependencies.
+# Each line carries its `kind:` so the orchestrator routes the launch:
+#   - kind:feature / kind:enhancement / kind:refactor -> implement-slice.mjs (args { slice })
+#   - kind:bug                                        -> fix-bug.mjs         (args { issue })
 #
 # An enhancement is a single feature-shaped issue with a `## Tasks` checklist, so
-# it runs the identical implement-slice cycle as a feature. A bug carries no
-# `## Tasks` checklist and no `Blocked by` chain; its regression test is written
-# inside fix-bug's Fix phase. The blocker gate is applied uniformly (a bug
-# normally returns 0; a manually-added blocker correctly makes it wait).
+# it runs the identical implement-slice cycle as a feature. A refactor is a
+# behavior-preserving issue whose `## Tasks` checklist carries NO `e2e` tasks and
+# NO acceptance criteria, so implement-slice's Author-E2E / coverage-gate /
+# Pass-E2E phases all no-op — it just plans, refactors (with unit tests), reviews,
+# and opens a PR. A bug carries no `## Tasks` checklist and no `Blocked by` chain;
+# its regression test is written inside fix-bug's Fix phase. The blocker gate is
+# applied uniformly (a bug normally returns 0; a manually-added blocker correctly
+# makes it wait).
 #
 # Read-only — never flips labels, never launches. The orchestrator flips
 # status:ready-to-implement -> status:in-progress and launches the workflow.
@@ -41,7 +45,7 @@ kind_of() {
 }
 
 out="$(bash "$script_dir/list-issues.sh" \
-    --kind kind:feature --kind kind:enhancement --kind kind:bug \
+    --kind kind:feature --kind kind:enhancement --kind kind:refactor --kind kind:bug \
     --label status:ready-to-implement \
     --missing-label status:in-progress \
     ${milestone_args[@]+"${milestone_args[@]}"} \
