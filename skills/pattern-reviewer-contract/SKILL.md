@@ -1,22 +1,23 @@
 ---
 name: pattern-reviewer-contract
-description: "Contract-conformance audit. Every API endpoint matches its api contract at `docs/api-contract/<entity>.yaml` — path, verb, request/response schema, status codes, error envelope, Idempotency-Key + rate-limit policy. Every ORM model matches its data-model contract at `docs/data-model/<entity>.yaml` — table name, columns, constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships. Activate when the diff includes API routes or ORM models AND a sibling contract file exists."
+description: "Contract-conformance audit. Every API endpoint matches its api contract at `docs/api-contract/<entity>.yaml` — path, verb, request/response schema, status codes, error envelope, Idempotency-Key + rate-limit policy. Every ORM model matches its data-model contract at `docs/data-model/<entity>.yaml` — table name, columns, constraint names (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`), relationships. Every routed surface + E2E spec matches its UI contract at `docs/ui-contract/<screen>.yaml` — declared regions, role+accessible-name actions, outcome states; specs query only the declared surface. Activate when the diff includes API routes, ORM models, frontend pages/components, or E2E specs AND a sibling contract file exists."
 ---
 
 # pattern-reviewer-contract
 
-Contract-conformance audit. The api contract (`docs/api-contract/<entity>.yaml`) and data-model contract (`docs/data-model/<entity>.yaml`) are the source of truth for endpoint shape and model shape; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are out of scope here.
+Contract-conformance audit. The api contract (`docs/api-contract/<entity>.yaml`), data-model contract (`docs/data-model/<entity>.yaml`), and UI contract (`docs/ui-contract/<screen>.yaml`) are the source of truth for endpoint shape, model shape, and UI-interaction surface; this skill verifies the implementation matches the contract verbatim. Implementation best practices that aren't in the contract are out of scope here.
 
 ## When to activate
 
 - The dispatched caller is reviewing a `type:backend` task whose touched paths include API route handlers OR ORM model files.
-- The corresponding contract file(s) exist in the worktree under `docs/api-contract/` and/or `docs/data-model/`.
-- A user says "review the endpoints against the contract", "did we honor the api spec", "does the model match the data contract".
+- The dispatched caller is reviewing a `type:frontend` task whose touched paths include routed pages / components, OR a `type:e2e` task whose touched paths include Playwright specs.
+- The corresponding contract file(s) exist in the worktree under `docs/api-contract/`, `docs/data-model/`, and/or `docs/ui-contract/`.
+- A user says "review the endpoints against the contract", "did we honor the api spec", "does the model match the data contract", "does the page match the UI contract".
 
 Do NOT activate when:
 
-- The diff has no API routes and no ORM model changes.
-- The project has no `docs/api-contract/` or `docs/data-model/` directory (no contracts to compare against — surface the absence to the user rather than inventing a verdict).
+- The diff has no API routes, no ORM model changes, no routed pages/components, and no E2E specs.
+- The project has no `docs/api-contract/`, `docs/data-model/`, or `docs/ui-contract/` directory (no contracts to compare against — surface the absence to the user rather than inventing a verdict).
 
 ## Project memory overlay
 
@@ -28,8 +29,9 @@ The contracts are project-level, not feature-scoped. For each entity the diff to
 
 - **API endpoint** at `<router-or-handler>.py` / `<router>.ts` → read `docs/api-contract/<entity>.yaml` for the path + verb + body / status / envelope decisions.
 - **ORM model** at `models/<entity>.py` / `prisma/schema.prisma` → read `docs/data-model/<entity>.yaml` for the table + columns + constraint decisions.
+- **Routed page / component** at `frontend/src/pages/<screen>.tsx` / `frontend/src/components/<component>.tsx`, or an **E2E spec** at `e2e/**/<screen>.spec.ts` → read `docs/ui-contract/<screen>.yaml` for the regions + role+accessible-name actions + outcome states.
 
-If a touched implementation has no matching contract file, that itself is a finding — the contract is owed by the architect; flag and halt the audit for that entity.
+If a touched implementation has no matching contract file, that itself is a finding — the api/data-model contract is owed by the architect, the UI contract by `design-lead` (skeleton); flag and halt the audit for that entity/surface.
 
 ## Iron rules
 
@@ -39,6 +41,7 @@ If a touched implementation has no matching contract file, that itself is a find
 - **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 - **Contract wins.** If the implementation disagrees with the contract, the contract is right — even when the implementation "makes more sense." If the contract is genuinely wrong, the engineer halts and surfaces; do not approve a deviation from the contract.
 - **Fix direction is one-way: code→contract.** A conformance finding is cleared by changing the implementation, NEVER by editing the contract to match the code — an engineer who edits `docs/api-contract/*` or `docs/data-model/*` to clear this finding has violated the gate, not passed it. If YOU believe the contract itself is wrong, that is a separate architect escalation (`status:need-attention` + contract-change request), not a HIGH conformance finding the engineer can close with a YAML edit.
+- **UI-contract exception — the `states` block is engineer-extended by design.** The api/data-model contracts are architect-owned, so code→contract is absolute. The UI contract is a *living* file: `design-lead` owns the **skeleton** (`screen`, `route`, `regions`, primary `actions`, accessibility baseline) — that part is code→contract one-way like the others — but the behavioral **`states`** block is extended **by the engineer, per slice, as the behavior ships** (the sanctioned analogue of a slice adding an operation to an existing api-contract resource). So: when a slice builds a behavior whose outcome state the contract doesn't yet declare, the correct fix is the engineer **adding** that `states` entry to `docs/ui-contract/<screen>.yaml` in the same slice — that is passing the gate, not violating it. Editing the **skeleton** (regions/actions/names) to match divergent code is still a violation. A spec or page that diverges from a *declared* state/region/action is still a one-way code→contract finding.
 - **Contract conformance discharges the backend-owned AC clause — at the backend layer.** A `covers:` clause whose owning layer is backend integration (a contracted status, envelope, field, or constraint) is *discharged* by the endpoint/model conforming to its contract verbatim and proven by an API-level test — never by re-asserting the shape through the UI/E2E. This dimension supplies the per-AC discharge verdict for those clauses; the AC-checkbox tick (the verified gate) is set by the calling review only on a clean APPROVE, and only for ACs no surviving HIGH maps to. The completeness bar is the deletable-code lens, not an AC→test count.
 - **The frontend↔backend contract is its own invariant.** The agreement between the frontend's mock (at `src/lib/api`) and the real endpoint is a distinct invariant the per-layer tests structurally cannot see — the frontend test mocks the shape; the backend test never renders it. A drift (e.g. a `409 OVERLAP` body whose `details.conflicting_session_id` the frontend never models) is a real HIGH gap; pin it with a contract test or a schema-generated client. The single golden-path critical-path walk is far too thin to catch a non-happy-path envelope mismatch.
 - **Audit only what the diff builds; declared-but-unbuilt is out of scope.** Walk only endpoints/models whose handler/model **exists in the diff**. An endpoint or model the contract *declares* but this slice does **not** build — because it falls outside the slice's `## Scope` / `## Tasks` (the Scope Manifest's Allowed surfaces) — is **not** a conformance finding. The api/data-model contracts are project-level and entity-wide, so they routinely declare surfaces a given slice defers to a later slice; absence of a deferred endpoint is a slicing decision, not a contract violation. **Never raise "the contract declares N endpoints but only M are implemented" as a finding, and never demand a stub to satisfy the count.** Conformance is about code that **exists and diverges** from its clause — never about code a later slice will add.
@@ -166,6 +169,45 @@ Both the ORM model (`__table_args__ = (UniqueConstraint(..., name="uq_users_emai
 #### Enums + check expressions (HIGH)
 
 - Contract declares an enum (e.g., `status ∈ {open, pending, closed}`) → migration uses a `CheckConstraint` (or the DB's native `ENUM` type) with the contracted values; flag any drift, missing value, or extra value.
+
+### UI contract conformance
+
+The UI contract (`docs/ui-contract/<screen>.yaml`) is the source of truth for a surface's **interaction interface** — the analogue of the api-contract for the rendered UI. It binds two kinds of diff: the **frontend** that must render the declared interface, and the **E2E spec** that must drive/assert only through it. As with the other contracts, audit only what the diff builds — the skeleton routinely declares actions a later slice wires, and that absence is a slicing decision, not a finding.
+
+#### Region + action presence (HIGH)
+
+For every `regions` / `actions` entry the contract declares **and that this slice builds**, verify the frontend renders it with the contracted **`role` + accessible `name`** — exact wording and casing. A declared `button` named `Publish` must be a real button element exposing that accessible name (visible text, `aria-label`, or labelled control), not a `<div onClick>` or a differently-named control.
+
+```tsx
+// Contract (docs/ui-contract/article-editor.yaml):
+//   actions:
+//     - { role: button, name: Publish, disabled_when: "Title or Body is empty" }
+
+// BAD — not a button role; accessible name "Post" ≠ contract "Publish"
+<div className="btn-primary" onClick={publish}>Post</div>
+
+// GOOD — declared role + accessible name, disabled_when honored
+<button disabled={!title || !body}>Publish</button>
+```
+
+#### Behavioral promises (HIGH)
+
+- `disabled_when` on an action → the control's disabled condition matches the contracted predicate.
+- `options` on a `combobox`/`radiogroup` → exactly the contracted option accessible-names render.
+- `required` on a field → the field is actually required at the boundary.
+
+#### Declared states (HIGH)
+
+For every `states` entry the contract declares **and whose behavior this slice builds**, the surface renders the declared proof — the `status`/`alert` role+name, the `field_errors` message tied to its field, the `redirects_to` navigation. If the slice builds a behavior whose state is **absent** from the contract, the finding is "engineer must extend the `states` block" (see the UI-contract exception in Iron rules) — cleared by adding the entry, not by an off-contract render.
+
+#### Spec queries only the declared surface (HIGH)
+
+For an E2E spec in the diff, every locator and outcome assertion resolves to a contracted entry:
+
+- A `getByRole(role, { name })` whose `role`+`name` the surface's contract doesn't declare → finding (the spec invented a selector, or the frontend owes the element).
+- A `getByTestId(id)` whose `id` the contract doesn't list under `test_ids` → finding; test-id selectors are legal **only** where the contract sanctions one with a reason.
+- An assertion targeting an outcome state the contract's `states` block doesn't declare → finding.
+- A locator anchored to a CSS class / DOM-structure chain instead of the contracted role+name → finding.
 
 ## Constructing the finding
 

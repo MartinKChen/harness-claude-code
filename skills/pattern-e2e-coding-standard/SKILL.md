@@ -1,6 +1,6 @@
 ---
 name: pattern-e2e-coding-standard
-description: "E2E coding standard for data seeding. Contract is iron: when seeding via API (Playwright `request` fixture, raw HTTP), respect `docs/api-contract/<entity>.yaml` — path, verb, status codes, request/response body. When seeding directly to the DB (SQL fixtures, ORM helpers, factory scripts), respect `docs/data-model/<entity>.yaml` — table, column types, constraints, defaults, FKs. Halt on missing/contradictory contracts; never invent shape. Activate on any E2E spec / fixture / seed helper."
+description: "E2E coding standard. Contract is iron on two axes. SEEDING: via API (Playwright `request` fixture, raw HTTP) respect `docs/api-contract/<entity>.yaml` — path, verb, status codes, request/response body; direct-to-DB (SQL fixtures, ORM helpers, factory scripts) respect `docs/data-model/<entity>.yaml` — table, column types, constraints, defaults, FKs. DRIVING/ASSERTING: respect `docs/ui-contract/<screen>.yaml` — query by the declared role + accessible name, scoped to the declared regions, and assert on the declared outcome states. Halt on missing/contradictory contracts; never invent shape or selectors. Activate on any E2E spec / fixture / seed helper."
 ---
 
 # pattern-e2e-coding-standard
@@ -12,6 +12,7 @@ Activate when authoring, extending, or fixing Playwright E2E specs and their sup
 - Editing `.spec.ts` / `.spec.tsx` files under the E2E test root.
 - Editing any fixture, factory, or seed helper used by E2E specs (e.g. `playwright/fixtures/*`, `playwright/seed/*`, `e2e/support/*`).
 - Designing the data shape a test will arrive at — whether via the UI, via the Playwright `request` fixture, or via direct DB seeding.
+- Driving a surface or asserting an outcome through the rendered UI — the locators and outcome assertions are bound by `docs/ui-contract/<screen>.yaml` (see "Drive and assert through the UI interaction contract").
 
 Skip for production code (engineer's lane) and for backend / frontend unit / integration tests inside the service packages.
 
@@ -38,6 +39,16 @@ Rules:
 - **Pick the right contract for the seeding path.** API-level seeding reads `docs/api-contract/`; DB-level seeding reads `docs/data-model/`. Cross-checking is fine (and encouraged when the entity touches both), but the binding contract is the one that matches the wire the seed actually crosses.
 
 This rule overrides any local convention the spec might otherwise inherit. Specs conform to the published contract, never the reverse.
+
+### Drive and assert through the UI interaction contract (non-negotiable)
+
+Where the seeding contract governs the shape of *seeded data*, `docs/ui-contract/<screen>.yaml` governs the *interaction surface* — how the spec drives the page and what outcome it asserts on. It is the UI analogue of `api-contract`: the frontend guarantees the declared semantic interface, and the spec queries/asserts against **that interface**, never against whatever DOM the engineer happened to emit. One file per routed surface (1:1 with `docs/design-system/surfaces.md`), plus reused cross-screen components. This is what makes the selector discipline elsewhere in this skill (`getByRole` over `data-testid`, region scoping) **contract-backed** rather than convention-backed — the contract is the published source the spec conforms to.
+
+- **Query by the contract's declared `role` + accessible `name`, scoped to the declared `regions`.** For every control or region the spec drives or reads, use the role + name the contract publishes (`page.getByRole("main", { name: "Article editor" }).getByRole("button", { name: "Publish" })`). Names are binding exactly as published — casing and wording included — the same way an api-contract field name is.
+- **Assert on the contract's declared `states`.** A spec's outcome assertion targets a state the contract declares — the `status` / `alert` role+name, a `field_errors` message, the `redirects_to` route. The contract's `states` block is the published list of what's assertable on that surface.
+- **Halt and surface on a missing/contradictory contract.** If the surface the spec drives has no `docs/ui-contract/*.yaml`, or its declared interface contradicts what the page renders, stop and surface a diagnostic — identical discipline to a missing api-contract. Do NOT reverse-engineer a selector from the live DOM to keep moving.
+- **No invented roles, names, or states — extension is the owner's job.** If the contract doesn't declare a control, the spec doesn't query it; if it doesn't declare a state, the spec doesn't assert it. When the behavior under test needs an element/state the contract lacks, that's a contract gap (`design-lead` owns the skeleton; the owning slice's engineer extends `states`) — surface it as a question, don't paper over it with an off-contract locator.
+- **`data-testid` only where the contract sanctions it.** A `getByTestId(...)` selector is legal only for an element the contract lists under `test_ids` (with its stated reason). Everywhere else role + accessible name is mandatory — the chrome/region helper rules below inherit this floor.
 
 ### An E2E asserts user-visible state only — never backend internals
 
@@ -116,6 +127,8 @@ When a scenario's outcome lands in an external-service double (mail catcher, que
 
 - **Invented payload fields.** Sending `{ "user_name": ... }` because it "looks right" when the contract says `{ "username": ... }`. → Read the contract; halt if missing.
 - **Invented columns / tables.** `INSERT INTO accounts ...` when the data model only declares `users`. → Read the data model; halt if missing.
+- **Off-contract locator.** Querying by a CSS class / DOM structure, or by a `role`+`name` the surface's `docs/ui-contract/*.yaml` doesn't declare. → Read the UI contract; query the declared role+name; halt (or request a contract extension) if the element isn't there.
+- **Asserting an undeclared state.** Asserting on a toast / banner / redirect the surface's UI contract `states` block doesn't list. → The owning slice must extend the contract's `states` first; surface the gap, don't assert against an undocumented element.
 - **Hard-coded IDs.** Asserting on `id: 1` instead of capturing it from the API response or the insert's returning clause.
 - **Bypassing the API to dodge validation.** Direct DB insert with `status = 'verified'` because the API requires an email round-trip — only acceptable if explicitly documented and necessary; otherwise honor the API flow.
 - **Shared mutable seed data across tests.** Hard-coded email / slug / name that two specs both insert. → Use per-test unique identifiers.

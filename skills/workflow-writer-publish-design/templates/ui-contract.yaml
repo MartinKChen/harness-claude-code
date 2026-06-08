@@ -1,0 +1,69 @@
+# Per-surface UI interaction contract.
+# Repo-wide: one file per routed surface under `docs/ui-contract/`, 1:1 with a row in
+# `docs/design-system/surfaces.md` — plus one file per cross-screen REUSED component
+# (a shared `<DataTable>`, `<DateRangePicker>`, etc.). One-off presentational components
+# do NOT get a file; their screen's accessible names already cover them.
+#
+# What this file IS: the stable SEMANTIC INTERFACE the frontend guarantees and the E2E
+# specs drive/assert through — roles, accessible names, and outcome states. It is the
+# UI analogue of `docs/api-contract/<entity>.yaml` (which decouples backend impl from
+# E2E seeding); this decouples frontend impl from E2E driving/asserting.
+#
+# What this file is NOT: a test plan or a build order. WHAT gets tested is decided by the
+# slice's Gherkin acceptance criteria + `pattern-test-coverage`; WHEN a surface ships is
+# decided by slice ordering. Neither is recorded here.
+#
+# Target path on disk:  docs/ui-contract/<screen-slug>.yaml   (e.g. article-editor.yaml)
+#
+# Authoring split (a living file, two authoring moments):
+#   - `design-lead` authors the SKELETON at design time — `screen`, `route`, `regions`,
+#     primary `actions` (role + accessible name), `accessibility` baseline — for EVERY
+#     surface in `surfaces.md`. Surface-level complete; element detail only where the IA
+#     and critical paths genuinely establish it (never invent a control to fill the file).
+#   - ENGINEERS extend `states` (and add late-discovered actions) PER SLICE, as each slice
+#     adds behavior — the same way a slice extends an existing `api-contract` resource.
+#     Gated against the slice's acceptance criteria + `docs/api-contract/<entity>.yaml`.
+#
+# Iron discipline (mirrors api-contract / data-model): if a spec needs an element not
+# declared here, HALT and extend the contract first — never invent a selector in the test.
+# Query by role + accessible name; CSS- or DOM-structure selectors are a contract violation.
+# Accessible names MUST agree with any sample markup under `docs/design-system/` and the
+# component patterns in `components.md` — the same promise, rendered two ways.
+
+screen: <PascalCaseScreenName>          # e.g. ArticleEditor
+route: <route copied from surfaces.md>  # e.g. /articles/:id/edit  — OMIT for a cross-screen component
+surface_kind: <top-level | detail-child | contextual | external-entry | redirect-system | component>
+owner: design-lead                      # skeleton; `states` extended per slice by engineers
+
+# ── Landmark regions an E2E scopes queries to, or asserts the presence of ──
+regions:
+  - { role: <main | navigation | toolbar | region | search | …>, name: <accessible name> }
+
+# ── User-actionable elements: queried by role + accessible name (never by class/structure) ──
+actions:
+  - role: <button | textbox | combobox | checkbox | radio | link | …>
+    name: <accessible name>             # the accessible name a user (and a screen reader) perceives
+    # Optional behavioral promises the skeleton already knows — omit what isn't yet decided:
+    # required: <true | false>          # form field
+    # options: [<option name>, …]       # combobox / radiogroup choices, by accessible name
+    # disabled_when: <plain-language condition>   # e.g. "Title or Body is empty"
+
+# ── Async / outcome states the E2E asserts on (the assertion surface) ──
+# The skeleton MAY leave this minimal. Engineers ADD an entry per slice as the behavior
+# ships; each state names the queryable proof (role + accessible name) or the navigation
+# it triggers. Common keys: saving / save_succeeded / validation_error / server_error / empty.
+states:
+  # <state-name>:
+  #   indicator:    { role: status, name: <name> }     # transient in-flight signal
+  #   region:       { role: alert,  name: <name> }      # error / success banner
+  #   field_errors: { <Field name>: <message> }         # per-field validation, tied via aria-describedby
+  #   redirects_to: <route>                              # navigation outcome the E2E asserts on
+  #   <action name>: <disabled | hidden | visible>       # element-state promise during this state
+
+# ── Escape hatch: DISCOURAGED. Each entry REQUIRES a reason naming why no accessible role fits. ──
+test_ids:
+  # - { id: <kebab-test-id>, reason: <e.g. "chart canvas — no stable accessible name"> }
+
+# ── Provenance. Stamp with today's date; one line per authoring/extension event. ──
+history:
+  - <YYYY-MM-DD> — Created (skeleton). Reason: <one-line, e.g. "design-lock for <feature-name>">
