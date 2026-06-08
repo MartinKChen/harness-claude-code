@@ -4,11 +4,11 @@
 
 Every finding is scored on **Impact** (what breaks if it ships) × **Effort/Risk** (cost of fixing in this cycle). The matrix below counts findings by cell; the disposition line below it summarises how those cells project onto the engineer's pickup classes.
 
-| Impact \ Effort | E:L (Low) | E:M (Medium) | E:H (High) |
-|-----------------|-----------|--------------|------------|
-| **I:H** (High)  | 0         | 0            | 0          |
-| **I:M** (Medium)| 0         | 0            | 0          |
-| **I:L** (Low)   | 0         | 1            | 0          |
+| Impact \ Effort | E:H (High) | E:M (Medium) | E:L (Low) |
+|-----------------|------------|--------------|-----------|
+| **I:H** (High)  | 0          | 0            | 0         |
+| **I:M** (Medium)| 0          | 0            | 0         |
+| **I:L** (Low)   | 0          | 1            | 0         |
 
 **Fix now:** 0  •  **Deferred:** 1  •  **Nits:** 0
 
@@ -104,11 +104,11 @@ Every finding is scored on **Impact** (what breaks if it ships) × **Effort/Risk
 
   - Fix-class is the deterministic projection of (Impact, Effort):
                           Effort →
-                          E:L     E:M     E:H
+                          E:H     E:M     E:L
       Impact ↓
         I:H              Fix     Fix     Fix
-        I:M              Fix    Defer   Defer
-        I:L              Nit    Drop    Drop
+        I:M              Defer   Defer   Fix
+        I:L              Drop    Drop    Nit
 
     `Drop` findings are suppressed entirely — they never reach the comment. They are the
     finding the reviewer *would* have written under a one-axis severity model and is
