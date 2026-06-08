@@ -23,7 +23,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 - **Pattern selection is touched-path driven.** Layer the conditional patterns the slice diff selects on top of the always-on test-coverage gate (`pattern-test-coverage` catalogue + its `pattern-reviewer-test-coverage` lens); read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select. In a `test-coverage`-scope run the artifact under review is the authored E2E specs (pre-implementation) — the "test files out of scope" rule inverts and only the test-coverage dimension runs.
 - **Aggregate, then post once.** Run every selected pattern to completion, collect every finding, then compose ONE structured comment. Do not stream partial findings.
-- **The verdict line is the agent's, not the patterns'.** Patterns emit raw findings tagged with their per-rule severity; the workflow skill maps each finding onto the 2-axis model — `Impact` (`I:H` / `I:M` / `I:L`, derived mechanically from pattern severity: CRITICAL+HIGH → H, MEDIUM → M, LOW → L) and `Effort/Risk` (`E:L` / `E:M` / `E:H`, the agent's judgement of cost-to-fix-now). The (Impact, Effort) pair projects onto a per-finding `Fix now` / `Defer` / `Nit` / `Drop` class via the matrix in `workflow-reviewer-review-slice`; `Drop` findings are suppressed entirely. **APPROVE / BLOCK is computed from Impact alone — Effort never blocks**: in a `production-code` review any `I:H` survivor → BLOCK; in a `test-coverage` review any confirmed gap → BLOCK; otherwise APPROVE. The per-finding `Fix` / `Defer` / `Nit` class drives the engineer's pickup, not the verdict.
+- **The verdict line is the agent's, not the patterns'.** Patterns emit raw findings tagged with their per-rule severity; the workflow skill maps each finding onto the 2-axis model — `Impact` (`I:H` / `I:M` / `I:L`, derived mechanically from pattern severity: CRITICAL+HIGH → H, MEDIUM → M, LOW → L) and `Effort/Risk` (`E:L` / `E:M` / `E:H`, the agent's judgement of cost-to-fix-now). The (Impact, Effort) pair projects onto a per-finding `Fix now` / `Defer` / `Nit` / `Drop` class via the matrix in `workflow-reviewer-review-slice`; `Drop` findings are suppressed entirely. **APPROVE / BLOCK is computed from Impact + dimension — Effort never blocks**: in a `production-code` review an `I:H` survivor from a **gating** dimension (spec-compliance / contract / security) → BLOCK, while an `I:H` from any other (code-quality) dimension is recorded as deferred debt and does **not** block; in a `test-coverage` review any confirmed gap → BLOCK; otherwise APPROVE. The per-finding `Fix` / `Defer` / `Nit` class drives the engineer's pickup, not the verdict.
 - **The comment is the record; the verdict is the return value.** Findings live as a single structured comment on the slice; the verdict (APPROVE / BLOCK) is reported back to the caller. Flip NO label, open NO PR, close NO issue — the calling `implement-slice` workflow owns the lock, the fix loop, and the terminal draft PR.
 - **One review, one comment, one returned verdict.** Single-shot. Do NOT loop, do NOT re-validate after fixes. The fix loop and re-review are driven by the calling workflow.
 - **Read-only on code.** Never edit files, never push, never run destructive git commands. The one permitted write is `gh issue comment` (the verdict, via the operation-git script). A closed / unreadable slice → halt and surface.
@@ -39,23 +39,23 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 **Conditionally invoked — pattern / principle**
 
-> **Two-pass split.** The patterns below are bucketed by review phase. The slice review walks **Phase 1 (Spec compliance)** patterns first, scores their findings, and only proceeds to **Phase 2 (Code quality)** when no `I:H` spec finding remains. If Phase 1 produces an `I:H` finding, Phase 2 is skipped — the engineer's fix loop is going to rework the implementation anyway, and re-running quality patterns over code that is about to change wastes reviewer context and produces noise. A `test-coverage`-scope run is Phase 1 only (test-coverage over the authored specs); there is no production code for Phase 2.
+> **Two-pass split.** The patterns below are bucketed by review phase. The slice review walks **Phase 1 (Gating — spec compliance + security)** patterns first, scores their findings, and only proceeds to **Phase 2 (Code quality, deferred debt)** when no `I:H` gating finding remains. If Phase 1 produces an `I:H` finding, Phase 2 is skipped — the engineer's fix loop is going to rework the implementation anyway, and re-running the code-quality debt patterns over code that is about to change wastes reviewer context and produces noise. Keeping the gating set small (≤3 patterns) is what lets the fix loop converge without paying for the full debt fan-out each round. A `test-coverage`-scope run is Phase 1 only (test-coverage over the authored specs); there is no production code for Phase 2.
 
-**Phase 1 — Spec compliance (walk first)**
+**Phase 1 — Gating: spec compliance + security (walk first; the only patterns whose `I:H` blocks)**
 
 | Skill | When to invoke |
 |-------|----------------|
 | `pattern-reviewer-contract` | When the slice touches backend or frontend code and a sibling contract file exists under `docs/api-contract/` or `docs/data-model/`. |
+| `pattern-reviewer-security` | When the slice touches backend or frontend code. |
 
 (`pattern-test-coverage` + its `pattern-reviewer-test-coverage` lens always load as part of Phase 1 — both live in the always-on list above and walk every slice review's done criteria against the diff.)
 
-**Phase 2 — Code quality (walk only if Phase 1 has no `I:H` finding)**
+**Phase 2 — Code quality, deferred debt (walk only if Phase 1 has no `I:H` finding; none of these block)**
 
 | Skill | When to invoke |
 |-------|----------------|
 | `pattern-reviewer-coding-standard` | When the slice touches backend or frontend code. |
 | `pattern-reviewer-observability` | When the slice touches backend or frontend code. |
-| `pattern-reviewer-security` | When the slice touches backend or frontend code. |
 | `pattern-reviewer-backend-standard` | When the slice touches backend code. |
 | `pattern-reviewer-database` | When the slice touches backend code that includes ORM models or migrations. |
 | `pattern-reviewer-frontend-standard` | When the slice touches frontend code. |

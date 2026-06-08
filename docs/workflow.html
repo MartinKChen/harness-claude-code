@@ -1087,7 +1087,10 @@
     <strong>opt-in (<code>verifyLenses</code> arg, default OFF)</strong> — when on,
     only a finding that survives refutation holds a gate open, and when off the
     dimension reviewer's own severity stands. Either way a
-    <code>full</code> review blocks on <code>I:H</code> alone.
+    <code>full</code> review blocks only on a <strong>gating-dimension</strong>
+    <code>I:H</code> — spec-compliance, contract, or security — while a high-impact
+    <strong>code-quality</strong> finding is recorded as deferred debt (for a
+    periodic quality sweep) and never blocks the slice.
     <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
     a comment — the only path to a human; the outer loop never recovers it.
@@ -1131,19 +1134,20 @@
   </p>
   <div class="ascii">
 <pre>
-                          ┌─ dedup ─ verify ─┐                ┌─ dedup ─ verify ─┐
- Prep ─► Spec (fan-out) ──┤                  ├─►[ GATE ]─► Quality (fan-out) ──┤                  ├─► compose ─► Publish
-(1–2 ag.)                 └──────────────────┘  skip-P2?                       └──────────────────┘   (code)    (1 agent)
-          pattern-reviewer-* dims              on verified  pattern-reviewer-* dims selected
-          + 3-lens refutation                  I:H spec     by touched surface + refutation
+                              ┌─ dedup ─ verify ─┐                ┌─ dedup ─ verify ─┐
+ Prep ─► Gating (fan-out) ────┤                  ├─►[ GATE ]─► Quality/debt (fan-out) ─┤              ├─► compose ─► Publish
+(≤3 ag.: spec+security)       └──────────────────┘  skip-P2?                            └────────────┘  (code)    (1 agent)
+          gating pattern-reviewer-* dims          on verified  the ~10 debt pattern-reviewer-* dims
+          + 3-lens refutation                     gating I:H   (selected by touched surface) + refutation
 </pre>
   </div>
   <p>
     Each phase fans out, <strong>dedups, then verifies</strong> before the next
     consumes it — so the gate decides on a <em>confirmed</em> blocker, never a raw
     one. Dedup and scoring (<code>severity → Impact</code>, <code>(Impact, Effort)
-    → Fix/Defer/Nit/Drop</code>, <code>full verdict = BLOCK iff any surviving
-    I:H</code>) are plain deterministic JS, not LLM steps. Each dimension agent
+    → Fix/Defer/Nit/Drop</code>, <code>full verdict = BLOCK iff a gating-dimension
+    (spec/contract/security) I:H survives</code> — code-quality <code>I:H</code> is
+    deferred debt) are plain deterministic JS, not LLM steps. Each dimension agent
     reads exactly one <code>pattern-reviewer-*</code> skill <em>and</em> applies
     that skill's per-project <code>.claude/memory/patterns/&lt;skill&gt;.md</code>
     overlay — so dreamed rules reach the fan-out the same way they reach the
@@ -1156,6 +1160,22 @@
     <strong>inverts</strong> (the specs are the deliverable), the verdict is BLOCK
     on <em>any</em> confirmed coverage gap (not just <code>I:H</code>), and Quality
     is skipped entirely.
+  </p>
+  <p>
+    <strong>After the gating APPROVE — one polish cycle, then debt triage.</strong>
+    Because code-quality findings no longer block, the slice doesn't churn on them:
+    on the first gating <code>APPROVE</code> the loop runs <em>exactly one</em>
+    code-quality polish cycle — a single engineer fix over the non-gating
+    (<code>Defer</code> / <code>Nit</code>) findings, then one re-review — and a
+    <code>qualityPolished</code> flag keeps it to that one cycle (a gating regression
+    the polish introduces is converged away by the normal BLOCK path, never
+    re-polished). Whatever debt <em>remains</em> after that pass is then
+    <strong>triaged into <code>kind:enhancement</code> issues — one per review
+    dimension</strong> (each issue a per-finding checklist, created at
+    <code>status:ready-to-review</code> — the human gate — and deduped
+    against open enhancements), so the quality debt is recorded for the
+    <code>/ship</code> maintenance lane instead of holding the slice. <code>fix-bug.mjs</code>
+    runs the identical polish-cycle + triage tail.
   </p>
 
   <h3>Two model tiers</h3>

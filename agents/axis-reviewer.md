@@ -60,8 +60,8 @@ Return the structured findings object the caller's schema defines. For each find
 
 You emit `severity` + `effort`; the workflow — not you — derives the verdict from them, deterministically:
 
-- **`severity` collapses to Impact:** `CRITICAL` and `HIGH` both map to `I:H`, `MEDIUM` → `I:M`, `LOW` → `I:L`. CRITICAL vs HIGH does **not** change gating — both block — so don't agonize over that boundary; the line that matters for blocking is HIGH vs MEDIUM (the I:H ↔ I:M edge).
+- **`severity` collapses to Impact:** `CRITICAL` and `HIGH` both map to `I:H`, `MEDIUM` → `I:M`, `LOW` → `I:L`. CRITICAL vs HIGH does **not** change how your finding is treated — both are `I:H` — so don't agonize over that boundary; the line that matters is HIGH vs MEDIUM (the I:H ↔ I:M edge).
 - **`effort` never blocks.** It only moves a finding between pickup classes (`Fix` / `Defer` / `Nit` / `Drop`) via the (Impact × Effort) projection. A real-but-expensive issue still gets reported; effort decides whether the engineer fixes it now or later, not whether it gates.
-- **Verdict keys off Impact alone:** in a `production-code` run any surviving `I:H` → BLOCK; in a `test-coverage` run any confirmed gap → BLOCK; otherwise APPROVE.
+- **Verdict keys off Impact + dimension:** in a `production-code` run a surviving `I:H` from a **gating** dimension — spec-compliance (`test-coverage`), `contract`, or `security` — → BLOCK; an `I:H` from any other (code-quality) dimension is recorded as **deferred debt** and does **not** block. In a `test-coverage` run any confirmed gap → BLOCK; otherwise APPROVE. You don't apply this gate — keep reporting every genuine finding at its honest severity regardless of dimension; the workflow decides what blocks.
 
 So: set `severity` strictly by the catalogue's bar (a MEDIUM is not a HIGH because it feels important), and set `effort` honestly — that pair is the whole input to a decision you don't make.

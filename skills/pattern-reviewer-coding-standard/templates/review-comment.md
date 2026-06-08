@@ -12,7 +12,7 @@ Every finding is scored on **Impact** (what breaks if it ships) × **Effort/Risk
 
 **Fix now:** 0  •  **Deferred:** 1  •  **Nits:** 0
 
-**Verdict:** <APPROVE or BLOCK — set by the dispatching `reviewer` agent. APPROVE if no `I:H` survives; BLOCK if any `I:H` is reported.>
+**Verdict:** <APPROVE or BLOCK — set by the dispatching `reviewer` agent. BLOCK only on a surviving `I:H` from a gating dimension (spec-compliance / contract / security); a code-quality `I:H` (this catalogue) is deferred debt and does not block. APPROVE otherwise.>
 
 <!--
   Optional — include only when the scope had to fall back:
@@ -114,9 +114,10 @@ Every finding is scored on **Impact** (what breaks if it ships) × **Effort/Risk
     finding the reviewer *would* have written under a one-axis severity model and is
     choosing to suppress because the cost-of-fix dwarfs the impact.
 
-  - The verdict line is the dispatching `reviewer` agent's responsibility — APPROVE if no
-    `I:H` survives, BLOCK if any `I:H` is reported. Effort/Risk never blocks; it only
-    drives the per-finding engineer pickup class.
+  - The verdict line is the dispatching `reviewer` agent's responsibility — BLOCK only on
+    a surviving `I:H` from a gating dimension (spec-compliance / contract / security); a
+    code-quality `I:H` (this catalogue) is deferred debt and does not block, APPROVE
+    otherwise. Effort/Risk never blocks; it only drives the per-finding engineer pickup class.
 
   - Engineer pickup: `workflow-engineer-fix-*` picks up `Fix now` findings only. `Defer`
     is advisory; `Nit` is optional. See those skills for the contract.
