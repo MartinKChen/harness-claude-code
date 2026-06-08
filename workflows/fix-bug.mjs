@@ -1,6 +1,6 @@
 export const meta = {
   name: 'fix-bug',
-  description: 'Drive one approved kind:bug issue through regression-test RED → fix GREEN → refactor → production-code review → open draft PR',
+  description: 'Drive one approved kind:bug issue through regression-test RED → fix GREEN → refactor → production-code review (gating fix loop, then one code-quality polish cycle + debt triage into enhancement issues) → open draft PR',
   whenToUse: 'Launched (background) by the unified implement command kickoff once per eligible kind:bug, after a human approved the `# Bug Analysis` comment and the orchestrator flipped status:ready-to-implement → status:in-progress (the bug lock). Owns the post-approval automatic half: it creates the fix branch, writes the regression test first, drives it green, runs the fan-out review (inlined as runReview()), loops the fix until APPROVE, opens a merge:manual draft PR, and releases the lock. Pass { issue, today }.',
   phases: [
     { title: 'Prep' },
@@ -145,15 +145,28 @@ const REVIEW_ENTRY = {
 }
 
 // ── Review catalogue + verify lenses (production-code scope) ──────────────────
+// `gate: true` marks a SHIP-BLOCKING dimension — a confirmed I:H finding from one of
+// these holds the verdict (BLOCK) and drives the fix loop. The three gating dimensions
+// are the things a draft PR must not silently carry: spec compliance (here, that the
+// regression test actually locks the fix in), contract conformance (don't break
+// consumers), and security (don't ship a hole). Every OTHER dimension is code-quality
+// DEBT: its findings are posted and classified `Defer` (for a periodic whole-codebase
+// quality sweep) but NEVER block the fix — so the loop stops churning on idiom / polish
+// and converges on the trio that genuinely must not ship. See scoreFinding() + the
+// verdict predicate below.
 const DIMENSIONS = [
-  // Phase 1 — spec compliance (always walk first; result drives the gate). For a
-  // bug, test-coverage gates that the regression test actually locks the fix in.
-  { key: 'test-coverage', phase: 'spec', skill: 'pattern-reviewer-test-coverage', extraSkill: 'pattern-test-coverage', applies: () => true },
-  { key: 'contract',      phase: 'spec', skill: 'pattern-reviewer-contract',      applies: s => s.hasContractFiles },
-  // Phase 2 — code quality (walk only if the gate stays open)
+  // Phase 1 — GATING dimensions (spec compliance + security). Always walk first; a
+  // surviving I:H here BLOCKs and SKIPS Phase 2. For a bug, test-coverage gates that
+  // the regression test actually locks the fix in. These are cheap (≤3 dims), so the
+  // fix loop converges WITHOUT paying for the code-quality fan-out each round — the
+  // debt dims run only on the round that clears the gate (and the polish re-review).
+  { key: 'test-coverage', phase: 'spec', gate: true, skill: 'pattern-reviewer-test-coverage', extraSkill: 'pattern-test-coverage', applies: () => true },
+  { key: 'contract',      phase: 'spec', gate: true, skill: 'pattern-reviewer-contract',      applies: s => s.hasContractFiles },
+  { key: 'security',      phase: 'spec', gate: true, skill: 'pattern-reviewer-security',      applies: s => s.backend || s.frontend },
+  // Phase 2 — code-quality DEBT (walk only if the gate stays open). None of these gate;
+  // every finding is deferred-as-debt (posted, classified `Defer`, never blocking).
   { key: 'coding-standard',   phase: 'quality', skill: 'pattern-reviewer-coding-standard',   applies: s => s.backend || s.frontend },
   { key: 'observability',     phase: 'quality', skill: 'pattern-reviewer-observability',     applies: s => s.backend || s.frontend },
-  { key: 'security',          phase: 'quality', skill: 'pattern-reviewer-security',          applies: s => s.backend || s.frontend },
   { key: 'non-functional',    phase: 'quality', skill: 'pattern-reviewer-non-functional',    applies: s => s.backend || s.frontend },
   { key: 'backend-standard',  phase: 'quality', skill: 'pattern-reviewer-backend-standard',  applies: s => s.backend },
   { key: 'database',          phase: 'quality', skill: 'pattern-reviewer-database',          applies: s => s.database },
@@ -164,6 +177,14 @@ const DIMENSIONS = [
   { key: 'typescript',        phase: 'quality', skill: 'pattern-reviewer-typescript',        applies: s => s.typescript },
   { key: 'vite',              phase: 'quality', skill: 'pattern-reviewer-vite',              applies: s => s.vite },
 ]
+
+// Build the gating set from the catalogue above so the policy stays co-located with
+// the rows (no second hardcoded list to drift). A finding is gating if its OWN
+// dimension — or any dimension that also flagged it after dedup — is gating; the
+// alsoFlaggedBy clause keeps a security/contract finding gating even when dedup
+// folded it into a non-gating representative of equal severity.
+const GATING_DIMS = new Set(DIMENSIONS.filter(d => d.gate).map(d => d.key))
+const isGating = f => GATING_DIMS.has(f.dimension) || (f.alsoFlaggedBy || []).some(d => GATING_DIMS.has(d))
 
 // The three adversarial verify lenses — applied ONLY when VERIFY_ENABLED. With
 // verify OFF (default) none of them run: correctness + context are bypassed and
@@ -230,7 +251,13 @@ function dedupeFindings(all) {
 
 function scoreFinding(f) {
   const impact = sevToImpact(f.severity)
-  return { ...f, impact, cls: classify(impact, f.effort) }
+  const gating = isGating(f)
+  // Non-gating findings are code-quality debt: a would-be `Fix` is downgraded to
+  // `Defer` (recorded for the periodic quality sweep) so it never holds the fix.
+  // Defer/Nit/Drop are already non-blocking, so they pass through unchanged.
+  const base = classify(impact, f.effort)
+  const cls = gating ? base : (base === 'Fix' ? 'Defer' : base)
+  return { ...f, impact, gating, cls }
 }
 
 function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, verdict }) {
@@ -268,7 +295,7 @@ function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, verdict
   const specFindings = shown.filter(f => f.reviewPhase === 'spec')
   const qualFindings = shown.filter(f => f.reviewPhase === 'quality')
   const qualBlock = phase2Skipped
-    ? '### Phase 2 — Code quality findings\n\n_Phase 2 (code quality) skipped: Phase 1 produced at least one `I:H` finding. Re-review will run both phases after the engineer fix._'
+    ? '### Phase 2 — Code quality findings\n\n_Phase 2 (code-quality debt) skipped: a gating (spec / contract / security) `I:H` is still open. Re-review will run the debt dimensions once the gate clears._'
     : section('Phase 2 — Code quality findings', qualFindings, 'No code-quality findings.')
 
   return [
@@ -284,9 +311,11 @@ function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, verdict
     '',
     `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
     '',
+    '_Verdict holds on spec-compliance, contract, and security findings only. Any code-quality finding is recorded as **deferred debt** for the periodic quality sweep and never blocks the fix._',
+    '',
     '## Findings',
     '',
-    section('Phase 1 — Spec compliance findings', specFindings, 'No spec-compliance findings.'),
+    section('Phase 1 — Spec & security findings (gating)', specFindings, 'No spec or security findings.'),
     '',
     qualBlock,
   ].filter(s => s !== '').join('\n')
@@ -395,6 +424,9 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
     const specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
     log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
 
+    // A gating (spec + security) I:H means the fix will be reworked — skip the
+    // ~10-dim code-quality debt fan-out this round (it would be wasted work; the debt
+    // dims run only on the round that clears the gate, plus the polish re-review).
     const gateTripped = specConfirmed.some(f => sevToImpact(f.severity) === 'H')
 
     let qualConfirmed = []
@@ -413,11 +445,12 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
     const dedupMerged = specDedup.merged + qualMerged + finalDedup.merged
     const phase2Skipped = gateTripped
 
-    const blocked = confirmed.some(f => f.impact === 'H')
+    const blocked = confirmed.some(f => f.impact === 'H' && f.gating)
     const verdict = blocked ? 'BLOCK' : 'APPROVE'
-    // The I:H survivors that drive the BLOCK — returned so the caller's loop can
-    // fingerprint them across rounds (oscillation guard).
-    const blockers = confirmed.filter(f => f.impact === 'H').map(f => ({ file: f.file, title: f.title }))
+    // The gating I:H survivors that drive the BLOCK — returned so the caller's loop
+    // can fingerprint them across rounds (oscillation guard). A high-impact
+    // code-quality finding is deferred debt, not a blocker.
+    const blockers = confirmed.filter(f => f.impact === 'H' && f.gating).map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
     const body = composeComment(confirmed, { phase2Skipped, scopeNote: rprep.scopeNote, dedupMerged, verdict })
@@ -438,7 +471,10 @@ ${body}
       { label: 'publish', phase: phaseTitle, schema: PUBLISH, model: WRITER_MODEL },
     )
 
-    return { verdict, publishError: publish?.error ?? null, blockers }
+    // `findings` is the full scored, deduped, confirmed list (each carrying `gating`
+    // + `cls`). The caller uses the NON-gating subset for the one-shot quality polish
+    // pass and the debt-triage step; gating findings already drove the verdict.
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -542,12 +578,20 @@ await agent(
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE: Review — runReview() fan-out + engineer fix loop until APPROVE. The
 // test-coverage dimension is what enforces the regression test fails-before /
-// passes-after; full review blocks only on a surviving I:H finding.
+// passes-after; full review blocks only on a surviving GATING-dimension I:H
+// (spec-compliance / contract / security) — code-quality I:H is deferred debt.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Review')
 {
   let stall = []
   let lastSpent = tokensSpent()
+  let lastReview = null
+  // One bounded code-quality polish cycle runs AFTER the gating gate is clean: the
+  // first APPROVE dispatches a single engineer fix over the non-gating (deferred-debt)
+  // findings, then re-reviews once. `qualityPolished` makes it strictly one cycle — a
+  // gating regression introduced by the polish is converged away by the normal BLOCK
+  // path (oscillation guard still applies) without re-polishing.
+  let qualityPolished = false
   // Resume optimization (see reviewEntryAction): a relaunch onto a bug that already
   // carries a standing BLOCK fix-review with no landed fix skips the redundant
   // re-review and dispatches the engineer fix first; the loop below then re-reviews.
@@ -564,20 +608,70 @@ phase('Review')
     const r = await runReview('Review', prep.fixBranch)
     if (r?.error) return halt(`bug-fix review could not run: ${r.error}`)
     if (r?.publishError) return halt(`bug-fix review verdict was not posted to #${ISSUE}: ${r.publishError}`)
+    lastReview = r
     const spent = tokensSpent()
-    log(`Review: round ${round} — ${r.verdict}, ${r.blockers.length} I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    log(`Review: round ${round} — ${r.verdict}, ${r.blockers.length} gating I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
     lastSpent = spent
-    if (r?.verdict === 'APPROVE') break
-    // Oscillation guard: halt if an I:H blocker survives STALL_ROUNDS dedicated
+    if (r?.verdict === 'APPROVE') {
+      // Gating is clean. Run ONE code-quality polish pass over the non-gating
+      // (deferred-debt) findings, then `continue` to re-review exactly once.
+      const debt = (r.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
+      if (!qualityPolished && debt.length) {
+        qualityPolished = true
+        log(`Review: gating APPROVE — one code-quality polish pass over ${debt.length} non-blocking finding(s), then re-review.`)
+        await agent(
+          `Address the code-quality feedback on bug #${ISSUE}. This is the one-shot polish pass AFTER the fix's regression / contract / security gate already APPROVED — fix the non-blocking code-quality findings (the \`Defer\` / \`Nit\` items) in the newest \`# Bug Fix Review\` comment. Production code only, behavior-preserving (existing tests stay green). Whatever you don't get to this pass is fine — it will be triaged into enhancement issues afterward.`,
+          { agentType: ENGINEER, phase: 'Review', label: 'fix:quality-polish' },
+        )
+        continue
+      }
+      break
+    }
+    // Oscillation guard: halt if a gating I:H blocker survives STALL_ROUNDS dedicated
     // engineer fixes — structurally stuck, not slow.
     stall = trackStall(stall, r.blockers)
     const stuck = stuckBlockers(stall)
     if (stuck.length)
-      return halt(`Bug-fix review stalled — ${stuck.length} I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+      return halt(`Bug-fix review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
     log(`Review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
     await agent(
       `Fix the review feedback on bug #${ISSUE}.`,
       { agentType: ENGINEER, phase: 'Review', label: `fix:${round}` },
+    )
+  }
+
+  // ── Debt triage: file residual non-gating findings as enhancement issues, ONE per
+  // GROUP (group = review dimension). After the one polish pass, leftover code-quality
+  // debt is recorded as `kind:enhancement` issues (created at `status:ready-to-review`
+  // — the human gate, so they do NOT auto-implement) for the /ship maintenance lane,
+  // rather than holding this fix. Grouping by dimension bounds issue/branch sprawl;
+  // each issue's body is a per-finding checklist. Deduped against open enhancements.
+  const debt = (lastReview?.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
+  if (debt.length) {
+    const byDim = new Map()
+    for (const f of debt) {
+      if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
+      byDim.get(f.dimension).push(f)
+    }
+    log(`Review: triaging ${debt.length} residual code-quality finding(s) in ${byDim.size} group(s) into enhancement issues.`)
+    const groupBlock = [...byDim.entries()].map(([dim, fs], gi) =>
+      `### Group ${gi + 1} — dimension \`${dim}\` (${fs.length} finding(s))\n` +
+      fs.map(f => `  - (I:${f.impact}/E:${f.effort}) ${f.title}\n    file: ${f.file}\n    impact: ${f.impactStatement}\n    fix: ${f.fix}`).join('\n'),
+    ).join('\n\n')
+    await agent(
+      `Triage residual code-quality debt from bug #${ISSUE}'s fix into enhancement issues. The fix's regression / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, GROUPED BY REVIEW DIMENSION. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch the bug's \`status:*\` labels.
+
+File ONE \`kind:enhancement\` issue PER GROUP below (one group = one review dimension's residual findings) — UNLESS an open enhancement already covers that group:
+1. Dedupe first: list open enhancements with \`gh issue list --label kind:enhancement --state open --limit 100\`. Skip a group an open issue already captures (note each skip).
+2. For a NEW group, author a short body — a one-line **Context** (the dimension + that this is non-blocking debt surfaced by the fix for bug #${ISSUE}, branch \`${prep.fixBranch}\`), a **checklist** with one \`- [ ]\` per finding carrying its \`file:line\` + the fix, then a one-line **Acceptance** (behavior preserved, the smells gone). Write it to \`/tmp/enh-${ISSUE}-<group>.md\`.
+3. Create it: \`bash skills/operation-git/scripts/create-enhancement.sh --title "<dimension> debt from bug #${ISSUE}" --body-file /tmp/enh-${ISSUE}-<group>.md --intent <kebab-intent>\` (intent e.g. \`<dimension>-debt-bug-${ISSUE}\`).
+
+Groups to triage:
+
+${groupBlock}
+
+Set ok=true if every group was either filed or intentionally skipped (put any per-group failure in error). prNumber=null.`,
+      { label: 'triage-debt', phase: 'Review', schema: SIDE_EFFECT, model: AGENT_MODEL },
     )
   }
 }

@@ -71,8 +71,8 @@ Resolve the slice's attached branch, create-or-reuse the slice-scoped worktree o
 
 **In `production-code` scope:** walk the loaded pattern set in **two phases**, bucketed by what the pattern is asking about (the reviewer agent's pattern table labels each row with its phase):
 
-- **Phase 1 — Spec compliance**: the test-coverage gate — `pattern-test-coverage` read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks the slice AC + each task's `scenario:` Gherkin against the diff) — and `pattern-reviewer-contract` (loaded if a sibling contract file exists). These answer *"did this slice build what was asked?"* — missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model. **Judge each task at its owning layer** (per the discharge ledger): a task's `covers:` clause must be discharged at its `type`'s layer under the deletable-code lens, its `scenario:` walked there, and asserted once. A backend invariant (ledger delta, "same tx", "no row created", 4xx/429) is owned by the backend layer and proven by an API-level test — never flagged as "missing E2E coverage"; a "the UI shows…" clause is owned by the frontend layer. The frontend↔backend contract is its own invariant the per-layer tests can't see — a drift there is a real gap.
-- **Phase 2 — Code quality**: every other loaded pattern (coding standard, observability, security, language- and framework-specific patterns, container, database). These answer *"is what was built well-built?"* — quality, security, and maintainability issues regardless of whether the spec was met.
+- **Phase 1 — Gating (spec compliance + security)**: the test-coverage gate — `pattern-test-coverage` read through the `pattern-reviewer-test-coverage` lens (both always loaded; walks the slice AC + each task's `scenario:` Gherkin against the diff) — `pattern-reviewer-contract` (loaded if a sibling contract file exists), and `pattern-reviewer-security` (loaded when the slice touches backend / frontend code). The first two answer *"did this slice build what was asked?"* — missing AC tests, missing scenarios, endpoint paths that don't match the contract, ORM columns that don't match the data model; security answers *"is it safe to ship?"*. **These are the only dimensions whose `I:H` blocks**, so they walk first and cheap. **Judge each task at its owning layer** (per the discharge ledger): a task's `covers:` clause must be discharged at its `type`'s layer under the deletable-code lens, its `scenario:` walked there, and asserted once. A backend invariant (ledger delta, "same tx", "no row created", 4xx/429) is owned by the backend layer and proven by an API-level test — never flagged as "missing E2E coverage"; a "the UI shows…" clause is owned by the frontend layer. The frontend↔backend contract is its own invariant the per-layer tests can't see — a drift there is a real gap.
+- **Phase 2 — Code quality (deferred debt)**: every other loaded pattern (coding standard, observability, non-functional, language- and framework-specific patterns, container, database). These answer *"is what was built well-built?"* — quality and maintainability issues regardless of whether the spec was met. **None of these block** — their findings are recorded as `Defer` / `Nit` debt. Walk them only once Phase 1 has no `I:H` (a gating blocker means the code is about to be reworked, so auditing debt now is churn).
 
 Each pattern emits raw findings as `{title, severity, location, evidence, fix}` records. Tag every Phase 1 finding `phase: spec` and every Phase 2 finding `phase: quality`.
 
@@ -80,7 +80,7 @@ Each pattern emits raw findings as `{title, severity, location, evidence, fix}` 
 
 Walk Phase 1 patterns to completion. Collect their findings. Score each on Impact × Effort/Risk per step 4 below. Then:
 
-- **If any Phase 1 finding scores `I:H` (spec-broken)**: SKIP Phase 2 entirely. Compose the verdict comment with the Phase 1 findings only and a Phase-2-skipped note. The engineer's fix loop will rework the implementation; re-running quality patterns over code that's about to change wastes reviewer context.
+- **If any Phase 1 finding scores `I:H` (a gating spec / contract / security blocker)**: SKIP Phase 2 entirely. Compose the verdict comment with the Phase 1 findings only and a Phase-2-skipped note. The engineer's fix loop will rework the implementation; re-running the code-quality debt patterns over code that's about to change wastes reviewer context.
 - **If no Phase 1 finding scores `I:H`**: proceed to step 3b.
 
 #### 3b. Walk Phase 2 patterns (full scope)
@@ -91,7 +91,7 @@ Walk every loaded Phase 2 pattern to completion. Collect their findings. Score p
 
 - **Impact** is derived mechanically from pattern severity: CRITICAL/HIGH → `I:H`, MEDIUM → `I:M`, LOW → `I:L`.
 - **Effort/Risk** is the reviewer's judgement of cost-to-fix-now: `E:L` (localized, ≲ 30 min), `E:M` (multi-file or new tests), `E:H` (design rework, schema/contract change, or unknown blast radius).
-- **Fix-class** is the deterministic projection: `I:H × any` and `I:M × E:L` → `Fix`; `I:M × E:M/H` and `I:L × E:M/H` → `Defer`; `I:L × E:L` → `Nit`; the rest are `Drop` and never reach the comment.
+- **Fix-class** is the deterministic projection: `I:H × any` and `I:M × E:L` → `Fix`; `I:M × E:M/H` and `I:L × E:M/H` → `Defer`; `I:L × E:L` → `Nit`; the rest are `Drop` and never reach the comment. **A non-gating (code-quality) finding never scores `Fix` — downgrade its would-be `Fix` to `Defer`** so the comment never asks for a fix-now on something that does not block. **Gating dimensions** (the only ones whose `I:H` blocks): spec-compliance (`pattern-reviewer-test-coverage` + `pattern-test-coverage`), contract (`pattern-reviewer-contract`), and security (`pattern-reviewer-security`); every other dimension is deferred debt.
 
 Slice-level findings tend toward higher Effort (cross-task integration fixes often require touching multiple tasks' code or the slice's seams), so expect a heavier `Defer` column.
 
@@ -107,10 +107,10 @@ Compose, in order:
 4. **Phase 2 — Code quality findings** (subhead). Same format. In `test-coverage` scope OR when Phase 2 was skipped per step 3a, replace this section with the matching note (`_Phase 2 (code quality) skipped: coverage scope — no production code yet._` or `_Phase 2 (code quality) skipped: Phase 1 produced at least one I:H finding. Re-review will run both phases after the engineer fix._`). If Phase 2 ran but produced no findings, write `_No code-quality findings._`
 5. **Verdict** line.
 
-Verdict is computed from Impact alone — Effort never blocks:
+Verdict is computed from Impact **and dimension** — Effort never blocks. Only **gating** dimensions hold the verdict: spec-compliance (`pattern-reviewer-test-coverage` + `pattern-test-coverage`), contract (`pattern-reviewer-contract`), and security (`pattern-reviewer-security`). Every other dimension is code-quality debt — posted and classed `Defer` at most, never blocking.
 
-- **APPROVE** — no `I:H` finding remains.
-- **BLOCK** — at least one `I:H` finding. (A Phase-1 `I:H` survivor that triggered the Phase-2 skip is still the BLOCK reason.)
+- **APPROVE** — no `I:H` finding from a gating dimension remains. (A surviving code-quality `I:H` does not block; it is recorded as deferred debt for the periodic quality sweep.)
+- **BLOCK** — at least one gating-dimension `I:H` finding. (A Phase-1 `I:H` survivor that triggered the Phase-2 skip is still the BLOCK reason.)
 
 The downstream engineer / e2e-author pickup uses the per-finding `Fix` / `Defer` / `Nit` class, not the verdict.
 
@@ -138,7 +138,7 @@ If something prevents the review (worktree setup failed, slice branch missing), 
 - **Judge each task at its owning layer.** A `covers:` clause is discharged at its task's `type` layer (backend / frontend / true-E2E) under the deletable-code lens, asserted once. Never demand a backend invariant be proven through E2E, nor a UI clause through a backend test.
 - **Parse the checklist from the slice body** for the implemented set — never list closed sub-issues (there are none; tasks live in the checklist).
 - **Every finding carries `(I:<x>, E:<y>, <class>)`.** Impact is derived mechanically from pattern severity; Effort is the reviewer's judgement; class is the matrix projection onto Fix / Defer / Nit / Drop. `Drop` findings never reach the comment.
-- **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE.
+- **APPROVE / BLOCK is computed from Impact + dimension — Effort never blocks.** A surviving `I:H` from a **gating** dimension (spec-compliance / contract / security) → BLOCK; an `I:H` from any other (code-quality) dimension is deferred debt, not a blocker; otherwise APPROVE.
 - **The Scope Manifest is a hard boundary on what may be `I:H`.** Only a gap mapping to a declared AC / Gherkin / contract clause on a touched surface earns `I:H`. Reviewer-judgement edge breadth (boundary, special-char, stand-in assertions) the spec never names, and any pre-existing gap on a surface this slice did not change, are `I:M`/`I:L` at most — surfaced as advice, never a BLOCK. Block on tests that are *missed for spec'd behavior* and code that *violates its contract*; everything else is a Nit.
 - **`test-coverage` scope inverts the test-files rule.** The authored E2E specs are the deliverable under review in coverage mode — target them, judge them against the slice AC + non-happy-paths, and skip the code-quality phase.
 - **A finding is a class, not a line.** State the violated invariant, sweep the full reviewed surface for every sibling sharing it, and cite them all in one finding with a `Class:` line — never file site A this round and its identical sibling the next. Splitting one class across rounds manufactures avoidable BLOCK cycles and is itself a review defect.

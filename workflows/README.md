@@ -71,7 +71,7 @@ Each phase fans out, **dedups, then verifies** before the next phase consumes it
 
 **Scope `test-coverage`** runs only the Spec-phase `test-coverage` dimension over the **authored E2E specs**, pre-implementation: the usual "test files are out of scope" rule **inverts** (the specs are the deliverable), the verdict is BLOCK on **any** confirmed coverage gap (not just `I:H`), and Quality is skipped.
 
-Scoring (`severity → Impact`, `(Impact, Effort) → Fix/Defer/Nit/Drop`, `full verdict = BLOCK iff any surviving I:H`) is pure JS so it is deterministic rather than re-derived by an LLM each run.
+Scoring (`severity → Impact`, `(Impact, Effort) → Fix/Defer/Nit/Drop`, `full verdict = BLOCK iff a gating-dimension (spec / contract / security) I:H survives` — code-quality `I:H` is deferred debt) is pure JS so it is deterministic rather than re-derived by an LLM each run.
 
 ### The `axis-reviewer` agent
 
