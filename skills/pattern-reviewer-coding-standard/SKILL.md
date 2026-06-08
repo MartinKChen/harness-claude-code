@@ -28,6 +28,7 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - **Read surrounding code.** Open the full file; follow imports; check call sites. If you cannot understand the change without more context, say so.
 - **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are reported but informational. Use the per-pattern severity assigned below. Never inflate to draw attention; never deflate to avoid friction.
 - **Never refer to a finding as `#N`.** GitHub auto-links `#1`, `#2`, … to issues. Use a non-numeric handle: quoted title, `F1` / `F2`, or `Finding 1` / `Finding 2`.
+- **A finding is a class, not a line.** A defect you spot at one `file:line` almost always recurs — the same unguarded mutation, the same broad `WHERE`, the same missing timeout at sibling sites. Before filing, state the violated invariant in one sentence, grep the reviewed surface for every site sharing that structure, and cite them all in ONE finding with a `Class:` line ("applies to `cancel`, `no_show`, and `edit`") plus the directive "resolve all sites sharing this structure, not only the cited line." Filing site A this round and its identical sibling next round manufactures avoidable BLOCK cycles and is itself a review defect.
 - **Match project conventions.** Read `CLAUDE.md` and every ADR in `docs/ADRs/`. A diff that contradicts an active ADR is a finding, not a stylistic call.
 - **Never suggest destructive actions.** If a fix would require `git reset --hard`, `--no-verify`, or rewriting published history, surface the underlying problem.
 
