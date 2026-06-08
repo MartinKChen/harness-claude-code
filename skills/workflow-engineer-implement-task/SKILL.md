@@ -68,11 +68,24 @@ The agent's loaded TDD pattern (acceptance test → RED → GREEN → REFACTOR �
 
 Drive TDD on the slice branch inside the worktree, task by task. Stop a task when its delivery (and the AC / contract / done pointer it serves) is satisfied by a passing test or observable behavior.
 
-### 5. Tick each implemented task's checkbox
+### 5. Class-sweep gate (mandatory before commit)
+
+Each behavior you implement satisfies a class, never a lone line. Satisfying only the one site a test names leaves the sibling sites wrong — the slice review will find them and re-BLOCK.
+
+Before you commit, for each behavior you implemented:
+
+1. **Name the class in one sentence.** State the invariant the behavior really establishes (e.g. "every state-mutating service must reject terminal statuses", "every scoped `UPDATE` must be id-scoped so siblings survive", "every 4xx must rotate the idempotency key").
+2. **Enumerate all sites that share that structure.** Use an explicit search — grep for the symbol/pattern (`_TERMINAL_STATUSES`, `find_conflicting_session`, `rotateOn4xx`, the `WHERE`-clause shape) across the whole slice surface, not just the file you just wrote. List every hit.
+3. **Fix or cover every site in this same round, not just the one you started with.** If a sibling is already correct, add the test that makes it provably correct (deletable-code-proof).
+4. **Stop only when the search returns no uncovered sibling.**
+
+You may not tick a task done until you can answer: "What was the class, what command did I run to find every sibling, and which sites did it return?"
+
+### 6. Tick each implemented task's checkbox
 
 As each named task goes green, flip its checklist box `[ ]` → `[x]` in the slice body (edit via `gh issue edit <n> --body-file`, or the operation-git helper). The checklist is the durable task ledger — within-slice work is serial, so this edit is race-free. Ticking is what lets a fresh dispatch skip the done task on resume.
 
-### 6. Commit per task at the TDD cadence with `Refs` + `Task` trailers
+### 7. Commit per task at the TDD cadence with `Refs` + `Task` trailers
 
 Use the project's Conventional Commits format. Each task is its own commit stream; every commit body ends with:
 
@@ -83,9 +96,11 @@ Task: <static-id>
 
 `<static-id>` is the checklist id the commit advances (e.g. `Task: be.1`). One `Task:` trailer per commit — never bundle two tasks' work behind one trailer. Never use `Closes`.
 
-### 7. Push and post a summary comment
+### 8. Push and post a summary comment
 
 Push the slice branch to `origin`, then post a comment on the slice issue summarizing what was implemented per task (files, the deliveries satisfied) via `bash skills/operation-git/scripts/post-comment.sh <n> <file>`.
+
+Where a task's behavior generalizes across sibling sites, its summary entry MUST carry a `Class sweep:` line: the grep/command you ran, the full list of sibling sites it returned, and the coverage status of each. A summary that shows only the first site touched is incomplete.
 
 The pre-push hooks run the fullstack lint/format/type/test set against the worktree and deny the push on failure. If a hook denies → drop back to step 4 (RED→GREEN→REFACTOR cycle). Never force-push, never skip hooks.
 
@@ -99,6 +114,7 @@ Terminal action. Exit. Do NOT flip any label, do NOT close the slice, do NOT ope
 - **Tick the box you implemented.** The checklist is the durable ledger; an implemented-but-unticked task looks un-done to the next dispatch.
 - **Pull architecture context per-entity on demand — never bulk-load.** Read only the specific entity / ADR files the change actually touches. The same applies to runbooks: when the task requires a documented procedure (dev-environment setup, migrations, a common dev task, or a deploy/enable-prod surface), read the matching `docs/runbooks/{dev,ops}/<procedure>.md` and follow it rather than guessing the steps.
 - **Mirror an already-shipped sibling before inventing shape.** `rg` for an existing endpoint / hook / form that does the same kind of work and match its conventions exactly.
+- **Sweep the class before ticking a task.** A behavior is one instance of a class — grep the slice surface for every sibling sharing its structure, cover each in the same round, and record the sweep (command + sites returned) as a `Class sweep:` line in the summary comment. Satisfying only the first site is a partial implementation the slice review will re-BLOCK on.
 - **Cite file paths with line numbers** (`path/to/file.py:42`) when reporting what changed.
 - **Commit at the TDD cadence.** One commit per RED / GREEN / REFACTOR step (where applicable). Scaffolding goes in discrete `chore(scaffold):` / `build:` commits BEFORE the first RED.
 - **Resume from the checklist + WIP commits.** On a fresh dispatch, skip already-`[x]` tasks and pick up from the first unchecked one; reconcile against prior `Refs #<slice#>` commits on the branch.

@@ -84,9 +84,26 @@ Task: <static-id>
 
 `<static-id>` is the checklist id the fix bears on (e.g. `Task: be.1`). When a finding is genuinely cross-task and maps to no single id, use the slice's lowest-numbered touched id or omit the `Task:` trailer — the `Refs #<slice#>` trailer is the load-bearing one for the fix loop's comment window.
 
-### 6. Push and post a summary comment
+### 6. Class-sweep gate (mandatory before commit)
+
+Run this gate over every finding you addressed in step 5 before you push — any sibling it surfaces gets its own RED → GREEN commit at step 5's cadence.
+
+A review finding names one instance of a class, never a lone defect. Fixing only the cited `file:line` is a failed fix — the reviewer will find the next sibling and re-BLOCK.
+
+Before you commit, for each finding:
+
+1. **Name the class in one sentence.** State the invariant the finding really tests (e.g. "every state-mutating service must reject terminal statuses", "every scoped `UPDATE` must be id-scoped so siblings survive", "every 4xx must rotate the idempotency key").
+2. **Enumerate all sites that share that structure.** Use an explicit search — grep for the symbol/pattern (`_TERMINAL_STATUSES`, `find_conflicting_session`, `rotateOn4xx`, the `WHERE`-clause shape) across the whole slice surface, not just the cited file. List every hit.
+3. **Fix or cover every site in this same round, not just the cited one.** If a sibling is already correct, add the test that makes it provably correct (deletable-code-proof).
+4. **Stop only when the search returns no uncovered sibling.**
+
+You may not mark the finding resolved until you can answer: "What was the class, what command did I run to find every sibling, and which sites did it return?"
+
+### 7. Push and post a summary comment
 
 Push the slice branch to `origin`, then post a comment on the slice issue summarizing the findings addressed and the fixes via `bash skills/operation-git/scripts/post-comment.sh <n> <file>`.
+
+Each resolved finding in the comment MUST carry a `Class sweep:` line: the grep/command you ran, the full list of sibling sites it returned, and the coverage status of each. A fix comment with no sweep evidence is incomplete.
 
 Pre-push hooks gate as usual; a hook failure drops back to step 5. Never force-push, never skip hooks.
 
@@ -102,5 +119,6 @@ Terminal action. Exit. Do NOT flip any label — the calling workflow re-runs th
 - **Resume from the checklist + WIP commits.** Reconcile against already-`[x]` tasks and prior `Refs #<slice#>` commits before re-touching code.
 - **Pick up by the reviewer's `Fix now` class.** Effort is the reviewer's call — do not self-promote a `Defer` back to must-fix without a user directive.
 - **Each Fix-now finding starts with a failing test.** Propagate equivalents via `rg`.
+- **Sweep the class before resolving a finding.** A finding is one instance of a class — grep the slice surface for every sibling sharing its structure, fix or prove each in the same round, and record the sweep (command + sites returned) as a `Class sweep:` line in the summary comment. Fixing only the cited `file:line` is a failed fix the reviewer will re-BLOCK on.
 - **Bail with `status:need-attention`** on unrecoverable blockers. Post a diagnostic comment first.
 - **Truth is in Git, the checklist, and the comment.**

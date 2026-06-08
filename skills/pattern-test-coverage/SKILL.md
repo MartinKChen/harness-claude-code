@@ -123,7 +123,21 @@ E2E test code is itself the implementation; the coverage question is the quality
 - **Assertions** — check user-visible state (text, role, URL), not raw HTTP responses or DOM internals; a `toHaveURL` must pin the exact surface, not a permissive prefix that matches list and detail alike; a required confirmation dialog is asserted visible, not merely handled; a state-*removal* is asserted in code, not left as a comment.
 - **One critical-path flow per spec** — independent flows in one `test()` break failure isolation.
 
+### 8. Strongest-discriminating-assertion (every `type:*`)
+
+An assertion must fail for the most plausible *wrong* implementation, not merely for an absent one. A proxy that any related output satisfies (a category word, a status set, a substring) is not an assertion — it is the assertion-form of the deletable-code miss: the production branch could be wrong and the test stays green. This is the same dynamic as narrowing a regex one degree per round (`/scheduled|session/` → date → date-AND-phrase → word boundaries); write the maximally-discriminating assertion the first time so neither the author nor the gate has anything left to narrow.
+
+Before finalizing each assertion, run the **adversary check** — name one wrong-but-plausible implementation and ask whether it would still pass:
+
+- wrong email template that happens to contain "session" → bind to the template-specific phrase AND the exact session value (both necessary, not `A|B`);
+- balance off by a round number (14 vs 4) → word-boundary-anchor the numeric;
+- sibling row mutated by a broad `WHERE` → assert the sibling's surviving state, not just the target;
+- 422 where the contract says 400 → pin the exact status + error slug (`VALIDATION_FAILED`), never `in (400, 422)`;
+- redirect to `/sessions/{uuid}` instead of the list → anchor the URL to the surface (`/sessions(\?|$)`).
+
+If any named adversary passes, tighten until it can't. Bind to a named observable (exact slug, exact id, exact value) over a category word, and prefer "both A and B must hold" when each alone is insufficient. (This is §5's named-observable rule pushed one step further: §5 says assert the exact artifact, this says make that assertion fail for the nearest wrong artifact too.)
+
 ## Role framing (pointers, not duplication)
 
-- **Engineer (authoring).** Apply this catalogue as the red-phase completeness checklist: for each behavior you grow, before you call it green, walk §1–§7 for the parts that apply and write the test that would fail if the production line were deleted. See `principle-engineer-tdd`.
+- **Engineer (authoring).** Apply this catalogue as the red-phase completeness checklist: for each behavior you grow, before you call it green, walk §1–§8 for the parts that apply and write the test that would fail if the production line were deleted. See `principle-engineer-tdd`.
 - **Reviewer (gating).** Apply this catalogue to find gaps, then grade and report them per `pattern-reviewer-test-coverage` (every coverage gap is HIGH and blocks the gate; cite the AC label + the test file; use the `# Code Review` comment shape).

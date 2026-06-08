@@ -31,6 +31,25 @@ This fallback applies the SAME bound the fan-out path enforces in `agents/axis-r
 
 Every `I:H` (blocking) finding must ground in either a declared AC id or a touched-path catalogue rule on a surface in the diff (for `pattern-reviewer-contract`, a clause violated by code that exists in the diff). A would-be blocker that rests on a prose-inferred AC, a reviewer-judgement edge no spec clause names, or a pre-existing gap on an untouched surface is itself the error — score it `I:M`/`I:L` (Defer/Nit) or drop it; it must never BLOCK.
 
+## File the whole class; don't re-litigate settled work
+
+### A finding is a class, not a line
+
+Every finding you file represents a class of defect, and you own surfacing the whole class in one finding — splitting one class across review rounds manufactures avoidable BLOCK cycles and is itself a review defect.
+
+Before you file a finding:
+
+1. **State the class in one sentence** — the invariant being violated (e.g. "every state-mutating service must reject terminal statuses", "every scoped `UPDATE` must be id-scoped so siblings survive").
+2. **Sweep for siblings yourself** — grep the symbol/structure (`_TERMINAL_STATUSES`, the `WHERE`-clause shape, `rotateOn4xx`) across the full reviewed surface, not just the file you noticed it in.
+3. **Cite every sibling in the single finding** — "applies to cancel, no_show, and edit services" — with one BAD/GOOD per site or one shared example plus the site list. Do not file site A this round and its identical sibling next round.
+4. Every finding carries a `Class:` line and the directive "resolve all sites sharing this structure, not only the cited line."
+
+This is the reviewer half of the same contract the engineer's class-sweep gate enforces (`workflow-engineer-fix-slice` / `-fix-e2e` / `-implement-task`): you hand over the full sibling list, the engineer proves it swept them. Neither alone converges; together a class collapses to one round.
+
+### Don't re-BLOCK settled decisions
+
+Before filing, scan the issue thread for a prior approval covering this exact item — an architect contract-change approval, a scope ruling, or a maintainer "approve" comment. A finding that re-raises an already-approved/escalated decision is a false positive: note the approving comment and drop it. Treat an engineer's contract edit as a violation only if no matching approval exists in the thread.
+
 ## Scope (one skill, two modes)
 
 - **`test-coverage`** — runs pre-implementation, judging the **authored E2E specs** against the slice AC + pattern-mandated non-happy-paths. Run only the Spec-phase dimensions (test-coverage, and contract if a sibling contract exists). Skip the Code-quality phase — there is no production code yet. **Wrinkle:** the dimension prompt's usual "test files are out of scope" rule *inverts* here — the E2E specs ARE the deliverable under review, so coverage mode explicitly targets them.
@@ -122,5 +141,7 @@ If something prevents the review (worktree setup failed, slice branch missing), 
 - **APPROVE / BLOCK is computed from Impact alone — Effort never blocks.** Any `I:H` survivor → BLOCK; otherwise APPROVE.
 - **The Scope Manifest is a hard boundary on what may be `I:H`.** Only a gap mapping to a declared AC / Gherkin / contract clause on a touched surface earns `I:H`. Reviewer-judgement edge breadth (boundary, special-char, stand-in assertions) the spec never names, and any pre-existing gap on a surface this slice did not change, are `I:M`/`I:L` at most — surfaced as advice, never a BLOCK. Block on tests that are *missed for spec'd behavior* and code that *violates its contract*; everything else is a Nit.
 - **`test-coverage` scope inverts the test-files rule.** The authored E2E specs are the deliverable under review in coverage mode — target them, judge them against the slice AC + non-happy-paths, and skip the code-quality phase.
+- **A finding is a class, not a line.** State the violated invariant, sweep the full reviewed surface for every sibling sharing it, and cite them all in one finding with a `Class:` line — never file site A this round and its identical sibling the next. Splitting one class across rounds manufactures avoidable BLOCK cycles and is itself a review defect.
+- **Don't re-BLOCK settled work.** Scan the thread for a prior approval (architect contract-change OK, scope ruling, maintainer "approve") covering the exact item before filing; a finding that re-raises an already-approved decision is a false positive — note the comment and drop it.
 - **The reviewer pattern set is owned by the agent.**
 - **GitHub + the returned verdict are the outputs.** The verdict comment is the only GitHub write; the returned verdict object is the caller's signal.

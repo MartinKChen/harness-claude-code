@@ -67,7 +67,28 @@ tests). If the only way to make a failing spec pass is to edit the spec, that is
 constraint the diagnose step should have caught — surface it (post a diagnostic comment naming the
 spec + assertion, do not invent a production workaround that fights the spec) and stop.
 
-### 3. Commit cadence and trailers
+### 3. Class-sweep gate (mandatory before commit)
+
+A diagnosed E2E failure names one instance of a class, never a lone defect. Driving green only
+the cited site leaves its siblings broken — the next diagnose round re-surfaces them and re-fails
+the slice.
+
+Before you commit, for the group's root cause:
+
+1. **Name the class in one sentence.** State the invariant the failure really tests (e.g. "every
+   state-mutating service must reject terminal statuses", "every scoped `UPDATE` must be id-scoped
+   so siblings survive", "every 4xx must rotate the idempotency key").
+2. **Enumerate all sites that share that structure.** Use an explicit search — grep for the
+   symbol/pattern (`_TERMINAL_STATUSES`, `find_conflicting_session`, `rotateOn4xx`, the
+   `WHERE`-clause shape) across the whole slice surface, not just the cited file. List every hit.
+3. **Fix or cover every site in this same round, not just the cited one.** If a sibling is already
+   correct, add the test that makes it provably correct (deletable-code-proof).
+4. **Stop only when the search returns no uncovered sibling.**
+
+You may not consider the group resolved until you can answer: "What was the class, what command did
+I run to find every sibling, and which sites did it return?"
+
+### 4. Commit cadence and trailers
 
 Every production-code commit uses the project's Conventional Commits format and ends with:
 
@@ -76,11 +97,13 @@ Refs #<slice#>
 ```
 
 Single `Refs` trailer (no `Task:` trailer — this is slice-level production work serving the AC,
-not one checklist task). Run only the targeted unit/integration tests you authored to confirm
-green; **do not boot the stack or run the full E2E suite** — the next diagnose round owns the
-suite re-run.
+not one checklist task). The commit body MUST carry a `Class sweep:` line: the grep/command you
+ran, the full list of sibling sites it returned, and the coverage status of each — a commit that
+fixes the cited site with no sweep evidence is incomplete. Run only the targeted unit/integration
+tests you authored to confirm green; **do not boot the stack or run the full E2E suite** — the next
+diagnose round owns the suite re-run.
 
-### 4. Push and report
+### 5. Push and report
 
 Push the slice branch to `origin` (pre-push hooks gate lint/test/security — drop back into
 RED→GREEN if a hook denies). The terminal signal is the pushed commits; the calling workflow
@@ -94,8 +117,10 @@ re-diagnoses to confirm the group is resolved. Flip no label, open no PR, close 
   already-integrated branch and resume from prior `Refs #<slice#>` WIP commits.
 - **Each fix starts with a failing unit/integration test** that mirrors the E2E symptom. Drive
   RED→GREEN with the minimum change.
-- **Class-of-bug, not one instance.** Propagate to every equivalent site, each its own RED→GREEN;
-  list them in the commit body.
+- **Class-of-bug, not one instance.** Name the class, grep the slice surface for every sibling
+  sharing its structure, and fix or prove each — every site its own RED→GREEN. Record the sweep
+  (command + sites returned) as a `Class sweep:` line in the commit body; a fix with no sweep
+  evidence is incomplete and the next diagnose round will re-fail the siblings.
 - **Never boot or run the full E2E suite.** The diagnose step re-runs it next round — running it
   here would duplicate the boot the split exists to avoid.
 - **Every commit carries `Refs #<slice#>`** (single trailer — slice-level work, no task context).

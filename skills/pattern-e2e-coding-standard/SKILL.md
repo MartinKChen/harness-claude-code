@@ -115,6 +115,20 @@ Rules:
 - **Keep the seed-isolation token lexically disjoint from anything the spec asserts.** Make uniqueness opaque (`entity-${runId}`, `user+${runId}@example.com`); never reuse the scenario keyword as the token. The display name a dropdown renders, and the email the nav renders, must not contain the word your assertion looks for.
 - **Treat the signed-in identity as a permanent page-wide collision source.** On any authed surface the chrome always renders the current user's email / name. Any page-wide `/…@example.com/` (or token-bearing) matcher will hit it — scope, or assert exact + anchored, every time.
 
+### Strongest-discriminating-assertion rule
+
+An assertion must fail for the most plausible *wrong* implementation, not merely for an absent one. A proxy that any related output satisfies (a category word, a status set, a substring) is not an assertion.
+
+Before finalizing each assertion, run the **adversary check** — name one wrong-but-plausible implementation and ask whether it would still pass:
+
+- wrong email template that happens to contain "session" → bind to the template-specific phrase AND the exact session value (both necessary, not `A|B`)
+- balance off by a round number (14 vs 4) → word-boundary-anchor the numeric
+- sibling row mutated by a broad `WHERE` → assert the sibling's surviving state, not just the target
+- 422 where the contract says 400 → pin the exact status + error slug (`VALIDATION_FAILED`), never `in (400, 422)`
+- redirect to `/sessions/{uuid}` instead of the list → anchor the URL to the surface (`/sessions(\?|$)`)
+
+If any named adversary passes, tighten until it can't. Bind to a named observable (exact slug, exact id, exact value) over a category word; prefer "both A and B must hold" when each alone is insufficient. The coverage gate runs this same adversary check — so write the maximally-discriminating assertion the first time and leave the gate nothing to narrow.
+
 ### Asserting against external-service doubles
 
 When a scenario's outcome lands in an external-service double (mail catcher, queue, object store, fake gateway), assert against the double — never assume its behavior:
