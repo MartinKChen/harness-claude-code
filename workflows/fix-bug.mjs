@@ -128,6 +128,21 @@ const PUBLISH = {
   properties: { posted: { type: 'boolean' }, error: { type: ['string', 'null'] } },
   required: ['posted', 'error'],
 }
+// Returned by the resume probe (reviewEntryAction) that runs ONCE before the Review
+// loop. `review` = run the fan-out (the default — fresh fix, or a fix already landed
+// since the last verdict). `fix-first` = a standing BLOCK verdict that nothing has
+// been done about, so skip the redundant re-review and dispatch the fix straight
+// away.
+const REVIEW_ENTRY = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    action:      { type: 'string', enum: ['review', 'fix-first'] },
+    lastVerdict: { type: ['string', 'null'], enum: ['APPROVE', 'BLOCK', null] },
+    reason:      { type: 'string', description: 'one line citing the commit / comment timestamps compared' },
+  },
+  required: ['action', 'lastVerdict', 'reason'],
+}
 
 // ── Review catalogue + verify lenses (production-code scope) ──────────────────
 const DIMENSIONS = [
@@ -429,6 +444,50 @@ ${body}
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// reviewEntryAction — the resume probe that runs ONCE before the Review loop and
+// decides whether to run the (expensive) fan-out review or skip straight to a fix.
+//
+// On a FRESH fix there is no prior verdict → review. But on a RELAUNCH (the
+// reconcile reaper restarted a dead run), the bug may already carry a standing
+// BLOCK verdict that NOTHING has been done about: no commit and no fix-summary
+// comment landed on the fix branch after it. Re-running the whole fan-out there
+// only reproduces the identical BLOCK and burns the fan-out cost, so we dispatch
+// the fix first and let the next loop iteration re-review the landed fix.
+//
+// A PARTIAL fix that DID land (a commit on origin after the BLOCK) → review: the
+// re-review re-evaluates the CURRENT diff and naturally catches whatever remains
+// undone. Because every setup-worktree.sh hard-resets the worktree to
+// origin/<branch>, the ONLY durable proof a fix landed is a PUSHED commit — a
+// partial-or-complete fix that was never committed+pushed is gone on relaunch, so
+// "no commit after the BLOCK" is the correct trigger to (re)dispatch the fix.
+// Returns { action, lastVerdict, reason }; a missing/garbled probe defaults to the
+// pre-existing behavior (review).
+// ─────────────────────────────────────────────────────────────────────────────
+async function reviewEntryAction(phaseTitle, fixBranch) {
+  const r = await agent(
+    `Decide how to RESUME the production-code review of the bug-fix for issue #${ISSUE}: re-run the review, or dispatch a fix first. This is a READ-ONLY probe — do NOT edit code, push, run destructive git, or flip labels.
+
+Steps:
+1. Read what has landed on the fix branch \`${fixBranch}\`:
+   - \`git fetch origin ${fixBranch}\` (ignore failure if the branch is missing — treat as no commits).
+   - Branch tip commit date: \`git log -1 --format=%cI origin/${fixBranch}\`.
+   - Dates of the bug's own commits: \`git log --format=%cI --grep "Refs #${ISSUE}" origin/${fixBranch}\`.
+2. Read the issue comments: \`gh issue view ${ISSUE} --comments\`. Find the NEWEST comment whose body begins with the header \`# Bug Fix Review\` — the latest verdict. Parse its verdict from the \`**Verdict:**\` line (APPROVE or BLOCK) and note its timestamp. Set lastVerdict to that verdict, or null if NO such review comment exists.
+3. Decide the action:
+   - No prior \`# Bug Fix Review\` comment → action="review" (first pass; nothing reviewed yet).
+   - Newest verdict is APPROVE → action="review" (let the loop re-confirm and break).
+   - Newest verdict is BLOCK → check whether ANYTHING has been done about it since that comment:
+     • a commit on \`origin/${fixBranch}\` authored AFTER the BLOCK comment's timestamp (compare the ISO dates from step 1), OR
+     • a later comment that is a fix / work summary (NOT itself a \`# Bug Fix Review\` review comment, and not a halt / need-attention notice).
+     If NEITHER exists → action="fix-first" (the BLOCK stands unaddressed; re-reviewing would only reproduce it). If EITHER exists → action="review" (a fix — possibly partial — landed; re-evaluate the current diff).
+
+Return { action, lastVerdict, reason } where reason is one line citing the timestamps / commit you compared.`,
+    { label: 'review-entry', phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
+  )
+  return r ?? { action: 'review', lastVerdict: null, reason: 'resume probe returned nothing — defaulting to review' }
+}
+
 // ── halt(): the only path to a human ─────────────────────────────────────────
 async function halt(reason) {
   log(`HALT bug #${ISSUE}: ${reason}`)
@@ -489,6 +548,18 @@ phase('Review')
 {
   let stall = []
   let lastSpent = tokensSpent()
+  // Resume optimization (see reviewEntryAction): a relaunch onto a bug that already
+  // carries a standing BLOCK fix-review with no landed fix skips the redundant
+  // re-review and dispatches the engineer fix first; the loop below then re-reviews.
+  // A partial fix that DID land falls through to review, which catches the remainder.
+  const entry = await reviewEntryAction('Review', prep.fixBranch)
+  if (entry.action === 'fix-first') {
+    log(`Review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
+    await agent(
+      `Fix the review feedback on bug #${ISSUE}.`,
+      { agentType: ENGINEER, phase: 'Review', label: 'fix:resume' },
+    )
+  }
   for (let round = 1; ; round++) {
     const r = await runReview('Review', prep.fixBranch)
     if (r?.error) return halt(`bug-fix review could not run: ${r.error}`)
