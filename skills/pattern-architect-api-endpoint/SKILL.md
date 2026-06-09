@@ -1,6 +1,6 @@
 ---
 name: pattern-architect-api-endpoint
-description: "Resource-oriented REST design — the single authority for API endpoint shape decisions (paths, verbs, request / response body, status codes, error envelope, pagination, sorting, filtering, versioning, idempotency policy, rate-limit policy, trailing-slash spelling). Activate when designing, adding, or refactoring an HTTP endpoint, controller, or handler. Every decision lands in the api contract at `docs/api-contract/<entity>.yaml` which engineers implement against and reviewers verify."
+description: "Resource-oriented REST design — the single authority for API endpoint shape decisions (paths, verbs, request / response body, status codes, error envelope, pagination, sorting, filtering, internal-vs-public surface, versioning, idempotency policy, rate-limit policy, trailing-slash spelling). Endpoints are internal-by-default under `/_internal`; public, versioned surface is opt-in per project. Activate when designing, adding, or refactoring an HTTP endpoint, controller, or handler. Every decision lands in the api contract at `docs/api-contract/<entity>.yaml` which engineers implement against and reviewers verify."
 ---
 
 # pattern-architect-api-endpoint
@@ -20,28 +20,31 @@ Do NOT activate for: internal function/method design that is not exposed over HT
 
 ## Pattern
 
-The canonical shape is resource-oriented REST. Frame the endpoint as **`<verb> <resource path>`**, then fill in request/response, errors, list-query params, version, and idempotency.
+The canonical shape is resource-oriented REST. Frame the endpoint as **`<verb> <resource path>`**, then fill in request/response, errors, list-query params, surface (internal/public), and idempotency. **Endpoints are internal by default and served under the `/_internal` prefix with no version segment** — public, versioned surface is opt-in (see Surface & versioning).
 
 ```http
+# Internal surface is the default — under /_internal, no version prefix
+
 # Collection
-GET    /v1/orders                 → 200 list (paginated)
-POST   /v1/orders                 → 201 created (Idempotency-Key supported)
+GET    /_internal/orders                 → 200 list (paginated)
+POST   /_internal/orders                 → 201 created (Idempotency-Key supported)
 
 # Item
-GET    /v1/orders/{order_id}      → 200 | 404
-PATCH  /v1/orders/{order_id}      → 200 | 404 | 409
-DELETE /v1/orders/{order_id}      → 204 | 404
+GET    /_internal/orders/{order_id}      → 200 | 404
+PATCH  /_internal/orders/{order_id}      → 200 | 404 | 409
+DELETE /_internal/orders/{order_id}      → 204 | 404
 
 # Sub-resource (one level of nesting max)
-GET    /v1/orders/{order_id}/items
-POST   /v1/orders/{order_id}/items
+GET    /_internal/orders/{order_id}/items
+POST   /_internal/orders/{order_id}/items
 
 # Action that doesn't fit CRUD — last resort
-POST   /v1/orders/{order_id}:cancel
+POST   /_internal/orders/{order_id}:cancel
 ```
 
 ### URL & verb rules
 
+- **Internal by default, under `/_internal`.** An endpoint is internal unless a project scenario explicitly exposes it to external/third-party consumers. Serve internal paths under the `/_internal` prefix with **no version segment** (`/_internal/orders`). Promoting an endpoint to public surface is a deliberate, opt-in decision — see Surface & versioning.
 - **Resources are plural nouns, kebab-case**: `/order-items`, not `/orderItem` or `/order_item` or `/getOrders`.
 - **No verbs in paths.** The HTTP method is the verb. If an action genuinely doesn't fit CRUD, use a `:action` suffix (`/orders/{id}:cancel`) — and only after trying to model it as a state change via PATCH first.
 - **Verb selection:**
@@ -75,8 +78,8 @@ POST   /v1/orders/{order_id}:cancel
 Let clients ask for only the fields they need via a `fields` query param — saves bandwidth and lets one endpoint serve list-card and detail views.
 
 ```
-GET /v1/orders?fields=id,status,total_amount
-GET /v1/orders/{id}?fields=id,customer,items.sku,items.quantity
+GET /_internal/orders?fields=id,status,total_amount
+GET /_internal/orders/{id}?fields=id,customer,items.sku,items.quantity
 ```
 
 - Comma-separated field names; dot-notation for nested fields.
@@ -135,7 +138,7 @@ A `5xx` response must be **opaque to the client**. Detailed diagnostics stay on 
 
 ### Rate limiting
 
-Every public endpoint is rate-limited. Defaults live at the gateway/middleware layer; expensive endpoints can declare tighter limits.
+Every internet-reachable endpoint is rate-limited — both `/_internal` and public surfaces, since "internal" denotes the ownership/versioning contract, not network isolation. Defaults live at the gateway/middleware layer; expensive endpoints can declare tighter limits.
 
 - **Identity for the limit key**, in priority order: API key → authenticated user/tenant ID → IP address. Anonymous endpoints fall back to IP but should be rare.
 - **Default budgets** (tune per endpoint): read endpoints 600 req/min per user, write endpoints 60 req/min per user, auth/login 10 req/min per IP. Bulk/expensive endpoints (exports, search) get their own bucket.
@@ -150,11 +153,14 @@ Every public endpoint is rate-limited. Defaults live at the gateway/middleware l
 - **On exhaustion → `429 Too Many Requests`** with a `Retry-After: <seconds>` header and the standard error body (`code: "rate_limited"`).
 - Token-bucket or sliding-window — not fixed-window — so a burst at the boundary doesn't double the budget.
 
-### Versioning
+### Surface & versioning
 
-- **URL-prefix versioning**: `/v1/...`, `/v2/...`. Bump the major version only on breaking changes.
+Every endpoint is one of two surfaces. **Internal is the default; public is opt-in per project.**
+
+- **Internal (default) — `/_internal`, unversioned.** Unless a scenario explicitly exposes the endpoint to external/third-party consumers, it is internal. Serve it under `/_internal` with **no version segment** (`/_internal/orders`). You own both client and server, so internal endpoints evolve in lockstep — there is no *version* contract to maintain, and they can be changed or removed in step with their callers. **This does not waive the api contract**: every internal endpoint still gets a `docs/api-contract/<entity>.yaml` entry. The contract is what locks the requirement down and lets backend and frontend build against the same shape — it is the lockstep mechanism, not paperwork you skip because both sides are yours.
+- **Public (opt-in) — versioned.** Promote an endpoint to public only when a project scenario requires external consumers. Public endpoints drop the `/_internal` prefix and gain **URL-prefix versioning**: `/v1/...`, `/v2/...`. Bump the major version only on breaking changes. Enabling public surface is a per-project decision recorded in the contract (and usually an ADR), not a default.
 - **Additive changes (new optional fields, new endpoints, new enum values that clients can ignore) do not bump the version.** Document them in the changelog.
-- **Deprecate, don't delete**: when retiring a v1 endpoint, return a `Deprecation` response header and announce a sunset date before removing it.
+- **Deprecate, don't delete** on public endpoints: when retiring a `/v1` endpoint, return a `Deprecation` response header and announce a sunset date before removing it.
 
 ### Idempotency & safety
 
@@ -170,6 +176,8 @@ Every public endpoint is rate-limited. Defaults live at the gateway/middleware l
 
 Every decision this skill produces lands in **`docs/api-contract/<entity>.yaml`** — one file per API resource. The contract is the single source of truth that engineers implement against and reviewers verify; do NOT decide endpoint shape in code, in commit messages, or in PR descriptions.
 
+**Internal endpoints are not exempt.** The contract is required for every endpoint regardless of surface — it locks the requirement down and serves as the shared reference both backend and frontend build against. The internal/public distinction changes the *path shape* (`/_internal` + unversioned vs. versioned) and the deprecation obligation, never whether a contract exists.
+
 What the contract file declares, per endpoint:
 
 - **Path** (with trailing-slash spelling pinned) + **HTTP verb**.
@@ -181,7 +189,7 @@ What the contract file declares, per endpoint:
 - **Idempotency-Key** policy (required / supported / not applicable).
 - **Rate-limit budget** + the identity key (API key / user / IP).
 - **Concurrency / ETag** policy when stale writes matter.
-- **Versioning + deprecation** notes when relevant.
+- **Surface** — internal (default, under `/_internal`, unversioned) or public (opt-in, versioned) — plus **versioning + deprecation** notes when the surface is public.
 
 Cross-references:
 
