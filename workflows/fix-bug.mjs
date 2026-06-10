@@ -102,10 +102,11 @@ const REVIEW_PREP = {
     ok:           { type: 'boolean', description: 'read-only worktree set up on the fix branch tip' },
     haltReason:   { type: ['string', 'null'] },
     worktreePath: { type: 'string' },
+    headSha:      { type: 'string', description: 'the worktree HEAD commit sha (`git rev-parse HEAD`) — the exact commit this review judges' },
     scopeNote:    { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
     touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified' },
   },
-  required: ['ok', 'haltReason', 'worktreePath', 'scopeNote', 'touchedPaths'],
+  required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths'],
 }
 const SURFACES = {
   type: 'object',
@@ -257,8 +258,16 @@ function scoreFinding(f) {
   // Non-gating findings are code-quality debt: a would-be `Fix` is downgraded to
   // `Defer` (recorded for the periodic quality sweep) so it never holds the fix.
   // Defer/Nit/Drop are already non-blocking, so they pass through unchanged.
+  // GATING findings go the other way: an I:M from a gate axis (spec / contract /
+  // security) is class `Fix` regardless of effort — never `Defer`. Deferring a
+  // gating MEDIUM leaves it in the diff where a later round can re-grade the same
+  // defect HIGH (severity flapping), which reads as a "new" blocker and stops the
+  // fix loop from converging. It still doesn't BLOCK (the verdict keys off I:H
+  // only); it just rides along in every dispatched fix round so it can't flap.
   const base = classify(impact, f.effort)
-  const cls = gating ? base : (base === 'Fix' ? 'Defer' : base)
+  const cls = gating
+    ? (impact === 'M' ? 'Fix' : base)
+    : (base === 'Fix' ? 'Defer' : base)
   return { ...f, impact, gating, cls }
 }
 
@@ -401,10 +410,16 @@ async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx) {
 //                            `# Bug Fix Gate Review`.
 //                'quality' : the code-quality axes only; never blocks (ADVISORY). Posts
 //                            `# Bug Fix Quality Review`.
-// Returns { verdict, publishError, blockers, findings } on success or { error } on
-// infra failure.
+//   roundCtx   — null on the FIRST round of the gate fix↔re-review loop; on every
+//                later round, { reviewedSha, findings } from the PRIOR round.
+//                Rendered as the anchored-re-review block so each dimension agent
+//                (1) closure-checks every prior finding instead of re-sampling the
+//                whole diff, and (2) hunts NEW findings only in the hunks changed
+//                since reviewedSha (see implement-slice for the rationale).
+// Returns { verdict, publishError, blockers, findings, reviewedSha } on success or
+// { error } on infra failure.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReview(phaseTitle, fixBranch, reviewMode = 'gate') {
+async function runReview(phaseTitle, fixBranch, reviewMode = 'gate', roundCtx = null) {
   try {
     const rprep = await agent(
       `You are setting up a READ-ONLY production-code review of the bug-fix branch for issue #${ISSUE}. Do NOT edit, push, or run destructive git. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`).
@@ -412,7 +427,8 @@ async function runReview(phaseTitle, fixBranch, reviewMode = 'gate') {
 Steps:
 1. Set up the read-only worktree on the fix branch \`${fixBranch}\`: \`bash skills/operation-git/scripts/setup-worktree.sh ${fixBranch}\` (NO --merge-main). Capture the printed worktreePath. If it fails, return ok=false with a haltReason.
 2. Compute the touched paths vs origin/main inside the worktree: \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
-3. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
+3. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
+4. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
 
 Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to every downstream dimension agent — make sure it is correct and on the fix branch tip.`,
       { label: 'review-prep', phase: phaseTitle, schema: REVIEW_PREP, model: WRITER_MODEL },
@@ -441,7 +457,21 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
       { label: 'review-surfaces', phase: phaseTitle, schema: SURFACES, model: AGENT_MODEL },
     ) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true }
 
-    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.`
+    // Round anchoring (the convergence fix — see implement-slice): a re-review
+    // round closure-checks the prior findings and scopes NEW findings to the code
+    // changed since the prior round, instead of independently re-sampling the
+    // whole branch diff and surfacing a different defect every round.
+    const anchorBlock = (roundCtx && roundCtx.reviewedSha && (roundCtx.findings?.length ?? 0) > 0) ? `
+
+## Anchored re-review (a prior round of THIS review already ran — this is NOT a fresh sweep)
+The prior round judged commit \`${roundCtx.reviewedSha}\` and reported the findings listed below; a fix has landed since. Your round has exactly TWO jobs:
+1. **Closure-check every prior finding assigned to your dimension**: open its cited file in the worktree and decide fixed vs. still-present. Re-report each STILL-PRESENT finding — keep its original title and file (so it fingerprints as the SAME blocker) and keep its prior severity unless the cited code itself materially changed. Never re-grade unchanged code upward. Do NOT re-report a finding that is fixed.
+2. **Hunt NEW findings ONLY in the code that changed since the prior round**: \`git -C ${rprep.worktreePath} diff ${roundCtx.reviewedSha}..HEAD\` is the new-code scope — the fix itself may have introduced a defect. A finding in a hunk UNCHANGED since \`${roundCtx.reviewedSha}\` that no prior round reported is presumptively sampling noise: report it ONLY if you can prove it is real and I:H, and say explicitly in its impactStatement that it sits on code unchanged since the prior round.
+
+Prior findings to closure-check:
+${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\``).join('\n')}` : ''
+
+    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.${anchorBlock}`
 
     // The gate review and the quality review are now SEPARATE passes (see the Gate
     // review / Quality review phases), so a single runReview call never mixes the two:
@@ -473,9 +503,10 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
       log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
-    const finalDedup = dedupeFindings([...specConfirmed, ...qualConfirmed])
-    const confirmed = finalDedup.kept.map(scoreFinding)
-    const dedupMerged = specMerged + qualMerged + finalDedup.merged
+    // The gate/quality split makes runSpec and runQual mutually exclusive per
+    // call, and each set is already deduped — no cross-set dedup pass is needed.
+    const confirmed = [...specConfirmed, ...qualConfirmed].map(scoreFinding)
+    const dedupMerged = specMerged + qualMerged
 
     // Verdict by reviewMode:
     //   • gate    → BLOCK on a confirmed I:H from a GATING dimension.
@@ -509,8 +540,9 @@ ${body}
     // `findings` is the scored, deduped, confirmed list (each carrying `gating` + `cls`).
     // In 'gate' mode it is the gating findings that drove the verdict; in 'quality' mode
     // it is the code-quality debt the caller feeds to the one polish pass and the
-    // debt-triage step.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed }
+    // debt-triage step. `reviewedSha` is the worktree HEAD this round judged — the
+    // caller threads { reviewedSha, findings } back in as the next round's anchor.
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -636,8 +668,12 @@ phase('Gate review')
       { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
     )
   }
+  // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
+  // re-review closure-checks the priors + scopes new findings to the fix's own
+  // diff instead of independently re-sampling the whole branch (see runReview).
+  let prior = null
   for (let round = 1; ; round++) {
-    const r = await runReview('Gate review', prep.fixBranch, 'gate')
+    const r = await runReview('Gate review', prep.fixBranch, 'gate', prior)
     if (r?.error) return halt(`bug-fix gate review could not run: ${r.error}`)
     if (r?.publishError) return halt(`bug-fix gate review verdict was not posted to #${ISSUE}: ${r.publishError}`)
     const spent = tokensSpent()
@@ -650,9 +686,18 @@ phase('Gate review')
     const stuck = stuckBlockers(stall)
     if (stuck.length)
       return halt(`Bug-fix gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+    // The dispatch inlines every Fix-class gating finding (the workflow already
+    // holds them structurally) so the engineer doesn't have to re-find and re-parse
+    // the verdict comment — and so the gating I:M findings (class Fix, see
+    // scoreFinding) ride along in the same round instead of waiting to flap into a
+    // later-round blocker. The comment stays the source of full detail (BAD/GOOD
+    // snippets).
+    const fixList = (r.findings ?? []).filter(f => f.cls === 'Fix')
+      .map(f => `- [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
     await agent(
-      `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment.`,
+      `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment for full detail. Every finding below is \`Fix\`-class and MUST be addressed this round (gating findings are never deferred):\n${fixList}`,
       { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }
