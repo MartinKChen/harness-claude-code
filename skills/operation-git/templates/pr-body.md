@@ -1,6 +1,6 @@
 # Draft-PR body skeleton
 
-The `implement-slice` Workflow's terminal PR phase fills this in when opening the slice's draft PR after the slice review passes.
+The `implement-slice` Workflow's terminal PR phase fills this in when opening the slice's draft PR after the gate review passes (and the bounded quality review runs).
 
 ```
 Closes #<slice-#>
@@ -11,7 +11,7 @@ Closes #<slice-#>
 
 ## Review verdict
 
-Slice review passed on <YYYY-MM-DD>. See the `# Slice Review` comment on #<slice-#> for finding-level detail.
+Gate review (acceptance / contract / security) passed on <YYYY-MM-DD>. See the `# Slice Gate Review` comment on #<slice-#> for the gating verdict, and the `# Slice Quality Review` comment for code-quality detail.
 
 ## Test plan
 

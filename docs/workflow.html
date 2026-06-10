@@ -556,7 +556,7 @@
       <ul>
         <li>One issue per <strong>slice</strong> only; tasks live as a static-ID <strong>checklist in the slice body</strong>. The retired label families are deleted</li>
         <li><code>task-finder.sh</code> runs <strong>four</strong> stages: reconcile (0), kickoff-launch (1), fix-pr (8), close-pr (9)</li>
-        <li>Stage 1 <strong>launches <code>implement-slice.mjs</code></strong>; that one run owns author E2E → coverage gate → plan → implement → pass E2E → slice review → fix → open draft PR</li>
+        <li>Stage 1 <strong>launches <code>implement-slice.mjs</code></strong>; that one run owns author E2E → coverage gate → plan → implement → pass E2E → gate review → fix → quality review → fix → open draft PR</li>
         <li>Crash recovery is the slice branch's WIP commits + the durable checklist + the Workflow resume journal. Fix loops are uncapped (loop to confidence-to-pass); the budget gate and handoff docs are gone</li>
         <li>Task state is the <code>[ ]</code>/<code>[x]</code> checklist; commit trailers carry <code>Task: &lt;static-id&gt;</code> (not <code>Refs #&lt;task#&gt;</code>)</li>
         <li>the inlined <code>runReviewSlice()</code> fan-out <strong>posts its comment and returns the verdict</strong> — it flips no label and opens no PR; the surrounding <code>implement-slice</code> phases own those</li>
@@ -607,7 +607,7 @@
       <tr>
         <td class="role">slice review contract</td>
         <td>flips <code>review:running</code> → <code>review:passed</code>/<code>need-fix</code> and opens the PR</td>
-        <td>posts the comment and <strong>returns</strong> the verdict; runs per <code>scope</code> (<code>coverage</code> | <code>full</code>); inlined as <code>runReviewSlice()</code>; the surrounding phases own the lock + PR</td>
+        <td>posts the comment and <strong>returns</strong> the verdict; the post-implementation review is split into a <strong>gate review</strong> (<code>reviewMode:'gate'</code>, spec/contract/security, blocks) and a <strong>quality review</strong> (<code>reviewMode:'quality'</code>, code-quality axes, advisory); plus the pre-implementation <code>scope:'test-coverage'</code> gate; inlined as <code>runReviewSlice()</code>; the surrounding phases own the lock + PR</td>
       </tr>
       <tr>
         <td class="role">crash recovery</td>
@@ -1006,7 +1006,7 @@
   └─ Stage 1 LAUNCHES (background, one per slice):
        implement-slice.mjs                ← TOP: owns author → implement → review → fix → PR
           ├─ agent()  e2e-author / engineer          (generative, serial — shared worktree)
-          └─ runReviewSlice(…)  ← inlined fan-out: coverage gate + slice review (one axis-reviewer agent per pattern)
+          └─ runReviewSlice(…)  ← inlined fan-out: coverage gate + gate review + quality review (one axis-reviewer agent per pattern)
                 └─ agent() ×N             (one per pattern-reviewer dimension + adversarial verify)
 </pre>
   </div>
@@ -1068,9 +1068,14 @@
         <td>Each round: one <strong>diagnose</strong> dispatch boots the stack, runs the specs, and categorizes failures into correlated groups; then one <strong>fix</strong> dispatch per group runs <strong>serially</strong> (shared worktree). Loops (uncapped) until a round diagnoses GREEN. A test-case constraint → <code>halt()</code>.</td>
       </tr>
       <tr>
-        <td class="role">Slice review</td>
-        <td class="model">runReviewSlice('production-code')</td>
-        <td>The full two-phase fan-out review, looping to an <code>engineer</code> fix-slice until APPROVE (no round cap). Judges each task at its <strong>owning layer</strong> (a backend invariant is proven at the backend layer, never demanded through E2E) via a per-task discharge ledger; on APPROVE the workflow ticks every <strong>AC</strong> checkbox — the reviewer-gated verified gate (the engineer's task-box tick is only a progress claim).</td>
+        <td class="role">Gate review</td>
+        <td class="model">runReviewSlice('production-code', …, 'gate')</td>
+        <td>The fan-out over the <strong>gating dimensions only</strong> (spec-compliance / contract / security), looping to an <code>engineer</code> fix-slice until APPROVE (no round cap). Judges each task at its <strong>owning layer</strong> (a backend invariant is proven at the backend layer, never demanded through E2E) via a per-task discharge ledger; on APPROVE the workflow ticks every <strong>AC</strong> checkbox — the reviewer-gated verified gate (the engineer's task-box tick is only a progress claim).</td>
+      </tr>
+      <tr>
+        <td class="role">Quality review</td>
+        <td class="model">runReviewSlice('production-code', …, 'quality')</td>
+        <td>The fan-out over the <strong>code-quality axes only</strong> (never blocking). <strong>Bounded, not a loop:</strong> exactly one review/fix cycle (review → one <code>engineer</code> polish pass over the <code>Defer</code>/<code>Nit</code> findings) plus one final re-review, whose residual debt is triaged into <code>kind:refactor</code> / <code>kind:enhancement</code> tracking issues at <code>status:ready-to-review</code>.</td>
       </tr>
       <tr>
         <td class="role">PR</td>
@@ -1080,24 +1085,29 @@
     </tbody>
   </table>
   <p style="margin-top:12px">
-    <strong>Fix loops are uncapped</strong> — each (coverage gate, implement
-    re-dispatch, slice review) loops until it reaches confidence to pass (review
-    <code>APPROVE</code>, or every task ticked <code>[x]</code>). Aggressive
-    reviewer recall keeps them convergent; the fan-out's adversarial verify is
+    <strong>Gating fix loops are uncapped</strong> — coverage gate, implement
+    re-dispatch, and the <strong>gate review</strong> each loop until they reach
+    confidence to pass (review <code>APPROVE</code>, or every task ticked
+    <code>[x]</code>). The <strong>quality review is the exception — bounded to one
+    fix cycle + one re-review, never a loop</strong> (code quality never blocks, so
+    its residual is triaged into tracking issues rather than chased to zero).
+    Aggressive reviewer recall keeps the gating loops convergent; the fan-out's
+    adversarial verify is
     <strong>opt-in (<code>verifyLenses</code> arg, default OFF)</strong> — when on,
     only a finding that survives refutation holds a gate open, and when off the
-    dimension reviewer's own severity stands. Either way a
-    <code>full</code> review blocks only on a <strong>gating-dimension</strong>
-    <code>I:H</code> — spec-compliance, contract, or security — while a high-impact
-    <strong>code-quality</strong> finding is recorded as deferred debt (for a
-    periodic quality sweep) and never blocks the slice.
+    dimension reviewer's own severity stands. Either way the
+    <strong>gate</strong> review blocks only on a <strong>gating-dimension</strong>
+    <code>I:H</code> — spec-compliance, contract, or security — while
+    <strong>code-quality</strong> findings are deferred debt handled by the separate
+    quality review and never block the slice.
     <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
     a comment — the only path to a human; the outer loop never recovers it.
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
     <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
     checklist + the <code>Workflow</code> resume journal. There are no handoff
-    docs. Each review loop also runs a one-shot read-only
+    docs. Each <em>looping</em> review (coverage gate, gate review) also runs a
+    one-shot read-only
     <code>reviewEntryAction</code> probe before its first review: when the branch
     already carries a standing <code>BLOCK</code> verdict that nothing landed
     against — <strong>no commit and no fix-summary comment after it</strong> — it
@@ -1111,9 +1121,11 @@
   <p>
     A function inside <code>implement-slice.mjs</code> (was a separate
     <code>review-slice.mjs</code> child workflow before this change), called for
-    <strong>both</strong> the pre-implementation coverage gate
-    (<code>scope:'test-coverage'</code>) and the post-implementation slice review
-    (<code>scope:'production-code'</code>). It isolates each review dimension onto its own
+    the pre-implementation coverage gate
+    (<code>scope:'test-coverage'</code>) and the <strong>two</strong>
+    post-implementation review stages (<code>scope:'production-code'</code>,
+    switched by <code>reviewMode</code>: <code>'gate'</code> runs the gating
+    dimensions, <code>'quality'</code> runs the code-quality axes). It isolates each review dimension onto its own
     <code>axis-reviewer</code> agent and — <strong>only when the
     <code>verifyLenses</code> arg is on (default OFF)</strong> — adversarially
     verifies every finding before it can block: verification batches
@@ -1134,20 +1146,20 @@
   </p>
   <div class="ascii">
 <pre>
-                              ┌─ dedup ─ verify ─┐                ┌─ dedup ─ verify ─┐
- Prep ─► Gating (fan-out) ────┤                  ├─►[ GATE ]─► Quality/debt (fan-out) ─┤              ├─► compose ─► Publish
-(≤3 ag.: spec+security)       └──────────────────┘  skip-P2?                            └────────────┘  (code)    (1 agent)
-          gating pattern-reviewer-* dims          on verified  the ~10 debt pattern-reviewer-* dims
-          + 3-lens refutation                     gating I:H   (selected by touched surface) + refutation
+ gate mode    : Prep ─► Gating dims (fan-out) ──── dedup ─ verify ─► compose ─► Publish   (BLOCK on gating I:H)
+ quality mode : Prep ─► Quality dims (fan-out) ─── dedup ─ verify ─► compose ─► Publish   (ADVISORY, never blocks)
+(worktree/diff)  gate: ≤3 gating pattern-reviewer-* dims · quality: the ~10 debt dims (by touched surface)
+                 each fan-out + 3-lens refutation (opt-in)                                 (code)    (1 agent)
 </pre>
   </div>
   <p>
-    Each phase fans out, <strong>dedups, then verifies</strong> before the next
-    consumes it — so the gate decides on a <em>confirmed</em> blocker, never a raw
+    Each pass fans out, <strong>dedups, then verifies</strong> before composing —
+    so the verdict decides on a <em>confirmed</em> finding, never a raw
     one. Dedup and scoring (<code>severity → Impact</code>, <code>(Impact, Effort)
-    → Fix/Defer/Nit/Drop</code>, <code>full verdict = BLOCK iff a gating-dimension
-    (spec/contract/security) I:H survives</code> — code-quality <code>I:H</code> is
-    deferred debt) are plain deterministic JS, not LLM steps. Each dimension agent
+    → Fix/Defer/Nit/Drop</code>, <code>gate verdict = BLOCK iff a gating-dimension
+    (spec/contract/security) I:H survives</code>; <code>quality verdict = always
+    ADVISORY</code> — every code-quality finding is deferred debt) are plain
+    deterministic JS, not LLM steps. Each dimension agent
     reads exactly one <code>pattern-reviewer-*</code> skill <em>and</em> applies
     that skill's per-project <code>.claude/memory/patterns/&lt;skill&gt;.md</code>
     overlay — so dreamed rules reach the fan-out the same way they reach the
@@ -1162,14 +1174,13 @@
     is skipped entirely.
   </p>
   <p>
-    <strong>After the gating APPROVE — one polish cycle, then debt triage.</strong>
-    Because code-quality findings no longer block, the slice doesn't churn on them:
-    on the first gating <code>APPROVE</code> the loop runs <em>exactly one</em>
-    code-quality polish cycle — a single engineer fix over the non-gating
-    (<code>Defer</code> / <code>Nit</code>) findings, then one re-review — and a
-    <code>qualityPolished</code> flag keeps it to that one cycle (a gating regression
-    the polish introduces is converged away by the normal BLOCK path, never
-    re-polished). Whatever debt <em>remains</em> after that pass is then
+    <strong>Quality review — one fix cycle, one re-review, then debt triage.</strong>
+    Because code-quality findings never block, the slice doesn't churn on them: the
+    quality review is a <em>separate, bounded pass</em> that runs only after the gate
+    review APPROVES. It does <em>exactly one</em> review/fix cycle — review the
+    code-quality axes, then a single engineer polish pass over the non-gating
+    (<code>Defer</code> / <code>Nit</code>) findings — plus <em>one</em> final
+    re-review (it is not a loop). Whatever debt <em>remains</em> after that pass is then
     <strong>triaged into tracking issues — one per review dimension, routed by
     kind</strong>: <code>non-functional</code> findings → <code>kind:enhancement</code>
     (they add observable behavior, so they earn a feature-shaped body with ACs + an
@@ -1180,7 +1191,10 @@
     created at <code>status:ready-to-review</code> (the human gate) and deduped
     against open issues of that kind, so the quality debt is recorded for the
     <code>/ship</code> maintenance lane instead of holding the slice. <code>fix-bug.mjs</code>
-    runs the identical polish-cycle + triage tail.
+    mirrors the same two-stage split via its own <code>runReview('gate')</code> /
+    <code>runReview('quality')</code> — gate fix loop, then one bounded quality cycle +
+    triage — minus the AC-tick (a bug has no AC ledger; the regression test is its
+    spec-compliance gate).
   </p>
 
   <h3>Two model tiers</h3>
@@ -1379,9 +1393,10 @@
       <div class="flow-state">Pass E2E &mdash; engineer diagnoses failures, then per-group engineer fixes drive specs to GREEN (loop)</div>
 
       <div class="flow-arrow">
-        <span class="actor agent">Slice review</span>
-        <span class="effect">runReviewSlice('production-code'); fix loop to APPROVE (uncapped)</span>
+        <span class="actor agent">Gate review</span>
+        <span class="effect">runReviewSlice('production-code', …, 'gate') over spec/contract/security; fix loop to APPROVE (uncapped); on APPROVE tick the ACs</span>
       </div>
+      <div class="flow-state">Quality review &mdash; runReviewSlice(…, 'quality') over the code-quality axes; one fix cycle + one re-review (bounded); residual triaged into refactor/enhancement issues</div>
 
       <div class="flow-branch">
         <div class="col approve">

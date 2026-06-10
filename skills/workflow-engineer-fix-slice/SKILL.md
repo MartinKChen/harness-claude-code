@@ -53,7 +53,7 @@ The cutoff is the authored timestamp of the most recent commit on the slice bran
 
 If no `Refs #<slice#>` commit exists on the branch yet, read all comments on the slice.
 
-Pull every comment on the slice issue. Read **non-reviewer comments first** — user-posted directives in this window are binding and override reviewer suggestions, ADRs, and default conventions. Then read the latest slice-review comment (header `# Slice Review` / `# Review`) newer than the cutoff.
+Pull every comment on the slice issue. Read **non-reviewer comments first** — user-posted directives in this window are binding and override reviewer suggestions, ADRs, and default conventions. Then read the latest slice-review comment newer than the cutoff. The fan-out posts **two** review headers — `# Slice Gate Review` (spec / contract / security — the gating verdict) and `# Slice Quality Review` (code-quality, advisory) — while the single-context fallback reviewer posts a combined `# Slice Review`; match any of `# Slice Gate Review` / `# Slice Quality Review` / `# Slice Review` / `# Review`. Your dispatch verb tells you which to act on: a **gating** fix targets the newest `# Slice Gate Review`, a **quality/polish** fix targets the newest `# Slice Quality Review`.
 
 If no in-scope reviewer comment exists, halt and surface `fix dispatched but no reviewer comment newer than the last Refs #<slice#> commit on the slice`.
 

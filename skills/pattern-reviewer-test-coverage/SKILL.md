@@ -9,7 +9,7 @@ The reviewer's lens for the test-coverage pillar of the code gate. It does **not
 
 > **Load `pattern-test-coverage` first.** Walk its catalogue against the scoped diff to find gaps; everything below is how you turn each gap into a posted finding.
 
-This skill is invoked on every task whose code gate is being reviewed, regardless of `type:*`, and as the always-loaded Phase-1 pattern on every slice review.
+This skill is invoked on every task whose code gate is being reviewed, regardless of `type:*`, and as the always-loaded gating-dimension pattern on every slice gate review.
 
 ## When to activate
 
@@ -43,7 +43,7 @@ These govern *how* a coverage gap is identified and reported. The engineer's fix
 - **Do not down-grade for "the implementation looks right anyway".** Coverage is the gate, not implementation correctness. An AC with no test is a gap regardless of how the production code reads.
 - **Never refer to a finding as `#N` (N a number).** GitHub auto-links `#1`, `#2`, … to issues. Use a non-numeric handle: the AC label (`AC2`, `Scenario "Cancels pending order"`), the quoted finding title, or `F1` / `F2` / `Finding 1`.
 - **Read surrounding code, not just the diff.** Open the test file; follow imports; check whether a sibling test under a different name already covers the AC. If a test is named misleadingly but actually asserts the SHALL clause, that's coverage — credit it.
-- **The AC checkbox tick is the reviewer's verified gate.** The engineer self-ticks *task* boxes as a progress claim; an *AC* box is ticked only by the review, on a clean production-code APPROVE, once every task `covers:`-ing it discharges its clause at its owning layer. A ticked AC checkbox is never discharge on its own — it records that this lens verified the discharge. Never tick an AC a surviving HIGH finding maps to. (The mechanical edit is owned by the calling workflow / `workflow-reviewer-review-slice`; this lens supplies the per-AC discharge verdict.)
+- **The AC checkbox tick is the reviewer's verified gate.** The engineer self-ticks *task* boxes as a progress claim; an *AC* box is ticked only by the review, on a clean gate-review APPROVE, once every task `covers:`-ing it discharges its clause at its owning layer. A ticked AC checkbox is never discharge on its own — it records that this lens verified the discharge. Never tick an AC a surviving HIGH finding maps to. (The mechanical edit is owned by the calling workflow / `workflow-reviewer-review-slice`; this lens supplies the per-AC discharge verdict.)
 
 ## Grading a gap
 

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'implement-slice',
-  description: 'Drive one slice through author-E2E → coverage gate → plan → implement → pass-E2E → slice-review (gating fix loop, then one code-quality polish cycle + debt triage into enhancement issues) to an open draft PR',
-  whenToUse: 'Launched (background) by the /implement-feature Stage-1 kickoff once per eligible slice, after the orchestrator flips status:ready-to-implement → status:in-progress (the slice lock). Owns the WHOLE inner cycle — including the fan-out review (coverage gate + slice review) inlined as runReviewSlice(); the outer /loop only handles the PR (fix-pr / close-pr). Pass { slice, today }.',
+  description: 'Drive one slice through author-E2E → coverage gate → plan → implement → pass-E2E → gate-review (spec/contract/security fix loop until APPROVE) → quality-review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) to an open draft PR',
+  whenToUse: 'Launched (background) by the /implement-feature Stage-1 kickoff once per eligible slice, after the orchestrator flips status:ready-to-implement → status:in-progress (the slice lock). Owns the WHOLE inner cycle — including the fan-out reviews (coverage gate + gate review + quality review) inlined as runReviewSlice(); the outer /loop only handles the PR (fix-pr / close-pr). Pass { slice, today }.',
   phases: [
     { title: 'Prep' },
     { title: 'Author E2E' },
@@ -9,7 +9,8 @@ export const meta = {
     { title: 'Plan' },
     { title: 'Implement' },
     { title: 'Pass E2E' },
-    { title: 'Slice review' },
+    { title: 'Gate review' },
+    { title: 'Quality review' },
     { title: 'PR' },
   ],
 }
@@ -49,10 +50,20 @@ if (!/^\d+$/.test(String(SLICE)))
 // surface findings aggressively; its adversarial verify phase (OPT-IN via
 // VERIFY_ENABLED, default OFF — see the input block) keeps these loops from chasing
 // phantom findings when on: only a finding that survives refutation holds the gate
-// open. With verify OFF the dimension reviewer's own severity stands. Either way
-// `full` review blocks only on a GATING-dimension I:H (spec-compliance / contract /
-// security) — code-quality I:H is deferred debt, never a blocker — so once the real
-// blockers are fixed the loop converges.
+// open. With verify OFF the dimension reviewer's own severity stands.
+//
+// The post-implementation review is split into TWO stages (runReviewSlice is
+// parametrized by reviewMode):
+//   • GATE review (reviewMode='gate') — runs ONLY the gating dimensions
+//     (spec-compliance / contract / security). Its fix↔re-review loop is UNCAPPED
+//     and blocks on any surviving gating I:H, so it runs until APPROVE (a real
+//     blocker is fixed for however many rounds it takes; the oscillation guard halts
+//     to a human only on NO PROGRESS).
+//   • QUALITY review (reviewMode='quality') — runs ONLY the code-quality axes, which
+//     NEVER block. It is deliberately BOUNDED, not a loop: exactly one review/fix
+//     cycle (review → one engineer polish pass over the Defer/Nit findings) plus one
+//     final re-review, whose residual debt is triaged into kind:refactor /
+//     kind:enhancement tracking issues.
 
 // Subagent types — the plugin's real agents (each loads its own skill stack), not
 // the default workflow dimension agent.
@@ -279,29 +290,32 @@ const REVIEW_ENTRY = {
 }
 
 // ── Review catalogue + verify lenses ─────────────────────────────────────────
-// One row per pattern-reviewer-* lens. `phase` buckets it into the spec gate vs
-// quality fan-out; `applies(surfaces)` is the touched-path trigger. Each dimension
-// agent reads ONLY its own skill and applies ONLY that catalogue.
+// One row per pattern-reviewer-* lens. `phase` buckets it into the GATE review
+// (reviewMode='gate') vs the QUALITY review (reviewMode='quality'); `applies(surfaces)`
+// is the touched-path trigger. Each dimension agent reads ONLY its own skill and applies
+// ONLY that catalogue.
 // `gate: true` marks a SHIP-BLOCKING dimension — a confirmed I:H finding from one of
-// these holds the verdict (BLOCK) and drives the fix loop. The three gating dimensions
-// are the things a draft PR must not silently carry: spec compliance (is the feature
-// actually proven), contract conformance (don't break consumers), and security (don't
-// ship a hole). Functional correctness on the covered paths is already enforced by the
-// green-E2E gate (Phase E) that precedes this review. Every OTHER dimension is
-// code-quality DEBT: its findings are posted and classified `Defer` (for a periodic
-// whole-codebase quality sweep) but NEVER block the slice — so the fix loop stops
-// churning on idiom / polish / best-practice and converges on the trio that genuinely
-// must not ship. See scoreFinding() + the verdict predicate below.
+// these holds the gate-review verdict (BLOCK) and drives its uncapped fix loop. The three
+// gating dimensions are the things a draft PR must not silently carry: spec compliance (is
+// the feature actually proven), contract conformance (don't break consumers), and security
+// (don't ship a hole). Functional correctness on the covered paths is already enforced by
+// the green-E2E gate (Phase E) that precedes the review. Every OTHER dimension is
+// code-quality DEBT: it runs in the SEPARATE quality review, where its findings are posted
+// and classified `Defer`/`Nit`, addressed by ONE polish pass, then triaged into tracking
+// issues — but NEVER block the slice. Splitting the two means the gate loop never pays for
+// the ~10-dimension quality fan-out, and the quality pass runs exactly once. See
+// scoreFinding() + the verdict predicate below.
 const DIMENSIONS = [
-  // Phase 1 — GATING dimensions (spec compliance + security). Always walk first; a
-  // surviving I:H here BLOCKs and SKIPS Phase 2. These are cheap (≤3 dims), so the
-  // gating fix loop converges WITHOUT paying for the code-quality fan-out each round —
-  // the debt dims run only on the round that clears the gate (and the polish re-review).
+  // GATE dimensions (spec compliance + contract + security) — run by the GATE review
+  // (reviewMode='gate'). A surviving I:H here BLOCKs and drives the gate fix loop. These
+  // are cheap (≤3 dims), so the gate loop converges WITHOUT ever paying for the
+  // code-quality fan-out — that runs once, later, in the separate quality review.
   { key: 'test-coverage', phase: 'spec', gate: true, skill: 'pattern-reviewer-test-coverage', extraSkill: 'pattern-test-coverage', applies: () => true },
   { key: 'contract',      phase: 'spec', gate: true, skill: 'pattern-reviewer-contract',      applies: s => s.hasContractFiles },
   { key: 'security',      phase: 'spec', gate: true, skill: 'pattern-reviewer-security',      applies: s => s.backend || s.frontend },
-  // Phase 2 — code-quality DEBT (walk only if the gate stays open). None of these gate;
-  // every finding is deferred-as-debt (posted, classified `Defer`, never blocking).
+  // QUALITY dimensions — code-quality DEBT, run ONLY by the QUALITY review
+  // (reviewMode='quality'). None of these gate; every finding is deferred-as-debt
+  // (posted, classified `Defer`/`Nit`, never blocking).
   { key: 'coding-standard',   phase: 'quality', skill: 'pattern-reviewer-coding-standard',   applies: s => s.backend || s.frontend },
   { key: 'observability',     phase: 'quality', skill: 'pattern-reviewer-observability',     applies: s => s.backend || s.frontend },
   { key: 'non-functional',    phase: 'quality', skill: 'pattern-reviewer-non-functional',    applies: s => s.backend || s.frontend },
@@ -422,7 +436,7 @@ function scoreFinding(f) {
   return { ...f, impact, gating, cls }
 }
 
-function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, scope, verdict }) {
+function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, verdict }) {
   const coverage = scope === 'test-coverage'
   const shown = coverage ? scored : scored.filter(f => f.cls !== 'Drop')
   const count = (i, e) => shown.filter(f => f.impact === i && f.effort === e).length
@@ -473,14 +487,33 @@ function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, scope, 
     ].filter(s => s !== '').join('\n')
   }
 
-  const specFindings = shown.filter(f => f.reviewPhase === 'spec')
-  const qualFindings = shown.filter(f => f.reviewPhase === 'quality')
-  const qualBlock = phase2Skipped
-    ? '### Phase 2 — Code quality findings\n\n_Phase 2 (code-quality debt) skipped: a gating (spec / contract / security) `I:H` is still open. Re-review will run the debt dimensions once the gate clears._'
-    : section('Phase 2 — Code quality findings', qualFindings, 'No code-quality findings.')
+  // GATE review: spec-compliance / contract / security only. Blocks on a gating I:H.
+  if (reviewMode === 'gate') {
+    return [
+      '# Slice Gate Review',
+      '',
+      '## Review Summary',
+      '',
+      matrix,
+      '',
+      `**Fix now:** ${fixNow}  •  **Deferred:** ${deferred}  •  **Nits:** ${nits}`,
+      dedupMerged ? `\n_Deduplicated ${dedupMerged} overlapping finding(s) reported by more than one dimension._` : '',
+      scopeNote ? `\n**Note:** ${scopeNote}` : '',
+      '',
+      `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
+      '',
+      '_This is the GATE review. It blocks the slice only on spec-compliance, contract, and security findings (`I:H`). Code quality is reviewed separately in the quality review and never blocks the slice._',
+      '',
+      '## Findings',
+      '',
+      section('Spec, contract & security findings (gating)', shown, 'No spec, contract, or security findings.'),
+    ].filter(s => s !== '').join('\n')
+  }
 
+  // QUALITY review: code-quality axes only — advisory, never blocks. After one polish
+  // pass the residual is triaged into kind:refactor / kind:enhancement tracking issues.
   return [
-    '# Slice Review',
+    '# Slice Quality Review',
     '',
     '## Review Summary',
     '',
@@ -490,15 +523,13 @@ function composeComment(scored, { phase2Skipped, scopeNote, dedupMerged, scope, 
     dedupMerged ? `\n_Deduplicated ${dedupMerged} overlapping finding(s) reported by more than one dimension._` : '',
     scopeNote ? `\n**Note:** ${scopeNote}` : '',
     '',
-    `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
+    '**Verdict:** ADVISORY',
     '',
-    '_Verdict holds on spec-compliance, contract, and security findings only. Any code-quality finding is recorded as **deferred debt** for the periodic quality sweep and never blocks the slice._',
+    '_This is the QUALITY review (runs AFTER the gate review APPROVES). These code-quality findings never block the slice: one engineer polish pass addresses them, then any residual is triaged into `kind:refactor` / `kind:enhancement` tracking issues._',
     '',
     '## Findings',
     '',
-    section('Phase 1 — Spec & security findings (gating)', specFindings, 'No spec or security findings.'),
-    '',
-    qualBlock,
+    section('Code-quality findings', shown, 'No code-quality findings.'),
   ].filter(s => s !== '').join('\n')
 }
 
@@ -605,7 +636,13 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 //   scope      — 'test-coverage' (gate authored E2E specs pre-implementation) or
 //                'production-code' (audit implemented code)
 //   phaseTitle — the parent phase to group the fan-out agents under
-//                ('Coverage gate' or 'Slice review')
+//                ('Coverage gate', 'Gate review', or 'Quality review')
+//   reviewMode — for scope='production-code', which dimension set + verdict policy:
+//                'gate'    — run ONLY the gating dimensions (spec / contract /
+//                            security); BLOCK on a surviving gating I:H.
+//                'quality' — run ONLY the code-quality axes; never blocks (ADVISORY).
+//                (Ignored for scope='test-coverage', which always runs the lone
+//                 test-coverage dimension and blocks on any confirmed gap.)
 //   sliceBranch — resolved once in Prep; reused here to skip re-resolution
 //   scopeManifest — the closed { acIds, dontBreak } authority from Prep; rendered
 //                into diffCtx so every dimension agent AND every adversarial
@@ -626,7 +663,7 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 // try/caught so a crash surfaces as { error } and the caller halt()s to a human,
 // never killing the run uncaught.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks) {
+async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks, reviewMode = 'gate') {
   try {
     // ── Prep: read-only worktree + diff ──
     const rprep = await agent(
@@ -725,53 +762,63 @@ This slice has NO acceptance criteria and NO E2E tasks: it is a code-quality REF
     const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.
 ${manifestBlock}${ledgerBlock}${refactorBlock}`
 
-    // ── Spec: fan out phase-1 dimensions, dedup, then VERIFY *before* the gate, so
-    // the gate trips only on a blocker that actually survives scrutiny. ──
-    const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
-    const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx))
-    const specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
-    log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+    // Which dimension set runs is decided by (scope, reviewMode):
+    //   • test-coverage         → the lone test-coverage dimension (a `spec`-phase row).
+    //   • production-code 'gate'    → the gating dimensions only (spec / contract / security).
+    //   • production-code 'quality' → the code-quality axes only.
+    // The gate review and the quality review are now SEPARATE passes (see Phases F/G),
+    // so a single runReviewSlice call never mixes the two: the gate loop never pays for
+    // the ~10-dimension quality fan-out, and the quality pass runs exactly once.
+    const runSpec = scope === 'test-coverage' || reviewMode === 'gate'
+    const runQual = scope === 'production-code' && reviewMode === 'quality'
 
-    // GATE (on VERIFIED gating findings — spec + security). A confirmed gating blocker
-    // means the implementation will be reworked, so auditing code-quality debt now is
-    // churn (and re-running the ~10-dim debt fan-out every gating round is wasted work).
-    // Coverage scope has no Phase 2 (no production code) — the gate is always "tripped".
-    const gateTripped = scope === 'test-coverage' || specConfirmed.some(f => sevToImpact(f.severity) === 'H')
+    // ── Gating dimensions (spec / contract / security): fan out, dedup, VERIFY. ──
+    let specConfirmed = []
+    let specMerged = 0
+    if (runSpec) {
+      const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
+      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx))
+      specMerged = specDedup.merged
+      specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
+      log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+    }
 
-    // ── Quality: fan out phase-2 dimensions (gated), dedup, verify. ──
+    // ── Code-quality axes: fan out, dedup, verify. ──
     let qualConfirmed = []
     let qualMerged = 0
-    let qualDedupKept = 0
-    if (!gateTripped) {
+    if (runQual) {
       const qualDims = DIMENSIONS.filter(d => d.phase === 'quality' && d.applies(surfaces))
       log(`${phaseTitle}: quality dimensions ${qualDims.map(d => d.key).join(', ') || '(none)'}`)
       const qualDedup = dedupeFindings(await runDimensions(qualDims, 'quality', phaseTitle, scope, diffCtx))
       qualMerged = qualDedup.merged
-      qualDedupKept = qualDedup.kept.length
       qualConfirmed = (await verifyFindings(qualDedup.kept, 'quality', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
-    // ── Compose (plain code). Final cross-phase dedup collapses the rare case a
-    // spec and a quality dimension confirmed the same defect. ──
+    // ── Compose (plain code). Final dedup collapses the rare cross-dimension overlap. ──
     const finalDedup = dedupeFindings([...specConfirmed, ...qualConfirmed])
     const confirmed = finalDedup.kept.map(scoreFinding)
-    const dedupMerged = specDedup.merged + qualMerged + finalDedup.merged
-    const phase2Skipped = scope === 'production-code' && gateTripped
+    const dedupMerged = specMerged + qualMerged + finalDedup.merged
 
-    // Verdict: coverage blocks on ANY confirmed gap; production blocks only on a
-    // confirmed I:H finding from a GATING dimension (spec / contract / security). A
-    // high-impact code-quality finding is recorded as deferred debt, not a blocker.
-    const blocked = scope === 'test-coverage' ? confirmed.length > 0 : confirmed.some(f => f.impact === 'H' && f.gating)
+    // Verdict by (scope, reviewMode):
+    //   • test-coverage    → BLOCK on ANY confirmed gap.
+    //   • gate             → BLOCK on a confirmed I:H from a GATING dimension.
+    //   • quality          → never blocks (ADVISORY): every code-quality finding is
+    //                        deferred debt, addressed by the polish pass / triage.
+    const blocked = scope === 'test-coverage'
+      ? confirmed.length > 0
+      : reviewMode === 'gate'
+        ? confirmed.some(f => f.impact === 'H' && f.gating)
+        : false
     const verdict = blocked ? 'BLOCK' : 'APPROVE'
     // The findings that actually drive the BLOCK — coverage: every confirmed gap;
-    // production: the gating I:H survivors. Returned so the caller's loop can
+    // gate: the gating I:H survivors; quality: none. Returned so the caller's loop can
     // fingerprint them across rounds (oscillation guard).
     const blockers = (scope === 'test-coverage' ? confirmed : confirmed.filter(f => f.impact === 'H' && f.gating))
       .map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
-    const body = composeComment(confirmed, { phase2Skipped, scopeNote: rprep.scopeNote, dedupMerged, scope, verdict })
+    const body = composeComment(confirmed, { reviewMode, scopeNote: rprep.scopeNote, dedupMerged, scope, verdict })
 
     // ── Publish: post the verdict comment on the slice ISSUE. The ONLY write. ──
     const publish = await agent(
@@ -790,9 +837,10 @@ ${body}
       { label: `publish:${scope}`, phase: phaseTitle, schema: PUBLISH, model: WRITER_MODEL },
     )
 
-    // `findings` is the full scored, deduped, confirmed list (each carrying `gating`
-    // + `cls`). The caller uses the NON-gating subset for the one-shot quality polish
-    // pass and the debt-triage step; gating findings already drove the verdict.
+    // `findings` is the scored, deduped, confirmed list (each carrying `gating` + `cls`).
+    // In 'gate' mode it is the gating findings that drove the verdict; in 'quality' mode
+    // it is the code-quality debt the caller feeds to the one polish pass and the
+    // debt-triage step.
     return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed }
   } catch (e) {
     return { error: `${scope} review crashed: ${e?.message || String(e)}` }
@@ -819,7 +867,7 @@ ${body}
 //   scope        — 'test-coverage' | 'production-code' (for labels/logging)
 //   branch       — the slice branch to inspect for landed commits
 //   reviewHeader — the verdict comment's leading header ('# E2E Coverage Gate' or
-//                  '# Slice Review') used to find the latest verdict
+//                  '# Slice Gate Review') used to find the latest verdict
 // Returns { action, lastVerdict, reason }; a missing/garbled probe defaults to the
 // pre-existing behavior (review).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1114,76 +1162,57 @@ Fix: ${g.fixHint}`,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PHASE F: Slice review — runReviewSlice('production-code'), looping to an engineer fix-slice
-// until APPROVE.
+// PHASE F: Gate review — runReviewSlice('production-code', …, 'gate'), the UNCAPPED
+// fix↔re-review loop over the GATING dimensions only (spec-compliance / contract /
+// security). It runs until APPROVE — a real blocker is fixed for however many rounds
+// it takes; the oscillation guard halts to a human only on NO PROGRESS. Code quality
+// is NOT touched here: it is a separate, bounded pass (Phase G). On APPROVE we tick
+// the ACs — the reviewer's VERIFIED GATE.
 // ─────────────────────────────────────────────────────────────────────────────
-phase('Slice review')
+phase('Gate review')
 {
   let stall = []
   let lastSpent = tokensSpent()
-  let lastReview = null
-  // One bounded code-quality polish cycle runs AFTER the gating gate is clean:
-  // the first APPROVE dispatches a single engineer fix over the non-gating
-  // (deferred-debt) findings, then re-reviews once. `qualityPolished` makes it
-  // strictly one cycle — the second APPROVE exits, and a gating regression
-  // introduced by the polish is converged away by the normal BLOCK path (the
-  // oscillation guard still applies) without re-polishing.
-  let qualityPolished = false
   // Resume optimization (see reviewEntryAction): a relaunch onto a slice that
-  // already carries a standing BLOCK slice-review with no landed fix skips the
+  // already carries a standing BLOCK gate review with no landed fix skips the
   // redundant re-review and dispatches the engineer fix first; the loop below then
   // re-reviews. A partial fix that DID land falls through to review, which catches
   // whatever remains.
-  const entry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Review', 'Slice review')
+  const entry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Gate Review', 'Gate review')
   if (entry.action === 'fix-first') {
-    log(`Slice review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
+    log(`Gate review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
     await agent(
-      `Fix the review feedback on slice #${SLICE}.`,
-      { agentType: ENGINEER, phase: 'Slice review', label: 'fix:resume' },
+      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment.`,
+      { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
     )
   }
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('production-code', 'Slice review', prep.sliceBranch, prep.scopeManifest, prep.tasks)
-    if (r?.error) return halt(`slice review could not run: ${r.error}`)
+    const r = await runReviewSlice('production-code', 'Gate review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate')
+    if (r?.error) return halt(`gate review could not run: ${r.error}`)
     // Unposted verdict (see the coverage-gate note above): the findings never reached
     // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
-    // "see the # Slice Review comment" body points at a comment that doesn't exist.
-    if (r?.publishError) return halt(`slice review verdict was not posted to #${SLICE}: ${r.publishError}`)
-    lastReview = r
+    // "see the # Slice Gate Review comment" body points at a comment that doesn't exist.
+    if (r?.publishError) return halt(`gate review verdict was not posted to #${SLICE}: ${r.publishError}`)
     const spent = tokensSpent()
-    log(`Slice review: round ${round} — ${r.verdict}, ${r.blockers.length} gating I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+    log(`Gate review: round ${round} — ${r.verdict}, ${r.blockers.length} gating I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
     lastSpent = spent
-    if (r?.verdict === 'APPROVE') {
-      // Gating is clean. Run ONE code-quality polish pass over the non-gating
-      // (deferred-debt) findings, then `continue` to re-review exactly once.
-      const debt = (r.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
-      if (!qualityPolished && debt.length) {
-        qualityPolished = true
-        log(`Slice review: gating APPROVE — one code-quality polish pass over ${debt.length} non-blocking finding(s), then re-review.`)
-        await agent(
-          `Address the code-quality feedback on slice #${SLICE}. This is the one-shot polish pass AFTER the slice's acceptance / contract / security gate already APPROVED — the gating blockers are resolved, so fix the non-blocking code-quality findings (the \`Defer\` / \`Nit\` items) in the newest \`# Slice Review\` comment. Production code only, behavior-preserving (existing tests stay green). Whatever you don't get to this pass is fine — it will be triaged into enhancement issues afterward.`,
-          { agentType: ENGINEER, phase: 'Slice review', label: 'fix:quality-polish' },
-        )
-        continue
-      }
-      break
-    }
+    if (r?.verdict === 'APPROVE') break
     // Oscillation guard: halt if a gating I:H blocker survives STALL_ROUNDS dedicated
     // engineer fixes — structurally stuck, not slow.
     stall = trackStall(stall, r.blockers)
     const stuck = stuckBlockers(stall)
     if (stuck.length)
-      return halt(`Slice review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
-    log(`Slice review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+      return halt(`Gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
     await agent(
-      `Fix the review feedback on slice #${SLICE}.`,
-      { agentType: ENGINEER, phase: 'Slice review', label: `fix:${round}` },
+      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment.`,
+      { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }
 
   // ── AC-tick: the reviewer-gated VERIFIED GATE (vs. the engineer's task-box claim). ──
   // The engineer self-ticks TASK boxes as a progress claim; the reviewer ticks the
-  // AC boxes — and only that AC tick is the verified gate. A production-code APPROVE
+  // AC boxes — and only that AC tick is the verified gate. A gate-review APPROVE
   // means no I:H spec-compliance finding survived, i.e. every AC's `covers:` task was
   // discharged at its owning layer (the test-coverage axis blocks I:H on any
   // undischarged AC). So on APPROVE we flip every `- [ ] AC<n>` → `- [x] AC<n>`. A
@@ -1191,19 +1220,63 @@ phase('Slice review')
   const acIds = prep.scopeManifest?.acIds ?? []
   if (acIds.length) {
     await agent(
-      `The slice #${SLICE} production-code review has APPROVED — every acceptance criterion is now discharged at its owning layer. Tick the AC checkboxes in the slice body (the reviewer's VERIFIED GATE; the engineer only ticks task boxes). Do exactly this:
+      `The slice #${SLICE} gate review (acceptance / contract / security) has APPROVED — every acceptance criterion is now discharged at its owning layer. Tick the AC checkboxes in the slice body (the reviewer's VERIFIED GATE; the engineer only ticks task boxes). Do exactly this:
 1. \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,body\` to read the current body.
 2. In the \`## Acceptance criteria (EARS)\` section, flip each unchecked AC checkbox \`- [ ] AC<n> — …\` to \`- [x] AC<n> — …\` for these ids: ${acIds.join(', ')}. Leave the AC text and every other line byte-for-byte unchanged; touch ONLY the \`[ ]\`→\`[x]\` of those AC lines (NOT task lines).
 3. Write the edited full body to /tmp/ac-tick-${SLICE}.md and apply it: \`gh issue edit ${SLICE} --body-file /tmp/ac-tick-${SLICE}.md\`.
 Return ok=true (or error set on failure). prNumber=null.`,
-      { label: 'tick-acs', phase: 'Slice review', schema: SIDE_EFFECT, model: WRITER_MODEL },
+      { label: 'tick-acs', phase: 'Gate review', schema: SIDE_EFFECT, model: WRITER_MODEL },
     )
   }
+}
 
-  // ── Debt triage: file residual non-gating findings for the /ship maintenance lane,
-  // ROUTED BY DIMENSION. After the one polish pass, leftover debt is recorded as issues
-  // at `status:ready-to-review` (the human gate — they do NOT auto-implement until a
-  // human flips them to `status:ready-to-implement`), rather than holding this slice:
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE G: Quality review — the BOUNDED code-quality pass that runs AFTER the gate
+// review APPROVED. It runReviewSlice('production-code', …, 'quality') over the
+// code-quality axes only (which never block), and is deliberately NOT a loop: it does
+// exactly ONE review/fix cycle (review → one engineer polish pass over the Defer/Nit
+// findings) plus ONE final re-review, whose residual debt is triaged into
+// kind:refactor / kind:enhancement tracking issues. If the first review finds nothing
+// to fix, the polish + re-review are skipped and there is no debt to triage.
+// ─────────────────────────────────────────────────────────────────────────────
+phase('Quality review')
+{
+  let lastSpent = tokensSpent()
+  // Review #1 — the one review of the review/fix cycle.
+  const q1 = await runReviewSlice('production-code', 'Quality review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'quality')
+  if (q1?.error) return halt(`quality review could not run: ${q1.error}`)
+  if (q1?.publishError) return halt(`quality review verdict was not posted to #${SLICE}: ${q1.publishError}`)
+  let spent = tokensSpent()
+  log(`Quality review: review #1 — ${q1.findings?.length ?? 0} code-quality finding(s); +${kb(spent - lastSpent)}k tok (${kb(spent)}k turn total).`)
+  lastSpent = spent
+
+  // The fixable debt = the non-gating Defer/Nit findings (Drop is below the bar).
+  let finalReview = q1
+  const debt1 = (q1.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
+  if (debt1.length) {
+    // The ONE fix of the review/fix cycle: a single engineer polish pass over the
+    // Defer/Nit findings. Behavior-preserving — the existing tests stay green.
+    log(`Quality review: one polish pass over ${debt1.length} non-blocking finding(s), then one re-review.`)
+    await agent(
+      `Address the code-quality feedback on slice #${SLICE}. This is the ONE-SHOT polish pass AFTER the slice's acceptance / contract / security gate already APPROVED — the gating blockers are resolved, so fix the non-blocking code-quality findings (the \`Defer\` / \`Nit\` items) in the newest \`# Slice Quality Review\` comment. Production code only, behavior-preserving (existing tests stay green). Whatever you don't get to this pass is fine — it will be triaged into refactor / enhancement issues afterward.`,
+      { agentType: ENGINEER, phase: 'Quality review', label: 'quality-fix' },
+    )
+    // The +1 review: re-review once so the triage below files only what actually
+    // remains after the polish. This is NOT a loop — quality never blocks, so we do
+    // not re-fix; the residual becomes tracking issues.
+    const q2 = await runReviewSlice('production-code', 'Quality review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'quality')
+    if (q2?.error) return halt(`quality re-review could not run: ${q2.error}`)
+    if (q2?.publishError) return halt(`quality re-review verdict was not posted to #${SLICE}: ${q2.publishError}`)
+    spent = tokensSpent()
+    log(`Quality review: review #2 (post-polish) — ${q2.findings?.length ?? 0} code-quality finding(s); +${kb(spent - lastSpent)}k tok (${kb(spent)}k turn total).`)
+    lastSpent = spent
+    finalReview = q2
+  }
+
+  // ── Debt triage: file the residual code-quality findings for the /ship maintenance
+  // lane, ROUTED BY DIMENSION. Leftover debt is recorded as issues at
+  // `status:ready-to-review` (the human gate — they do NOT auto-implement until a human
+  // flips them to `status:ready-to-implement`), rather than holding this slice:
   //   • `non-functional` findings → `kind:enhancement` — they add observable behavior
   //     (pagination, caps, timeouts, capacity), so they earn a feature-shaped body with
   //     ACs + an e2e task and the full E2E/integration treatment.
@@ -1213,7 +1286,7 @@ Return ok=true (or error set on failure). prNumber=null.`,
   //     tests for extracted seams; the existing suite staying green is the regression net.
   // One issue per dimension in each bucket, deduped against open issues of that kind.
   // Triage runs on the stronger model: it authors bodies + dedups.
-  const debt = (lastReview?.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
+  const debt = (finalReview?.findings || []).filter(f => !f.gating && f.cls !== 'Drop')
   if (debt.length) {
     const groupByDim = (arr) => {
       const m = new Map()
@@ -1226,7 +1299,7 @@ Return ok=true (or error set on failure). prNumber=null.`,
     ).join('\n\n')
     const reDims = groupByDim(debt.filter(f => f.dimension !== 'non-functional'))
     const nfDims = groupByDim(debt.filter(f => f.dimension === 'non-functional'))
-    log(`Slice review: triaging debt — ${reDims.size} group(s) → kind:refactor, ${nfDims.size} → kind:enhancement.`)
+    log(`Quality review: triaging debt — ${reDims.size} group(s) → kind:refactor, ${nfDims.size} → kind:enhancement.`)
     await agent(
       `Triage residual code-quality debt from slice #${SLICE} (branch \`${prep.sliceBranch}\`) into tracking issues. Its acceptance / contract / security gate already APPROVED and a one-shot polish pass already ran; the findings below are the NON-blocking debt that remains, grouped by review dimension. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`). Do NOT edit code, push, open a PR, or touch slice #${SLICE}'s \`status:*\` labels.
 
@@ -1249,13 +1322,13 @@ For the non-functional group below (if any), write a FEATURE-shaped body to \`/t
 ${nfDims.size ? render(nfDims) : '(no non-functional group)'}
 
 Set ok=true if every group was either filed or intentionally skipped (put any per-group failure in error). prNumber=null.`,
-      { label: 'triage-debt', phase: 'Slice review', schema: SIDE_EFFECT, model: AGENT_MODEL },
+      { label: 'triage-debt', phase: 'Quality review', schema: SIDE_EFFECT, model: AGENT_MODEL },
     )
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PHASE G (terminal): open the idempotent draft PR and RELEASE the slice lock.
+// PHASE H (terminal): open the idempotent draft PR and RELEASE the slice lock.
 // The outer /loop's fix-pr / close-pr stages take it from here (CI, merge
 // conflicts, the final merge). Releasing status:in-progress on success is what
 // keeps the reconcile reaper from relaunching a slice that already finished.
@@ -1264,7 +1337,7 @@ phase('PR')
 const prBody = [
   `Closes #${SLICE}`, '', '## Summary', '',
   prep.sliceTitle, '',
-  '## Review verdict', '', `Slice review passed on ${TODAY}. See the \`# Slice Review\` comment on #${SLICE} for finding-level detail.`, '',
+  '## Review verdict', '', `Gate review (acceptance / contract / security) passed on ${TODAY}. See the \`# Slice Gate Review\` comment on #${SLICE} for the gating verdict, and the \`# Slice Quality Review\` comment for code-quality detail.`, '',
   '## Test plan', '', '- [ ] CI: `lint` / `typecheck` / `unit` / `e2e` all green', `- [ ] Manual smoke: ${prep.smokeHint}`,
 ].join('\n')
 

@@ -1,9 +1,12 @@
 # Code Review
 
 <!--
-  Non-functional findings are folded into the same `# Code Review` / `# Slice Review` comment that
-  carries the other quality dimensions. The dispatching reviewer composes the final comment — this
-  template only shows the **finding rows** this skill emits.
+  Non-functional findings are folded into the same comment that carries the other quality
+  dimensions — the `# Slice Quality Review` / `# Bug Fix Quality Review` comment in the workflow
+  fan-out (non-functional is a code-quality axis, so it runs in the quality review, never the gate
+  review), or the combined `# Code Review` / `# Slice Review` comment in the single-context fallback
+  reviewer. The dispatching reviewer composes the final comment — this template only shows the
+  **finding rows** this skill emits.
 
   Severity rule (the load-bearing part):
   - HIGH (blocks) ONLY when the gap maps to a declared non-functional AC on a touched surface.

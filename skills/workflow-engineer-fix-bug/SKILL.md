@@ -1,6 +1,6 @@
 ---
 name: workflow-engineer-fix-bug
-description: "Fix one approved kind:bug on its fix branch. Two dispatch verbs: `Fix bug #<n>` writes the regression test FIRST (RED per the approved # Bug Analysis comment, fails on pre-fix code), drives it GREEN, refactors, and pushes; `Fix the review feedback on bug #<n>` addresses the newest # Bug Fix Review findings via TDD. Production code only; every commit carries `Refs #<n>`. Activate when dispatched with either verb or '/workflow-engineer-fix-bug'."
+description: "Fix one approved kind:bug on its fix branch. Two dispatch verbs: `Fix bug #<n>` writes the regression test FIRST (RED per the approved # Bug Analysis comment, fails on pre-fix code), drives it GREEN, refactors, and pushes; `Fix the (gating|quality) review feedback on bug #<n>` addresses the newest # Bug Fix Gate Review / # Bug Fix Quality Review findings via TDD. Production code only; every commit carries `Refs #<n>`. Activate when dispatched with either verb or '/workflow-engineer-fix-bug'."
 ---
 
 # workflow-engineer-fix-bug
@@ -52,7 +52,7 @@ bash skills/operation-git/scripts/setup-worktree.sh <fix-branch> --merge-main
 
 ### 3b. Post-review fix (verb: `Fix the review feedback on bug #<n>`)
 
-The cutoff is the authored timestamp of the newest commit on the fix branch carrying `Refs #<n>`. Pull every comment newer than that: read **non-reviewer (user) directives first** (they override), then the newest `# Bug Fix Review` comment. Triage by the reviewer's fix-class — address every **Fix now**, skip **Defer**, fix **Nit** only if trivially in-scope (a user directive can promote/demote). Each Fix-now finding gets its own RED → GREEN. If no Fix-now finding and no promoting directive exists, halt and surface it.
+The cutoff is the authored timestamp of the newest commit on the fix branch carrying `Refs #<n>`. Pull every comment newer than that: read **non-reviewer (user) directives first** (they override), then the newest review comment. The `fix-bug` workflow posts **two** review headers — `# Bug Fix Gate Review` (regression coverage / contract / security — the gating verdict) and `# Bug Fix Quality Review` (code-quality, advisory); match whichever your dispatch verb targets (a **gating** fix → the newest `# Bug Fix Gate Review`; a **quality/polish** fix → the newest `# Bug Fix Quality Review`). Triage by the reviewer's fix-class — address every **Fix now**, skip **Defer**, fix **Nit** only if trivially in-scope (a user directive can promote/demote). Each Fix-now finding gets its own RED → GREEN. If no Fix-now finding and no promoting directive exists, halt and surface it.
 
 ### 4. Commit, push
 
