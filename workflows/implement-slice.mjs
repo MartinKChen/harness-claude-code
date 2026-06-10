@@ -642,6 +642,70 @@ async function verifyFindings(list, tag, diffCtx, phaseTitle) {
   return verified.flat()
 }
 
+// ── The always-on blocker floor (issue #48) ──────────────────────────────────
+// axis-reviewer grades with a recall-over-precision stance that was designed
+// around a refutation backstop — but the full 3-lens verify is opt-in and OFF by
+// default, so a borderline gating I:H would otherwise flow straight into the
+// verdict and buy an entire fix round (worktree prep + dimensions + publish +
+// engineer fix + re-review). The floor closes that gap cheaply: when the full
+// verify is OFF, ONLY the findings that would actually drive a BLOCK (coverage:
+// every confirmed gap; gate: the gating I:H survivors — usually a handful) face
+// the correctness + context lenses. Severity is excluded — the gating I:M→Fix
+// rule already absorbs grading noise. A blocker is neutralised ONLY when BOTH
+// lenses explicitly refute it (a missing or failed lens keeps it standing, so an
+// infra failure can never silently unblock a gate):
+//   • coverage gap → dropped (a phantom gap is not a gap)
+//   • gate blocker → downgraded to MEDIUM (stays in the comment AND the fix
+//     dispatch via the gating-I:M→Fix class; it just no longer blocks)
+// Findings that fingerprint-match a prior round's are exempt — the anchored
+// re-review already closure-checked them against the real code.
+const FLOOR_LENSES = VERIFY_LENSES.filter(l => l.key !== 'severity')
+const FLOOR_MODE_NOTE = `
+
+FLOOR MODE: every finding in this batch is a VERDICT-DRIVING blocker. Here, mark refuted=true ONLY on concrete evidence the claim is wrong — the cited code does not do what the finding says, or surrounding context provably neutralises it. Mere uncertainty is NOT refutation in floor mode; when unsure, return refuted=false and let the blocker stand.`
+async function applyBlockerFloor(list, scope, diffCtx, phaseTitle, roundCtx) {
+  if (VERIFY_ENABLED) return list // the full 3-lens verify already vetted everything
+  const isBlocker = f => scope === 'test-coverage' || (sevToImpact(f.severity) === 'H' && isGating(f))
+  const isPrior = f => (roundCtx?.findings || []).some(p => sameBlocker(p, f))
+  const targets = list.filter(f => isBlocker(f) && !isPrior(f))
+  if (!targets.length) return list
+  const byDim = new Map()
+  for (const f of targets) {
+    if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
+    byDim.get(f.dimension).push(f)
+  }
+  const batches = []
+  for (const [dim, dimFindings] of byDim) {
+    const chunks = chunk(dimFindings, VERIFY_BATCH_CAP)
+    chunks.forEach((items, bi) => batches.push({ dim, items, bi, multi: chunks.length > 1 }))
+  }
+  const judged = (await parallel(batches.map(({ dim, items, bi, multi }) => () =>
+    parallel(FLOOR_LENSES.map(lens => () =>
+      agent(verifyBatchPrompt(items, lens, diffCtx) + FLOOR_MODE_NOTE,
+        { label: `floor:${dim}:${lens.key}${multi ? `:b${bi + 1}` : ''}`, phase: phaseTitle, schema: BATCH_VERDICT, model: AGENT_MODEL },
+      ),
+    )).then(lensResults => {
+      const live = lensResults.filter(Boolean)
+      return items.map((f, i) => {
+        const idx = i + 1
+        const refutes = live.filter(r => {
+          const v = (r.verdicts || []).find(x => x.index === idx)
+          return v && v.refuted
+        }).length
+        return { f, gone: refutes >= FLOOR_LENSES.length } // BOTH lenses explicitly refuted
+      })
+    }),
+  ))).flat()
+  const refuted = new Set(judged.filter(j => j.gone).map(j => j.f))
+  log(`${phaseTitle}: blocker floor — ${targets.length} would-be blocker(s) checked, ${refuted.size} refuted by both lenses${refuted.size ? (scope === 'test-coverage' ? ' → dropped' : ' → downgraded to MEDIUM') : ''}.`)
+  if (!refuted.size) return list
+  return list.flatMap(f => {
+    if (!refuted.has(f)) return [f]
+    if (scope === 'test-coverage') return []
+    return [{ ...f, severity: 'MEDIUM', impactStatement: `${f.impactStatement} (blocker floor: downgraded from ${f.severity} — both the correctness and context lenses refuted the blocking claim)` }]
+  })
+}
+
 // Fan out a dimension set → flat list of findings tagged with their dimension + phase.
 // `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
 // samples of the same catalogue over the same diff — and unions the results; the
@@ -837,6 +901,9 @@ ${manifestBlock}${ledgerBlock}${refactorBlock}${anchorBlock}`
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+      // Always-on floor for the verdict-driving subset (no-op when the full
+      // verify already ran above).
+      specConfirmed = await applyBlockerFloor(specConfirmed, scope, diffCtx, phaseTitle, roundCtx)
     }
 
     // ── Code-quality axes: fan out, dedup, verify. ──

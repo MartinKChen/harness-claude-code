@@ -400,6 +400,54 @@ Read \`${f.file}\` (and its surroundings) in the worktree yourself before decidi
   ))
 }
 
+// ── The always-on blocker floor (issue #48, mirrored from implement-slice) ────
+// When the full 3-lens verify is OFF (default), the gating I:H findings that
+// would actually drive a BLOCK still face the correctness + context lenses
+// before they can hold the gate (severity is excluded — the gating I:M→Fix rule
+// already absorbs grading noise). A blocker is downgraded to MEDIUM ONLY when
+// BOTH lenses explicitly refute it — a missing or failed lens keeps it standing,
+// so an infra failure can never silently unblock a gate. Downgraded findings
+// stay in the comment AND the fix dispatch via the gating-I:M→Fix class.
+// Findings that fingerprint-match a prior round's are exempt — the anchored
+// re-review already closure-checked them against the real code.
+const FLOOR_LENSES = VERIFY_LENSES.filter(l => l.key !== 'severity')
+async function applyBlockerFloor(list, diffCtx, phaseTitle, roundCtx) {
+  if (VERIFY_ENABLED) return list // the full 3-lens verify already vetted everything
+  const isPrior = f => (roundCtx?.findings || []).some(p => sameBlocker(p, f))
+  const targets = list.filter(f => sevToImpact(f.severity) === 'H' && isGating(f) && !isPrior(f))
+  if (!targets.length) return list
+  const judged = await parallel(targets.map(f => () =>
+    parallel(FLOOR_LENSES.map(lens => () =>
+      agent(
+        `${diffCtx}
+
+Adversarially verify a VERDICT-DRIVING (blocking) code-review finding through the "${lens.key}" lens — be a skeptic, not a rubber stamp. ${lens.ask}
+
+FLOOR MODE: mark refuted=true ONLY on concrete evidence the claim is wrong — the cited code does not do what the finding says, or surrounding context provably neutralises it. Mere uncertainty is NOT refutation in floor mode; when unsure, return refuted=false and let the blocker stand.
+
+Finding under scrutiny:
+- dimension: ${f.dimension}
+- title: ${f.title}
+- severity: ${f.severity}
+- file: ${f.file}
+- claim (impact): ${f.impactStatement}
+- proposed fix: ${f.fix}
+- BAD snippet the finder cited:
+${f.bad}
+
+Read \`${f.file}\` (and its surroundings) in the worktree yourself before deciding. Return refuted + a one-line reason.`,
+        { label: `floor:${f.dimension}:${lens.key}`, phase: phaseTitle, schema: REFUTE_VERDICT, model: AGENT_MODEL },
+      ),
+    )).then(votes => ({ f, gone: votes.filter(Boolean).filter(v => v.refuted).length >= FLOOR_LENSES.length })),
+  ))
+  const refuted = new Set(judged.filter(j => j.gone).map(j => j.f))
+  log(`${phaseTitle}: blocker floor — ${targets.length} would-be blocker(s) checked, ${refuted.size} refuted by both lenses${refuted.size ? ' → downgraded to MEDIUM' : ''}.`)
+  if (!refuted.size) return list
+  return list.map(f => refuted.has(f)
+    ? { ...f, severity: 'MEDIUM', impactStatement: `${f.impactStatement} (blocker floor: downgraded from ${f.severity} — both the correctness and context lenses refuted the blocking claim)` }
+    : f)
+}
+
 // `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
 // samples of the same catalogue over the same diff — and unions the results; the
 // caller's dedupeFindings collapses the overlap (keeping the highest severity).
@@ -502,6 +550,9 @@ ${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] $
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+      // Always-on floor for the verdict-driving subset (no-op when the full
+      // verify already ran above).
+      specConfirmed = await applyBlockerFloor(specConfirmed, diffCtx, phaseTitle, roundCtx)
     }
 
     // ── Code-quality axes: fan out, dedup, verify. ──

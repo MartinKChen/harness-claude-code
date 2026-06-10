@@ -1099,10 +1099,15 @@
     <code>Fix</code></strong> (never <code>Defer</code>) and the fix dispatch
     inlines the <code>Fix</code>-class findings, so a skipped gating MEDIUM can't
     flap into a later-round blocker. The fan-out's
-    adversarial verify is
+    full adversarial verify is
     <strong>opt-in (<code>verifyLenses</code> arg, default OFF)</strong> — when on,
-    only a finding that survives refutation holds a gate open, and when off the
-    dimension reviewer's own severity stands. Either way the
+    only a finding that survives refutation holds a gate open; when off the
+    dimension reviewer's own severity stands for non-blocking findings, but each
+    <strong>newly-reported verdict-driving blocker still faces an always-on
+    2-lens (correctness + context) floor</strong> — neutralised only when both
+    lenses refute it on concrete evidence (coverage gap dropped; gate blocker
+    downgraded to MEDIUM, still fixed via the gating-<code>I:M</code>→<code>Fix</code>
+    class). Either way the
     <strong>gate</strong> review blocks only on a <strong>gating-dimension</strong>
     <code>I:H</code> — spec-compliance, contract, or security — while
     <strong>code-quality</strong> findings are deferred debt handled by the separate
