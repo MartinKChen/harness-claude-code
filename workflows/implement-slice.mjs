@@ -1250,7 +1250,7 @@ const pr = await agent(
   `Open the terminal draft PR for slice #${SLICE}. Do exactly this and nothing else:
 1. Write the PR body (below) to /tmp/implement-slice-${SLICE}-pr.md.
 2. Create the idempotent draft PR:
-   \`bash skills/operation-git/scripts/create-draft-pr.sh ${prep.sliceBranch} "${prep.typeScope}: ${prep.sliceTitle}" /tmp/implement-slice-${SLICE}-pr.md --label merge:manual${prep.milestone ? ` --milestone "${prep.milestone}"` : ''}\`
+   \`bash skills/operation-git/scripts/create-draft-pr.sh ${prep.sliceBranch} "${prep.typeScope}: ${prep.sliceTitle}" /tmp/implement-slice-${SLICE}-pr.md --label merge:auto${prep.milestone ? ` --milestone "${prep.milestone}"` : ''}\`
    The script prints the PR number (new or existing). Capture it.
 3. Release the slice lock now that the cycle is complete: \`gh issue edit ${SLICE} --remove-label "status:in-progress"\`. The OPEN DRAFT PR is now the durable artifact; the outer /loop's fix-pr / close-pr stages carry it to merge, and the PR's \`Closes #${SLICE}\` line closes the slice on merge. (Releasing the lock here is what stops the reconcile reaper from relaunching an already-finished slice.)
 Return ok=true, prNumber=<the number>, error=null (or error set on failure).

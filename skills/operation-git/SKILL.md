@@ -31,7 +31,7 @@ The Automated Engineer Flow drives off a deliberately small label set — the in
 |--------|--------|---------------------|
 | `status:*` | `ready-to-review`, `ready-to-implement`, `in-progress`, `fix-in-progress`, `need-attention` | `status:ready-to-review` is the human-approval gate (set by `create-feature-issues` on freshly-created slices; human flips to `status:ready-to-implement` to release). `status:ready-to-implement` → `status:in-progress` is the kickoff lock = "an `implement-slice` Workflow is running on this slice"; the workflow releases it when it opens the draft PR, or flips it to `status:need-attention` on halt. `status:fix-in-progress` is the PR-level lock for the outer-loop fix-pr stage. `status:need-attention` is the durable, user-owned halt. |
 | `kind:*` | `feature`, `bug`, `enhancement` | issue creation only |
-| `merge:*` | `auto`, `manual` | `implement-slice`'s PR phase sets `manual` on draft PR creation; user opts into `auto` |
+| `merge:*` | `auto`, `manual` | `implement-slice`'s PR phase sets `auto` on draft PR creation (the default); user opts out by relabeling to `manual` |
 | PR markers | `feature-lockin` | architect during deep-dive |
 
 There are no `level:*`, `type:*`, `review:*`, or `e2e:*` labels — those were retired by the per-slice-Workflow redesign. Task typing and per-task done-state live in the slice body's `## Tasks` static-ID checklist; review/coverage gating is an in-memory phase of the `implement-slice` Workflow.

@@ -1075,7 +1075,7 @@
       <tr>
         <td class="role">PR</td>
         <td class="model">agent()</td>
-        <td>Open the idempotent <code>merge:manual</code> draft PR (<code>Closes #&lt;slice&gt;</code>) and release the slice lock.</td>
+        <td>Open the idempotent <code>merge:auto</code> draft PR (<code>Closes #&lt;slice&gt;</code>) and release the slice lock.</td>
       </tr>
     </tbody>
   </table>
@@ -1266,7 +1266,7 @@
     <div class="lbl-fam">
       <h4>merge:* / feature-lockin</h4>
       <ul>
-        <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior (workflow opens drafts <code>merge:manual</code>)</li>
+        <li><span class="pill review">merge:auto</span> / <span class="pill review">merge:manual</span> — close-pr behavior (workflow opens drafts <code>merge:auto</code>)</li>
         <li><span class="pill kind">feature-lockin</span> — the discovery PR from <code>/deep-dive-feature</code></li>
       </ul>
     </div>
@@ -1396,7 +1396,7 @@
 
       <div class="flow-arrow">
         <span class="actor agent">PR</span>
-        <span class="effect">idempotent <code>merge:manual</code> draft (<code>Closes #&lt;slice&gt;</code>); release the lock</span>
+        <span class="effect">idempotent <code>merge:auto</code> draft (<code>Closes #&lt;slice&gt;</code>); release the lock</span>
       </div>
       <div class="flow-state terminal">draft PR open · lock released · run ends</div>
 
@@ -1417,13 +1417,13 @@
         <span class="actor agent">implement-slice (PR phase)</span>
         <span class="effect">opens draft PR on cycle success; body contains <code>Closes #&lt;slice-#&gt;</code></span>
       </div>
-      <div class="flow-state">draft &middot; merge:manual</div>
+      <div class="flow-state">draft &middot; merge:auto</div>
 
       <div class="flow-arrow">
         <span class="actor human">human</span>
-        <span class="effect">optional: opt into auto-merge</span>
+        <span class="effect">optional: opt out of auto-merge</span>
       </div>
-      <div class="flow-state">merge:manual → merge:auto</div>
+      <div class="flow-state">merge:auto → merge:manual</div>
 
       <div class="flow-arrow">
         <span class="actor github">github</span>
@@ -1590,8 +1590,8 @@
       </tr>
       <tr>
         <td class="role">PR review</td>
-        <td>Every workflow ends with a PR. Discovery PRs (<code>feature-lockin</code>) and scaffold PRs require a human merge. <code>merge:manual</code> slice PRs (the <code>implement-slice</code> workflow's default) too.</td>
-        <td>Reviews, requests changes via comments, merges manually — or relabels to <code>merge:auto</code> to let <code>close-pr</code> land it.</td>
+        <td>Every workflow ends with a PR. Discovery PRs (<code>feature-lockin</code>) and scaffold PRs require a human merge. Slice PRs default to <code>merge:auto</code> (the <code>implement-slice</code> workflow's default), so <code>close-pr</code> lands them once green + MERGEABLE.</td>
+        <td>Reviews and requests changes via comments before CI goes green — or relabels to <code>merge:manual</code> to hold the PR open and merge it by hand.</td>
       </tr>
       <tr>
         <td class="role"><code>status:need-attention</code></td>

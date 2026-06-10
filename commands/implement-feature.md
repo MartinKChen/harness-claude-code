@@ -99,7 +99,7 @@ For each eligible slice `#<slice-#>` (line format: `- #<slice-#> | "<title>"`):
    description: <slice-url>. Launching the implement-slice Workflow to drive the
                 whole inner cycle (author E2E → coverage gate → implement → pass
                 E2E → review → fix → open draft PR). On halt it flips
-                status:need-attention; on success it opens a merge:manual draft PR
+                status:need-attention; on success it opens a merge:auto draft PR
                 and releases the lock.
    activeForm:  Implementing slice #<slice-#>
    ```

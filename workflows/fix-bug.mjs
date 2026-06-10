@@ -708,7 +708,7 @@ const pr = await agent(
   `Open the terminal draft PR for the bug #${ISSUE} fix. Do exactly this and nothing else:
 1. Write the PR body (below) to /tmp/fix-bug-${ISSUE}-pr.md.
 2. Create the idempotent draft PR:
-   \`bash skills/operation-git/scripts/create-draft-pr.sh ${prep.fixBranch} "${prep.typeScope}: ${prep.bugTitle}" /tmp/fix-bug-${ISSUE}-pr.md --label merge:manual${prep.milestone ? ` --milestone "${prep.milestone}"` : ''}\`
+   \`bash skills/operation-git/scripts/create-draft-pr.sh ${prep.fixBranch} "${prep.typeScope}: ${prep.bugTitle}" /tmp/fix-bug-${ISSUE}-pr.md --label merge:auto${prep.milestone ? ` --milestone "${prep.milestone}"` : ''}\`
    The script prints the PR number (new or existing). Capture it.
 3. Release the bug lock now that the fix is complete: \`gh issue edit ${ISSUE} --remove-label "status:in-progress"\`. The OPEN DRAFT PR is now the durable artifact; the unified command's fix-pr / close-pr stages carry it to merge, and the PR's \`Closes #${ISSUE}\` line closes the bug on merge. (Releasing the lock here is what stops the reconcile reaper from relaunching an already-finished bug.)
 Return ok=true, prNumber=<the number>, error=null (or error set on failure).
