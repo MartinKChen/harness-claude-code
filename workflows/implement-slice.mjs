@@ -609,8 +609,12 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 //   sliceBranch — resolved once in Prep; reused here to skip re-resolution
 //   scopeManifest — the closed { acIds, dontBreak } authority from Prep; rendered
 //                into diffCtx so every dimension agent AND every adversarial
-//                verifier judges findings against the same bounded scope (cover
-//                exactly the closed AC set, no prose-synthesized ACs).
+//                verifier judges findings against the same bounded scope (no
+//                prose-synthesized ACs). The closed AC set is SCOPE-DEPENDENT:
+//                production-code gates the full acIds (every AC must be discharged
+//                somewhere); the test-coverage E2E gate narrows to the E2E-OWNED
+//                subset — ⋃ `covers:` over the slice's `e2e` tasks — so it never
+//                BLOCKs on a backend/frontend-owned AC having "no E2E coverage".
 //   tasks      — the parsed `## Tasks` ledger from Prep; rendered as the per-task
 //                discharge ledger so the test-coverage / contract axes can judge
 //                each task against its OWNING LAYER (Principle 1) and verify, per
@@ -668,12 +672,30 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
 
     const sm = scopeManifest || { acIds: [], dontBreak: [] }
     const fmtList = (xs, wrap) => xs.length ? xs.map(wrap).join(', ') : '(none declared)'
+
+    // The CLOSED AC set the dimension agents gate against is SCOPE-DEPENDENT:
+    //   • production-code — the full slice AC set (sm.acIds): every AC must be
+    //     discharged SOMEWHERE, so the production review owes them all.
+    //   • test-coverage (the pre-implementation E2E gate) — only the E2E-OWNED
+    //     subset: the union of `covers:` across this slice's `e2e`-type tasks.
+    //     An AC whose owning layer is backend/frontend (a ledger delta, token
+    //     state, "no row created", a "the UI shows…" clause) is discharged by an
+    //     API-level / RTL test, NOT through the browser — handing the gate the
+    //     full acIds makes it BLOCK on a backend invariant having "no E2E
+    //     coverage", the exact finding-error pattern-reviewer-test-coverage names.
+    //     `covers:` is the authoritative author-declared mapping, so the gate's
+    //     closed set is exactly ⋃ covers: over the e2e tasks.
+    const e2eOwnedAcIds = [...new Set((tasks || []).filter(t => t.type === 'e2e').flatMap(t => t.covers || []))]
+    const gateAcIds = scope === 'test-coverage' ? e2eOwnedAcIds : sm.acIds
+    const acSetLine = scope === 'test-coverage'
+      ? `- **E2E-owned AC subset (closed set for THIS gate):** ${gateAcIds.length ? gateAcIds.join(', ') : '(none — no e2e task declares a `covers:`)'} — the ONLY ACs this E2E coverage gate may demand through the UI, computed as the union of \`covers:\` across this slice's \`e2e\` tasks. An AC NOT in this list is owned by the backend/frontend layer and proven by an API-level / RTL test; its absence from the E2E specs is NOT a gap. Treat this as exhaustive: never synthesize an AC, and never demand E2E coverage for an AC outside it.`
+      : `- **Acceptance criteria (closed set):** ${gateAcIds.length ? gateAcIds.join(', ') : '(none enumerated)'} — the canonical AC ids. Treat this as exhaustive: do NOT synthesize an AC from prose, a comment, or a Gherkin line that has no id in this list.`
     const manifestBlock = `
 ## Scope Manifest (the CLOSED authority for slice #${SLICE} — derived once from the issue body; do not widen it)
-- **Acceptance criteria (closed set):** ${sm.acIds.length ? sm.acIds.join(', ') : '(none enumerated)'} — the canonical AC ids. Treat this as exhaustive: do NOT synthesize an AC from prose, a comment, or a Gherkin line that has no id in this list.
+${acSetLine}
 - **Don't-break (regression guards):** ${fmtList(sm.dontBreak, s => `"${s}"`)} — existing behavior to protect from regression. These guard the CURRENT path; they are NOT a mandate to author new coverage for it.
 
-Apply this manifest exactly as your scope's rules in agents/axis-reviewer.md direct (test-coverage: cover exactly the AC ids + their Gherkin; production-code: every finding must ground in a declared AC id or a touched-path rule).`
+Apply this manifest exactly as your scope's rules in agents/axis-reviewer.md direct (test-coverage: cover exactly the E2E-owned AC subset above + its mapped Gherkin — never an AC owned by another layer; production-code: every finding must ground in a declared AC id or a touched-path rule).`
 
     // Per-task discharge ledger: each task's owning layer is its type (backend →
     // HTTP endpoint / worker; frontend → rendered tree; e2e → browser journey),
