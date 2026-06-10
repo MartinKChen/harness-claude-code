@@ -1114,7 +1114,12 @@
     quality review and never block the slice.
     <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
-    a comment — the only path to a human; the outer loop never recovers it.
+    a comment — the only path to a human; the outer loop never recovers it. Two
+    progress guards bound the uncapped loops: the <strong>oscillation
+    stall</strong> (the same blocker surviving its own targeted fix for 3
+    consecutive rounds) and the <strong>churn guard</strong> (3 consecutive
+    rounds each surfacing a <em>new</em> blocker on code unchanged since the
+    prior round — reviewer noise, not defects).
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
     <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
     checklist + the <code>Workflow</code> resume journal. There are no handoff

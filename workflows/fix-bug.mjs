@@ -111,8 +111,9 @@ const REVIEW_PREP = {
     headSha:      { type: 'string', description: 'the worktree HEAD commit sha (`git rev-parse HEAD`) — the exact commit this review judges' },
     scopeNote:    { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
     touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified' },
+    changedSincePaths: { type: 'array', items: { type: 'string' }, description: 'paths changed since the prior review round (`git diff --name-only <priorSha>..HEAD`); [] when there is no prior round' },
   },
-  required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths'],
+  required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths', 'changedSincePaths'],
 }
 const SURFACES = {
   type: 'object',
@@ -230,6 +231,17 @@ function jaccard(a, b) {
 // STALL_ROUNDS rounds — never on round count. A loop that keeps retiring blockers
 // runs uncapped.
 const STALL_ROUNDS = 3
+// CHURN GUARD (issue #49, mirrored from implement-slice) — the stall guard's
+// mirror image: catches rounds that keep RETIRING their blockers while surfacing
+// brand-NEW ones on code UNCHANGED since the prior round (reviewer sampling
+// noise, not defects). CHURN_ROUNDS consecutive such rounds halt to a human.
+const CHURN_ROUNDS = 3
+const detectChurn = (r, seen) => {
+  if (!Array.isArray(r.changedSincePaths)) return []
+  const changed = new Set(r.changedSincePaths.map(p => String(p)))
+  return r.blockers.filter(b => !seen.some(p => sameBlocker(p, b)) && !changed.has(fileNoLine(b.file)))
+}
+const fmtChurn = churn => churn.map(c => `\`${c.file}\` — ${c.title}`).join('; ')
 const kb = n => Math.round(n / 1000)
 const verifyNote = VERIFY_ENABLED ? 'survived verification' : 'kept (verify off)'
 const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
@@ -486,7 +498,10 @@ Steps:
 1. Set up the read-only worktree on the fix branch \`${fixBranch}\`: \`bash skills/operation-git/scripts/setup-worktree.sh ${fixBranch}\` (NO --merge-main). Capture the printed worktreePath. If it fails, return ok=false with a haltReason.
 2. Compute the touched paths vs origin/main inside the worktree: \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
 3. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
-4. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
+4. ${roundCtx?.reviewedSha
+    ? `Compute the paths changed since the prior review round: \`git -C <worktreePath> diff --name-only ${roundCtx.reviewedSha}..HEAD\` → changedSincePaths (an empty array if the command fails).`
+    : 'changedSincePaths = [] (there is no prior review round).'}
+5. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
 
 Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to every downstream dimension agent — make sure it is correct and on the fix branch tip.`,
       { label: 'review-prep', phase: phaseTitle, schema: REVIEW_PREP, model: WRITER_MODEL },
@@ -606,7 +621,9 @@ ${body}
     // it is the code-quality debt the caller feeds to the one polish pass and the
     // debt-triage step. `reviewedSha` is the worktree HEAD this round judged — the
     // caller threads { reviewedSha, findings } back in as the next round's anchor.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha }
+    // `changedSincePaths` (vs the prior round's sha; [] on a first round) feeds the
+    // caller's churn guard: a NEW blocker outside it sits on unchanged code.
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [] }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -736,6 +753,10 @@ phase('Gate review')
   // re-review closure-checks the priors + scopes new findings to the fix's own
   // diff instead of independently re-sampling the whole branch (see runReview).
   let prior = null
+  // Churn-guard state: every prior round's finding fingerprints + the streak of
+  // consecutive rounds that surfaced new blockers on unchanged code.
+  let seen = []
+  let churnStreak = 0
   for (let round = 1; ; round++) {
     const r = await runReview('Gate review', prep.fixBranch, 'gate', prior)
     if (r?.error) return halt(`bug-fix gate review could not run: ${r.error}`)
@@ -750,6 +771,17 @@ phase('Gate review')
     const stuck = stuckBlockers(stall)
     if (stuck.length)
       return halt(`Bug-fix gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    // Churn guard: rounds keep retiring blockers but surfacing NEW ones on code
+    // unchanged since the prior round → reviewer noise, not fix regressions.
+    if (prior) {
+      const churn = detectChurn(r, seen)
+      churnStreak = churn.length ? churnStreak + 1 : 0
+      if (churn.length)
+        log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
+      if (churnStreak >= CHURN_ROUNDS)
+        return halt(`Bug-fix gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
+    }
+    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
     if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
     // The dispatch inlines every Fix-class gating finding (the workflow already
