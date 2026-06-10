@@ -37,6 +37,12 @@ const TODAY = input.today ?? 'unknown-date'
 // no env access — same reason args.today is threaded in) and passes
 // verifyLenses=true to turn the three lenses back on.
 const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
+// Round-1 recall sampling (issue #47, mirrored from implement-slice): the FIRST
+// gate-review round fans every gating dimension out K× in parallel and unions the
+// samples through dedup; anchored re-review rounds stay at 1 sample. The
+// orchestrator may thread $HCC_ROUND1_SAMPLES through args.round1Samples;
+// default 2, floor 1.
+const ROUND1_SAMPLES = Math.max(1, parseInt(input.round1Samples, 10) || 2)
 if (!/^\d+$/.test(String(ISSUE)))
   throw new Error(`fix-bug: args.issue must be a bug issue number; got ${typeof ISSUE}: ${JSON.stringify(ISSUE) ?? String(ISSUE)}`)
 
@@ -102,10 +108,12 @@ const REVIEW_PREP = {
     ok:           { type: 'boolean', description: 'read-only worktree set up on the fix branch tip' },
     haltReason:   { type: ['string', 'null'] },
     worktreePath: { type: 'string' },
+    headSha:      { type: 'string', description: 'the worktree HEAD commit sha (`git rev-parse HEAD`) — the exact commit this review judges' },
     scopeNote:    { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
     touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified' },
+    changedSincePaths: { type: 'array', items: { type: 'string' }, description: 'paths changed since the prior review round (`git diff --name-only <priorSha>..HEAD`); [] when there is no prior round' },
   },
-  required: ['ok', 'haltReason', 'worktreePath', 'scopeNote', 'touchedPaths'],
+  required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths', 'changedSincePaths'],
 }
 const SURFACES = {
   type: 'object',
@@ -223,6 +231,17 @@ function jaccard(a, b) {
 // STALL_ROUNDS rounds — never on round count. A loop that keeps retiring blockers
 // runs uncapped.
 const STALL_ROUNDS = 3
+// CHURN GUARD (issue #49, mirrored from implement-slice) — the stall guard's
+// mirror image: catches rounds that keep RETIRING their blockers while surfacing
+// brand-NEW ones on code UNCHANGED since the prior round (reviewer sampling
+// noise, not defects). CHURN_ROUNDS consecutive such rounds halt to a human.
+const CHURN_ROUNDS = 3
+const detectChurn = (r, seen) => {
+  if (!Array.isArray(r.changedSincePaths)) return []
+  const changed = new Set(r.changedSincePaths.map(p => String(p)))
+  return r.blockers.filter(b => !seen.some(p => sameBlocker(p, b)) && !changed.has(fileNoLine(b.file)))
+}
+const fmtChurn = churn => churn.map(c => `\`${c.file}\` — ${c.title}`).join('; ')
 const kb = n => Math.round(n / 1000)
 const verifyNote = VERIFY_ENABLED ? 'survived verification' : 'kept (verify off)'
 const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
@@ -257,8 +276,16 @@ function scoreFinding(f) {
   // Non-gating findings are code-quality debt: a would-be `Fix` is downgraded to
   // `Defer` (recorded for the periodic quality sweep) so it never holds the fix.
   // Defer/Nit/Drop are already non-blocking, so they pass through unchanged.
+  // GATING findings go the other way: an I:M from a gate axis (spec / contract /
+  // security) is class `Fix` regardless of effort — never `Defer`. Deferring a
+  // gating MEDIUM leaves it in the diff where a later round can re-grade the same
+  // defect HIGH (severity flapping), which reads as a "new" blocker and stops the
+  // fix loop from converging. It still doesn't BLOCK (the verdict keys off I:H
+  // only); it just rides along in every dispatched fix round so it can't flap.
   const base = classify(impact, f.effort)
-  const cls = gating ? base : (base === 'Fix' ? 'Defer' : base)
+  const cls = gating
+    ? (impact === 'M' ? 'Fix' : base)
+    : (base === 'Fix' ? 'Defer' : base)
   return { ...f, impact, gating, cls }
 }
 
@@ -385,9 +412,61 @@ Read \`${f.file}\` (and its surroundings) in the worktree yourself before decidi
   ))
 }
 
-async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx) {
-  return (await parallel(dims.map(d => () =>
-    agent(dimensionPrompt(d, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
+// ── The always-on blocker floor (issue #48, mirrored from implement-slice) ────
+// When the full 3-lens verify is OFF (default), the gating I:H findings that
+// would actually drive a BLOCK still face the correctness + context lenses
+// before they can hold the gate (severity is excluded — the gating I:M→Fix rule
+// already absorbs grading noise). A blocker is downgraded to MEDIUM ONLY when
+// BOTH lenses explicitly refute it — a missing or failed lens keeps it standing,
+// so an infra failure can never silently unblock a gate. Downgraded findings
+// stay in the comment AND the fix dispatch via the gating-I:M→Fix class.
+// Findings that fingerprint-match a prior round's are exempt — the anchored
+// re-review already closure-checked them against the real code.
+const FLOOR_LENSES = VERIFY_LENSES.filter(l => l.key !== 'severity')
+async function applyBlockerFloor(list, diffCtx, phaseTitle, roundCtx) {
+  if (VERIFY_ENABLED) return list // the full 3-lens verify already vetted everything
+  const isPrior = f => (roundCtx?.findings || []).some(p => sameBlocker(p, f))
+  const targets = list.filter(f => sevToImpact(f.severity) === 'H' && isGating(f) && !isPrior(f))
+  if (!targets.length) return list
+  const judged = await parallel(targets.map(f => () =>
+    parallel(FLOOR_LENSES.map(lens => () =>
+      agent(
+        `${diffCtx}
+
+Adversarially verify a VERDICT-DRIVING (blocking) code-review finding through the "${lens.key}" lens — be a skeptic, not a rubber stamp. ${lens.ask}
+
+FLOOR MODE: mark refuted=true ONLY on concrete evidence the claim is wrong — the cited code does not do what the finding says, or surrounding context provably neutralises it. Mere uncertainty is NOT refutation in floor mode; when unsure, return refuted=false and let the blocker stand.
+
+Finding under scrutiny:
+- dimension: ${f.dimension}
+- title: ${f.title}
+- severity: ${f.severity}
+- file: ${f.file}
+- claim (impact): ${f.impactStatement}
+- proposed fix: ${f.fix}
+- BAD snippet the finder cited:
+${f.bad}
+
+Read \`${f.file}\` (and its surroundings) in the worktree yourself before deciding. Return refuted + a one-line reason.`,
+        { label: `floor:${f.dimension}:${lens.key}`, phase: phaseTitle, schema: REFUTE_VERDICT, model: AGENT_MODEL },
+      ),
+    )).then(votes => ({ f, gone: votes.filter(Boolean).filter(v => v.refuted).length >= FLOOR_LENSES.length })),
+  ))
+  const refuted = new Set(judged.filter(j => j.gone).map(j => j.f))
+  log(`${phaseTitle}: blocker floor — ${targets.length} would-be blocker(s) checked, ${refuted.size} refuted by both lenses${refuted.size ? ' → downgraded to MEDIUM' : ''}.`)
+  if (!refuted.size) return list
+  return list.map(f => refuted.has(f)
+    ? { ...f, severity: 'MEDIUM', impactStatement: `${f.impactStatement} (blocker floor: downgraded from ${f.severity} — both the correctness and context lenses refuted the blocking claim)` }
+    : f)
+}
+
+// `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
+// samples of the same catalogue over the same diff — and unions the results; the
+// caller's dedupeFindings collapses the overlap (keeping the highest severity).
+async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx, samples = 1) {
+  const jobs = dims.flatMap(d => Array.from({ length: samples }, (_, i) => ({ d, i })))
+  return (await parallel(jobs.map(({ d, i }) => () =>
+    agent(dimensionPrompt(d, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}${samples > 1 ? `:s${i + 1}` : ''}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
   ))).filter(Boolean).flatMap(r => (r.findings || []).map(f => ({ ...f, dimension: r.dimension, reviewPhase })))
 }
 
@@ -401,10 +480,16 @@ async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx) {
 //                            `# Bug Fix Gate Review`.
 //                'quality' : the code-quality axes only; never blocks (ADVISORY). Posts
 //                            `# Bug Fix Quality Review`.
-// Returns { verdict, publishError, blockers, findings } on success or { error } on
-// infra failure.
+//   roundCtx   — null on the FIRST round of the gate fix↔re-review loop; on every
+//                later round, { reviewedSha, findings } from the PRIOR round.
+//                Rendered as the anchored-re-review block so each dimension agent
+//                (1) closure-checks every prior finding instead of re-sampling the
+//                whole diff, and (2) hunts NEW findings only in the hunks changed
+//                since reviewedSha (see implement-slice for the rationale).
+// Returns { verdict, publishError, blockers, findings, reviewedSha } on success or
+// { error } on infra failure.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReview(phaseTitle, fixBranch, reviewMode = 'gate') {
+async function runReview(phaseTitle, fixBranch, reviewMode = 'gate', roundCtx = null) {
   try {
     const rprep = await agent(
       `You are setting up a READ-ONLY production-code review of the bug-fix branch for issue #${ISSUE}. Do NOT edit, push, or run destructive git. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`).
@@ -412,7 +497,11 @@ async function runReview(phaseTitle, fixBranch, reviewMode = 'gate') {
 Steps:
 1. Set up the read-only worktree on the fix branch \`${fixBranch}\`: \`bash skills/operation-git/scripts/setup-worktree.sh ${fixBranch}\` (NO --merge-main). Capture the printed worktreePath. If it fails, return ok=false with a haltReason.
 2. Compute the touched paths vs origin/main inside the worktree: \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
-3. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
+3. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
+4. ${roundCtx?.reviewedSha
+    ? `Compute the paths changed since the prior review round: \`git -C <worktreePath> diff --name-only ${roundCtx.reviewedSha}..HEAD\` → changedSincePaths (an empty array if the command fails).`
+    : 'changedSincePaths = [] (there is no prior review round).'}
+5. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
 
 Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to every downstream dimension agent — make sure it is correct and on the fix branch tip.`,
       { label: 'review-prep', phase: phaseTitle, schema: REVIEW_PREP, model: WRITER_MODEL },
@@ -441,7 +530,21 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
       { label: 'review-surfaces', phase: phaseTitle, schema: SURFACES, model: AGENT_MODEL },
     ) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true }
 
-    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.`
+    // Round anchoring (the convergence fix — see implement-slice): a re-review
+    // round closure-checks the prior findings and scopes NEW findings to the code
+    // changed since the prior round, instead of independently re-sampling the
+    // whole branch diff and surfacing a different defect every round.
+    const anchorBlock = (roundCtx && roundCtx.reviewedSha && (roundCtx.findings?.length ?? 0) > 0) ? `
+
+## Anchored re-review (a prior round of THIS review already ran — this is NOT a fresh sweep)
+The prior round judged commit \`${roundCtx.reviewedSha}\` and reported the findings listed below; a fix has landed since. Your round has exactly TWO jobs:
+1. **Closure-check every prior finding assigned to your dimension**: open its cited file in the worktree and decide fixed vs. still-present. Re-report each STILL-PRESENT finding — keep its original title and file (so it fingerprints as the SAME blocker) and keep its prior severity unless the cited code itself materially changed. Never re-grade unchanged code upward. Do NOT re-report a finding that is fixed.
+2. **Hunt NEW findings ONLY in the code that changed since the prior round**: \`git -C ${rprep.worktreePath} diff ${roundCtx.reviewedSha}..HEAD\` is the new-code scope — the fix itself may have introduced a defect. A finding in a hunk UNCHANGED since \`${roundCtx.reviewedSha}\` that no prior round reported is presumptively sampling noise: report it ONLY if you can prove it is real and I:H, and say explicitly in its impactStatement that it sits on code unchanged since the prior round.
+
+Prior findings to closure-check:
+${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\``).join('\n')}` : ''
+
+    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.${anchorBlock}`
 
     // The gate review and the quality review are now SEPARATE passes (see the Gate
     // review / Quality review phases), so a single runReview call never mixes the two:
@@ -455,10 +558,16 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
     let specMerged = 0
     if (runSpec) {
       const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
-      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, diffCtx))
+      // Round 1 (no anchor) fans each gating dimension out ROUND1_SAMPLES×, union
+      // through dedup (issue #47). Anchored rounds stay at 1 sample.
+      const specSamples = roundCtx ? 1 : ROUND1_SAMPLES
+      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, diffCtx, specSamples))
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+      // Always-on floor for the verdict-driving subset (no-op when the full
+      // verify already ran above).
+      specConfirmed = await applyBlockerFloor(specConfirmed, diffCtx, phaseTitle, roundCtx)
     }
 
     // ── Code-quality axes: fan out, dedup, verify. ──
@@ -473,9 +582,10 @@ When a path could plausibly belong to a surface, prefer setting the boolean true
       log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
-    const finalDedup = dedupeFindings([...specConfirmed, ...qualConfirmed])
-    const confirmed = finalDedup.kept.map(scoreFinding)
-    const dedupMerged = specMerged + qualMerged + finalDedup.merged
+    // The gate/quality split makes runSpec and runQual mutually exclusive per
+    // call, and each set is already deduped — no cross-set dedup pass is needed.
+    const confirmed = [...specConfirmed, ...qualConfirmed].map(scoreFinding)
+    const dedupMerged = specMerged + qualMerged
 
     // Verdict by reviewMode:
     //   • gate    → BLOCK on a confirmed I:H from a GATING dimension.
@@ -509,8 +619,11 @@ ${body}
     // `findings` is the scored, deduped, confirmed list (each carrying `gating` + `cls`).
     // In 'gate' mode it is the gating findings that drove the verdict; in 'quality' mode
     // it is the code-quality debt the caller feeds to the one polish pass and the
-    // debt-triage step.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed }
+    // debt-triage step. `reviewedSha` is the worktree HEAD this round judged — the
+    // caller threads { reviewedSha, findings } back in as the next round's anchor.
+    // `changedSincePaths` (vs the prior round's sha; [] on a first round) feeds the
+    // caller's churn guard: a NEW blocker outside it sits on unchanged code.
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [] }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -636,8 +749,16 @@ phase('Gate review')
       { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
     )
   }
+  // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
+  // re-review closure-checks the priors + scopes new findings to the fix's own
+  // diff instead of independently re-sampling the whole branch (see runReview).
+  let prior = null
+  // Churn-guard state: every prior round's finding fingerprints + the streak of
+  // consecutive rounds that surfaced new blockers on unchanged code.
+  let seen = []
+  let churnStreak = 0
   for (let round = 1; ; round++) {
-    const r = await runReview('Gate review', prep.fixBranch, 'gate')
+    const r = await runReview('Gate review', prep.fixBranch, 'gate', prior)
     if (r?.error) return halt(`bug-fix gate review could not run: ${r.error}`)
     if (r?.publishError) return halt(`bug-fix gate review verdict was not posted to #${ISSUE}: ${r.publishError}`)
     const spent = tokensSpent()
@@ -650,9 +771,29 @@ phase('Gate review')
     const stuck = stuckBlockers(stall)
     if (stuck.length)
       return halt(`Bug-fix gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    // Churn guard: rounds keep retiring blockers but surfacing NEW ones on code
+    // unchanged since the prior round → reviewer noise, not fix regressions.
+    if (prior) {
+      const churn = detectChurn(r, seen)
+      churnStreak = churn.length ? churnStreak + 1 : 0
+      if (churn.length)
+        log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
+      if (churnStreak >= CHURN_ROUNDS)
+        return halt(`Bug-fix gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
+    }
+    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
+    if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+    // The dispatch inlines every Fix-class gating finding (the workflow already
+    // holds them structurally) so the engineer doesn't have to re-find and re-parse
+    // the verdict comment — and so the gating I:M findings (class Fix, see
+    // scoreFinding) ride along in the same round instead of waiting to flap into a
+    // later-round blocker. The comment stays the source of full detail (BAD/GOOD
+    // snippets).
+    const fixList = (r.findings ?? []).filter(f => f.cls === 'Fix')
+      .map(f => `- [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
     await agent(
-      `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment.`,
+      `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment for full detail. Every finding below is \`Fix\`-class and MUST be addressed this round (gating findings are never deferred):\n${fixList}`,
       { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }

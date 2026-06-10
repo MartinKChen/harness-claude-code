@@ -612,7 +612,7 @@
       <tr>
         <td class="role">crash recovery</td>
         <td>engineer handoff docs (budget-gate + precompact hooks)</td>
-        <td>WIP commits + durable checklist + Workflow resume journal; fix loops are uncapped (loop to confidence-to-pass), kept convergent by aggressive-recall review + adversarial verify. Handoff hooks/skill deleted.</td>
+        <td>WIP commits + durable checklist + Workflow resume journal; fix loops are uncapped (loop to confidence-to-pass), kept convergent by anchored re-review rounds (closure-check the prior findings, hunt new ones only in changed code) + aggressive-recall first rounds + opt-in adversarial verify. Handoff hooks/skill deleted.</td>
       </tr>
       <tr>
         <td class="role">reviewer agent</td>
@@ -1091,18 +1091,35 @@
     <code>[x]</code>). The <strong>quality review is the exception — bounded to one
     fix cycle + one re-review, never a loop</strong> (code quality never blocks, so
     its residual is triaged into tracking issues rather than chased to zero).
-    Aggressive reviewer recall keeps the gating loops convergent; the fan-out's
-    adversarial verify is
+    Re-review rounds are <strong>anchored</strong>: each gets the prior round's
+    findings + the exact sha that round judged, closure-checks them (same
+    title/file, no upward re-grade of unchanged code), and hunts new findings only
+    in the code changed since — convergence instead of an independent re-sample of
+    the whole diff per round. A <strong>gating <code>I:M</code> is always classed
+    <code>Fix</code></strong> (never <code>Defer</code>) and the fix dispatch
+    inlines the <code>Fix</code>-class findings, so a skipped gating MEDIUM can't
+    flap into a later-round blocker. The fan-out's
+    full adversarial verify is
     <strong>opt-in (<code>verifyLenses</code> arg, default OFF)</strong> — when on,
-    only a finding that survives refutation holds a gate open, and when off the
-    dimension reviewer's own severity stands. Either way the
+    only a finding that survives refutation holds a gate open; when off the
+    dimension reviewer's own severity stands for non-blocking findings, but each
+    <strong>newly-reported verdict-driving blocker still faces an always-on
+    2-lens (correctness + context) floor</strong> — neutralised only when both
+    lenses refute it on concrete evidence (coverage gap dropped; gate blocker
+    downgraded to MEDIUM, still fixed via the gating-<code>I:M</code>→<code>Fix</code>
+    class). Either way the
     <strong>gate</strong> review blocks only on a <strong>gating-dimension</strong>
     <code>I:H</code> — spec-compliance, contract, or security — while
     <strong>code-quality</strong> findings are deferred debt handled by the separate
     quality review and never block the slice.
     <strong><code>halt()</code></strong> flips
     <code>status:in-progress</code> → <code>status:need-attention</code> and posts
-    a comment — the only path to a human; the outer loop never recovers it.
+    a comment — the only path to a human; the outer loop never recovers it. Two
+    progress guards bound the uncapped loops: the <strong>oscillation
+    stall</strong> (the same blocker surviving its own targeted fix for 3
+    consecutive rounds) and the <strong>churn guard</strong> (3 consecutive
+    rounds each surfacing a <em>new</em> blocker on code unchanged since the
+    prior round — reviewer noise, not defects).
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
     <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
     checklist + the <code>Workflow</code> resume journal. There are no handoff
@@ -1382,7 +1399,7 @@
 
       <div class="flow-arrow">
         <span class="actor agent">Coverage gate</span>
-        <span class="effect">runReviewSlice('test-coverage') over the authored specs; fix loop to APPROVE (uncapped)</span>
+        <span class="effect">runReviewSlice('test-coverage') over the authored specs; anchored fix loop to APPROVE (uncapped)</span>
       </div>
       <div class="flow-state">Plan &mdash; group impl tasks (≤3 / group, DAG)</div>
 
@@ -1394,7 +1411,7 @@
 
       <div class="flow-arrow">
         <span class="actor agent">Gate review</span>
-        <span class="effect">runReviewSlice('production-code', …, 'gate') over spec/contract/security; fix loop to APPROVE (uncapped); on APPROVE tick the ACs</span>
+        <span class="effect">runReviewSlice('production-code', …, 'gate') over spec/contract/security; anchored fix loop to APPROVE (uncapped); on APPROVE tick the ACs</span>
       </div>
       <div class="flow-state">Quality review &mdash; runReviewSlice(…, 'quality') over the code-quality axes; one fix cycle + one re-review (bounded); residual triaged into refactor/enhancement issues</div>
 

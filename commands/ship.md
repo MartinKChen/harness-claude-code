@@ -116,16 +116,20 @@ For each eligible issue (line format: `- #<n> | kind:<feature|enhancement|bug> |
 
    - **`kind:feature`, `kind:enhancement`, or `kind:refactor`** → `implement-slice.mjs`:
      - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/implement-slice.mjs`
-     - `args`: `{ "slice": <n>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false> }`
+     - `args`: `{ "slice": <n>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false>, "round1Samples": <int, optional> }`
      - `TaskUpdate({ taskId, owner: "implement-slice-<n>" })`
    - **`kind:bug`** → `fix-bug.mjs`:
      - `scriptPath`: `${CLAUDE_PLUGIN_ROOT}/workflows/fix-bug.mjs`
-     - `args`: `{ "issue": <n>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false> }`
+     - `args`: `{ "issue": <n>, "today": "<YYYY-MM-DD>", "verifyLenses": <true|false>, "round1Samples": <int, optional> }`
      - `TaskUpdate({ taskId, owner: "fix-bug-<n>" })`
 
    Pass `today` explicitly (the workflow runtime has no clock — it stamps the PR body's verdict line). Resolve `$CLAUDE_PLUGIN_ROOT` from the environment the same way the plugin's hooks do, then pass the absolute path.
 
-   Pass `verifyLenses` explicitly too (the workflow sandbox has no env access — same reason `today` is threaded in). Read `$HCC_VERIFY_LENSES` from the environment (e.g. `printenv HCC_VERIFY_LENSES`) and set `verifyLenses: true` only when it is one of `1` / `true` / `on` / `yes` (case-insensitive); otherwise `false`. **Default is OFF** — an unset / empty / any-other value means `false`. When off, the inlined review skips the adversarial correctness/context/severity lenses (a self-review pass) and the dimension reviewer's own severity stands; turn it on to re-enable the three-lens refutation. The workflow runs in the background and notifies on completion; it owns everything internally and either opens a `merge:auto` draft PR + releases the lock on success, or flips `status:in-progress` → `status:need-attention` on halt.
+   Pass `verifyLenses` explicitly too (the workflow sandbox has no env access — same reason `today` is threaded in). Read `$HCC_VERIFY_LENSES` from the environment (e.g. `printenv HCC_VERIFY_LENSES`) and set `verifyLenses: true` only when it is one of `1` / `true` / `on` / `yes` (case-insensitive); otherwise `false`. **Default is OFF** — an unset / empty / any-other value means `false`. When off, the inlined review skips the adversarial correctness/context/severity lenses (a self-review pass) and the dimension reviewer's own severity stands; turn it on to re-enable the three-lens refutation.
+
+   Same for `round1Samples`: read `$HCC_ROUND1_SAMPLES` and, when it is a positive integer, pass it through; otherwise omit it (the workflow defaults to 2). It is how many independent samples each **gating** dimension gets on the FIRST review round — the recall knob; anchored re-review rounds always run 1.
+
+   The workflow runs in the background and notifies on completion; it owns everything internally and either opens a `merge:auto` draft PR + releases the lock on success, or flips `status:in-progress` → `status:need-attention` on halt.
 
    > **Enhancement / refactor prerequisite.** `implement-slice.mjs` resolves the slice branch via `gh issue develop` and reads a `## Tasks` checklist from the body. An enhancement **or refactor** issue must therefore carry a linked branch and a tasks checklist before kickoff routes it — otherwise the workflow halts to `status:need-attention`. A **refactor** issue's checklist carries NO `e2e` tasks and NO acceptance criteria (it is behavior-preserving), so `implement-slice`'s Author-E2E / coverage-gate / Pass-E2E phases all no-op; both kinds are created with branch + body already in place (`create-enhancement.sh` / `create-refactor.sh`, run by the review-debt triage or the `/create-enhancement-issue` command). Bugs need neither (their branch is created by `fix-bug.mjs` Prep; their spec is the approved analysis comment).
 

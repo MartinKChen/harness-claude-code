@@ -1,6 +1,6 @@
 export const meta = {
   name: 'implement-slice',
-  description: 'Drive one slice through author-E2E → coverage gate → plan → implement → pass-E2E → gate-review (spec/contract/security fix loop until APPROVE) → quality-review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) to an open draft PR',
+  description: 'Drive one slice through author-E2E → coverage gate → plan → implement → pass-E2E → gate-review (spec/contract/security fix loop until APPROVE, rounds anchored to the prior round\'s findings + reviewed sha) → quality-review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) to an open draft PR',
   whenToUse: 'Launched (background) by the /implement-feature Stage-1 kickoff once per eligible slice, after the orchestrator flips status:ready-to-implement → status:in-progress (the slice lock). Owns the WHOLE inner cycle — including the fan-out reviews (coverage gate + gate review + quality review) inlined as runReviewSlice(); the outer /loop only handles the PR (fix-pr / close-pr). Pass { slice, today }.',
   phases: [
     { title: 'Prep' },
@@ -35,6 +35,14 @@ const TODAY = input.today ?? 'unknown-date'
 // no env access — same reason args.today is threaded in) and passes
 // verifyLenses=true to turn the three lenses back on.
 const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
+// Round-1 recall sampling (issue #47): an LLM reviewer is a stochastic sampler
+// with imperfect single-pass recall, so the FIRST round of each gating review
+// fans every gating dimension out K× in parallel and unions the samples through
+// dedup — one extra dimension agent is far cheaper than the extra fix round a
+// missed defect costs. Rounds after the first stay at 1 sample (they are
+// anchored closure-checks, not discovery). The orchestrator may thread
+// $HCC_ROUND1_SAMPLES through args.round1Samples; default 2, floor 1.
+const ROUND1_SAMPLES = Math.max(1, parseInt(input.round1Samples, 10) || 2)
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
@@ -58,7 +66,11 @@ if (!/^\d+$/.test(String(SLICE)))
 //     (spec-compliance / contract / security). Its fix↔re-review loop is UNCAPPED
 //     and blocks on any surviving gating I:H, so it runs until APPROVE (a real
 //     blocker is fixed for however many rounds it takes; the oscillation guard halts
-//     to a human only on NO PROGRESS).
+//     to a human only on NO PROGRESS). Rounds after the first are ANCHORED: the
+//     prior round's findings + the sha it judged are threaded back in (roundCtx),
+//     so a re-review closure-checks the priors and scopes new findings to the
+//     hunks changed since — not an independent re-sample of the whole branch diff
+//     that would surface a different defect every round.
 //   • QUALITY review (reviewMode='quality') — runs ONLY the code-quality axes, which
 //     NEVER block. It is deliberately BOUNDED, not a loop: exactly one review/fix
 //     cycle (review → one engineer polish pass over the Defer/Nit findings) plus one
@@ -228,10 +240,12 @@ const REVIEW_PREP = {
     ok:           { type: 'boolean', description: 'read-only worktree set up on the slice branch tip' },
     haltReason:   { type: ['string', 'null'] },
     worktreePath: { type: 'string' },
+    headSha:      { type: 'string', description: 'the worktree HEAD commit sha (`git rev-parse HEAD`) — the exact commit this review judges' },
     scopeNote:    { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
     touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified' },
+    changedSincePaths: { type: 'array', items: { type: 'string' }, description: 'paths changed since the prior review round (`git diff --name-only <priorSha>..HEAD`); [] when there is no prior round' },
   },
-  required: ['ok', 'haltReason', 'worktreePath', 'scopeNote', 'touchedPaths'],
+  required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths', 'changedSincePaths'],
 }
 const SURFACES = {
   type: 'object',
@@ -391,6 +405,21 @@ const chunk = (arr, n) => {
 //      even while surfacing new ones — never trips it, so genuine progress runs
 //      uncapped exactly as before.
 const STALL_ROUNDS = 3
+// CHURN GUARD (issue #49) — the stall guard's mirror image. trackStall catches
+// the SAME blocker surviving its own fix; the churn guard catches rounds that
+// keep RETIRING their blockers while surfacing brand-NEW ones on code UNCHANGED
+// since the prior round. Under anchored re-review (and past the blocker floor)
+// that is reviewer sampling noise, not defects — CHURN_ROUNDS consecutive such
+// rounds halt to a human instead of looping on noise forever. detectChurn
+// returns this round's churn blockers: new vs every prior round's findings
+// (`seen`, fingerprint-matched) AND outside the round's changed-since paths.
+const CHURN_ROUNDS = 3
+const detectChurn = (r, seen) => {
+  if (!Array.isArray(r.changedSincePaths)) return []
+  const changed = new Set(r.changedSincePaths.map(p => String(p)))
+  return r.blockers.filter(b => !seen.some(p => sameBlocker(p, b)) && !changed.has(fileNoLine(b.file)))
+}
+const fmtChurn = churn => churn.map(c => `\`${c.file}\` — ${c.title}`).join('; ')
 const kb = n => Math.round(n / 1000)
 const verifyNote = VERIFY_ENABLED ? 'survived verification' : 'kept (verify off)'
 const tokensSpent = () => { try { return budget?.spent?.() ?? 0 } catch { return 0 } }
@@ -431,8 +460,16 @@ function scoreFinding(f) {
   // Non-gating findings are code-quality debt: a would-be `Fix` is downgraded to
   // `Defer` (recorded for the periodic quality sweep) so it never holds the slice.
   // Defer/Nit/Drop are already non-blocking, so they pass through unchanged.
+  // GATING findings go the other way: an I:M from a gate axis (spec / contract /
+  // security) is class `Fix` regardless of effort — never `Defer`. Deferring a
+  // gating MEDIUM leaves it in the diff where a later round can re-grade the same
+  // defect HIGH (severity flapping), which reads as a "new" blocker and stops the
+  // fix loop from converging. It still doesn't BLOCK (the verdict keys off I:H
+  // only); it just rides along in every dispatched fix round so it can't flap.
   const base = classify(impact, f.effort)
-  const cls = gating ? base : (base === 'Fix' ? 'Defer' : base)
+  const cls = gating
+    ? (impact === 'M' ? 'Fix' : base)
+    : (base === 'Fix' ? 'Defer' : base)
   return { ...f, impact, gating, cls }
 }
 
@@ -621,10 +658,78 @@ async function verifyFindings(list, tag, diffCtx, phaseTitle) {
   return verified.flat()
 }
 
+// ── The always-on blocker floor (issue #48) ──────────────────────────────────
+// axis-reviewer grades with a recall-over-precision stance that was designed
+// around a refutation backstop — but the full 3-lens verify is opt-in and OFF by
+// default, so a borderline gating I:H would otherwise flow straight into the
+// verdict and buy an entire fix round (worktree prep + dimensions + publish +
+// engineer fix + re-review). The floor closes that gap cheaply: when the full
+// verify is OFF, ONLY the findings that would actually drive a BLOCK (coverage:
+// every confirmed gap; gate: the gating I:H survivors — usually a handful) face
+// the correctness + context lenses. Severity is excluded — the gating I:M→Fix
+// rule already absorbs grading noise. A blocker is neutralised ONLY when BOTH
+// lenses explicitly refute it (a missing or failed lens keeps it standing, so an
+// infra failure can never silently unblock a gate):
+//   • coverage gap → dropped (a phantom gap is not a gap)
+//   • gate blocker → downgraded to MEDIUM (stays in the comment AND the fix
+//     dispatch via the gating-I:M→Fix class; it just no longer blocks)
+// Findings that fingerprint-match a prior round's are exempt — the anchored
+// re-review already closure-checked them against the real code.
+const FLOOR_LENSES = VERIFY_LENSES.filter(l => l.key !== 'severity')
+const FLOOR_MODE_NOTE = `
+
+FLOOR MODE: every finding in this batch is a VERDICT-DRIVING blocker. Here, mark refuted=true ONLY on concrete evidence the claim is wrong — the cited code does not do what the finding says, or surrounding context provably neutralises it. Mere uncertainty is NOT refutation in floor mode; when unsure, return refuted=false and let the blocker stand.`
+async function applyBlockerFloor(list, scope, diffCtx, phaseTitle, roundCtx) {
+  if (VERIFY_ENABLED) return list // the full 3-lens verify already vetted everything
+  const isBlocker = f => scope === 'test-coverage' || (sevToImpact(f.severity) === 'H' && isGating(f))
+  const isPrior = f => (roundCtx?.findings || []).some(p => sameBlocker(p, f))
+  const targets = list.filter(f => isBlocker(f) && !isPrior(f))
+  if (!targets.length) return list
+  const byDim = new Map()
+  for (const f of targets) {
+    if (!byDim.has(f.dimension)) byDim.set(f.dimension, [])
+    byDim.get(f.dimension).push(f)
+  }
+  const batches = []
+  for (const [dim, dimFindings] of byDim) {
+    const chunks = chunk(dimFindings, VERIFY_BATCH_CAP)
+    chunks.forEach((items, bi) => batches.push({ dim, items, bi, multi: chunks.length > 1 }))
+  }
+  const judged = (await parallel(batches.map(({ dim, items, bi, multi }) => () =>
+    parallel(FLOOR_LENSES.map(lens => () =>
+      agent(verifyBatchPrompt(items, lens, diffCtx) + FLOOR_MODE_NOTE,
+        { label: `floor:${dim}:${lens.key}${multi ? `:b${bi + 1}` : ''}`, phase: phaseTitle, schema: BATCH_VERDICT, model: AGENT_MODEL },
+      ),
+    )).then(lensResults => {
+      const live = lensResults.filter(Boolean)
+      return items.map((f, i) => {
+        const idx = i + 1
+        const refutes = live.filter(r => {
+          const v = (r.verdicts || []).find(x => x.index === idx)
+          return v && v.refuted
+        }).length
+        return { f, gone: refutes >= FLOOR_LENSES.length } // BOTH lenses explicitly refuted
+      })
+    }),
+  ))).flat()
+  const refuted = new Set(judged.filter(j => j.gone).map(j => j.f))
+  log(`${phaseTitle}: blocker floor — ${targets.length} would-be blocker(s) checked, ${refuted.size} refuted by both lenses${refuted.size ? (scope === 'test-coverage' ? ' → dropped' : ' → downgraded to MEDIUM') : ''}.`)
+  if (!refuted.size) return list
+  return list.flatMap(f => {
+    if (!refuted.has(f)) return [f]
+    if (scope === 'test-coverage') return []
+    return [{ ...f, severity: 'MEDIUM', impactStatement: `${f.impactStatement} (blocker floor: downgraded from ${f.severity} — both the correctness and context lenses refuted the blocking claim)` }]
+  })
+}
+
 // Fan out a dimension set → flat list of findings tagged with their dimension + phase.
-async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
-  return (await parallel(dims.map(d => () =>
-    agent(dimensionPrompt(d, scope, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
+// `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
+// samples of the same catalogue over the same diff — and unions the results; the
+// caller's dedupeFindings collapses the overlap (keeping the highest severity).
+async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx, samples = 1) {
+  const jobs = dims.flatMap(d => Array.from({ length: samples }, (_, i) => ({ d, i })))
+  return (await parallel(jobs.map(({ d, i }) => () =>
+    agent(dimensionPrompt(d, scope, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}${samples > 1 ? `:s${i + 1}` : ''}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
   ))).filter(Boolean).flatMap(r => (r.findings || []).map(f => ({ ...f, dimension: r.dimension, reviewPhase })))
 }
 
@@ -658,12 +763,22 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
 //                task, that its `covers:` AC clause is discharged at that layer and
 //                its `scenario:` is walked there — a backend invariant proven at
 //                the backend layer, never re-asserted through E2E.
-// Returns { verdict: 'APPROVE'|'BLOCK', publishError } on success, or { error } on
-// any infra failure (worktree setup, an uncaught throw). The whole body is
-// try/caught so a crash surfaces as { error } and the caller halt()s to a human,
-// never killing the run uncaught.
+//   roundCtx   — null on the FIRST round of a fix↔re-review loop; on every later
+//                round, { reviewedSha, findings } from the PRIOR round. Rendered as
+//                the anchored-re-review block so each dimension agent (1) closure-
+//                checks every prior finding instead of re-sampling the whole diff,
+//                and (2) hunts NEW findings only in the hunks changed since
+//                reviewedSha. Without this anchor every round is an independent
+//                stochastic sample of the full branch diff, and the loop "finds a
+//                different defect every round" instead of converging.
+// Returns { verdict: 'APPROVE'|'BLOCK', publishError, blockers, findings,
+// reviewedSha } on success (reviewedSha = the worktree HEAD this round judged —
+// the caller threads it back in as the next round's anchor), or { error } on any
+// infra failure (worktree setup, an uncaught throw). The whole body is try/caught
+// so a crash surfaces as { error } and the caller halt()s to a human, never
+// killing the run uncaught.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks, reviewMode = 'gate') {
+async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks, reviewMode = 'gate', roundCtx = null) {
   try {
     // ── Prep: read-only worktree + diff ──
     const rprep = await agent(
@@ -672,7 +787,11 @@ async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tas
 Steps:
 1. Set up the read-only worktree on the slice branch \`${sliceBranch}\`: \`bash skills/operation-git/scripts/setup-worktree.sh ${sliceBranch}\` (NO --merge-main). Capture the printed worktreePath. If it fails, return ok=false with a haltReason.
 2. Compute the touched paths vs origin/main inside the worktree: \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
-3. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
+3. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
+4. ${roundCtx?.reviewedSha
+    ? `Compute the paths changed since the prior review round: \`git -C <worktreePath> diff --name-only ${roundCtx.reviewedSha}..HEAD\` → changedSincePaths (an empty array if the command fails).`
+    : 'changedSincePaths = [] (there is no prior review round).'}
+5. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
 
 Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to every downstream dimension agent — make sure it is correct and on the slice branch tip.`,
       { label: `review-prep:${scope}`, phase: phaseTitle, schema: REVIEW_PREP, model: WRITER_MODEL },
@@ -754,13 +873,29 @@ Judge each task against its owning layer: the \`covers:\` AC clause must be disc
     // there — the bar is "existing suite still exercises the touched code" + "unit test any
     // newly-extracted seam". Without this note the gate would BLOCK every refactor for a
     // "missing tests" gap that does not apply.
+    // Round anchoring (the convergence fix): a re-review round is NOT a fresh
+    // sweep. The prior round's findings + the exact sha it judged are rendered so
+    // each dimension agent closure-checks the priors and scopes NEW findings to
+    // the code that changed since — a fresh finding on an unchanged hunk is
+    // presumptively sampling noise and must clear a higher bar. This turns the
+    // fix↔re-review loop from independent samples into a monotone ratchet.
+    const anchorBlock = (roundCtx && roundCtx.reviewedSha && (roundCtx.findings?.length ?? 0) > 0) ? `
+## Anchored re-review (a prior round of THIS review already ran — this is NOT a fresh sweep)
+The prior round judged commit \`${roundCtx.reviewedSha}\` and reported the findings listed below; a fix has landed since. Your round has exactly TWO jobs:
+1. **Closure-check every prior finding assigned to your dimension**: open its cited file in the worktree and decide fixed vs. still-present. Re-report each STILL-PRESENT finding — keep its original title and file (so it fingerprints as the SAME blocker) and keep its prior severity unless the cited code itself materially changed. Never re-grade unchanged code upward. Do NOT re-report a finding that is fixed.
+2. **Hunt NEW findings ONLY in the code that changed since the prior round**: \`git -C ${rprep.worktreePath} diff ${roundCtx.reviewedSha}..HEAD\` is the new-code scope — the fix itself may have introduced a defect. A finding in a hunk UNCHANGED since \`${roundCtx.reviewedSha}\` that no prior round reported is presumptively sampling noise: report it ONLY if you can prove it is real and I:H, and say explicitly in its impactStatement that it sits on code unchanged since the prior round.
+
+Prior findings to closure-check:
+${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\``).join('\n')}
+` : ''
+
     const isRefactor = scope === 'production-code' && (sm.acIds?.length ?? 0) === 0 && (tasks || []).every(t => t.type !== 'e2e')
     const refactorBlock = isRefactor ? `
 ## Refactor slice (behavior-preserving — no acceptance criteria, no E2E)
 This slice has NO acceptance criteria and NO E2E tasks: it is a code-quality REFACTOR, not new behavior. For the test-coverage dimension specifically, do NOT report "missing AC coverage", "missing E2E", or "missing integration test" — there is no new behavior to cover. The coverage bar is narrower: (1) behavior is PRESERVED — the pre-existing test suite must still exercise the touched code (it is run green at push by the engineer pre-push hook), and (2) any newly-EXTRACTED seam (a function/class/module the refactor pulls out) has a focused UNIT test. Flag ONLY those two as gaps; pre-existing coverage satisfies the rest. Quality dimensions still apply normally.` : ''
 
     const diffCtx = `Review the slice branch \`${sliceBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.
-${manifestBlock}${ledgerBlock}${refactorBlock}`
+${manifestBlock}${ledgerBlock}${refactorBlock}${anchorBlock}`
 
     // Which dimension set runs is decided by (scope, reviewMode):
     //   • test-coverage         → the lone test-coverage dimension (a `spec`-phase row).
@@ -777,10 +912,17 @@ ${manifestBlock}${ledgerBlock}${refactorBlock}`
     let specMerged = 0
     if (runSpec) {
       const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
-      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx))
+      // Round 1 (no anchor) fans each gating dimension out ROUND1_SAMPLES×, union
+      // through dedup — spend the recall budget where it counts (issue #47).
+      // Anchored rounds are closure-checks and stay at 1 sample.
+      const specSamples = roundCtx ? 1 : ROUND1_SAMPLES
+      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx, specSamples))
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
+      // Always-on floor for the verdict-driving subset (no-op when the full
+      // verify already ran above).
+      specConfirmed = await applyBlockerFloor(specConfirmed, scope, diffCtx, phaseTitle, roundCtx)
     }
 
     // ── Code-quality axes: fan out, dedup, verify. ──
@@ -795,10 +937,11 @@ ${manifestBlock}${ledgerBlock}${refactorBlock}`
       log(`${phaseTitle}: quality ${qualDedup.kept.length} deduped, ${qualConfirmed.length} ${verifyNote}.`)
     }
 
-    // ── Compose (plain code). Final dedup collapses the rare cross-dimension overlap. ──
-    const finalDedup = dedupeFindings([...specConfirmed, ...qualConfirmed])
-    const confirmed = finalDedup.kept.map(scoreFinding)
-    const dedupMerged = specMerged + qualMerged + finalDedup.merged
+    // ── Compose (plain code). The gate/quality split makes runSpec and runQual
+    // mutually exclusive per call, and each set is already deduped — no cross-set
+    // dedup pass is needed. ──
+    const confirmed = [...specConfirmed, ...qualConfirmed].map(scoreFinding)
+    const dedupMerged = specMerged + qualMerged
 
     // Verdict by (scope, reviewMode):
     //   • test-coverage    → BLOCK on ANY confirmed gap.
@@ -840,8 +983,11 @@ ${body}
     // `findings` is the scored, deduped, confirmed list (each carrying `gating` + `cls`).
     // In 'gate' mode it is the gating findings that drove the verdict; in 'quality' mode
     // it is the code-quality debt the caller feeds to the one polish pass and the
-    // debt-triage step.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed }
+    // debt-triage step. `reviewedSha` is the worktree HEAD this round judged — the
+    // caller threads { reviewedSha, findings } back in as the next round's anchor.
+    // `changedSincePaths` (vs the prior round's sha; [] on a first round) feeds the
+    // caller's churn guard: a NEW blocker outside it sits on unchanged code.
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [] }
   } catch (e) {
     return { error: `${scope} review crashed: ${e?.message || String(e)}` }
   }
@@ -997,8 +1143,16 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
       { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: 'coverage-fix:resume' },
     )
   }
+  // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
+  // re-gate closure-checks the priors + scopes new gaps to the changed specs
+  // instead of independently re-sampling the whole branch (see runReviewSlice).
+  let prior = null
+  // Churn-guard state: every prior round's finding fingerprints + the streak of
+  // consecutive rounds that surfaced new gaps on unchanged specs.
+  let seen = []
+  let churnStreak = 0
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks)
+    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior)
     if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
     // A set publishError means the verdict comment never reached GitHub. The gate's
     // findings would then be invisible to the fix loop — halt rather than loop blind
@@ -1014,9 +1168,25 @@ if (e2eTasks.length && !allE2EAlreadyDone) {
     const stuck = stuckBlockers(stall)
     if (stuck.length)
       return halt(`E2E coverage gate stalled — ${stuck.length} gap(s) survived ${STALL_ROUNDS} consecutive e2e-author fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    // Churn guard: rounds keep retiring gaps but surfacing NEW ones on specs
+    // unchanged since the prior round → reviewer noise, not coverage debt.
+    if (prior) {
+      const churn = detectChurn(r, seen)
+      churnStreak = churn.length ? churnStreak + 1 : 0
+      if (churn.length)
+        log(`Coverage gate: round ${round} — ${churn.length} churn gap(s) (new, on specs unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
+      if (churnStreak >= CHURN_ROUNDS)
+        return halt(`E2E coverage gate churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW gap(s) on specs unchanged since the prior round (reviewer noise, not coverage debt); a human should look. Latest churn: ${fmtChurn(churn)}`)
+    }
+    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
+    if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Coverage gate: round ${round} returned BLOCK — dispatching an e2e-author fix and re-gating.`)
+    // The dispatch inlines the confirmed gaps (the workflow already holds them
+    // structurally) so the e2e-author doesn't have to re-find and re-parse the
+    // verdict comment; the comment stays the source of full detail.
+    const gapList = (r.findings ?? []).map(f => `- ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
     await agent(
-      `Fix E2E coverage feedback on slice #${SLICE}.`,
+      `Fix E2E coverage feedback on slice #${SLICE}. The newest \`# E2E Coverage Gate\` comment carries full detail; the confirmed gaps to close are:\n${gapList}`,
       { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: `coverage-fix:${round}` },
     )
   }
@@ -1186,8 +1356,16 @@ phase('Gate review')
       { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
     )
   }
+  // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
+  // re-review closure-checks the priors + scopes new findings to the fix's own
+  // diff instead of independently re-sampling the whole branch (see runReviewSlice).
+  let prior = null
+  // Churn-guard state: every prior round's finding fingerprints + the streak of
+  // consecutive rounds that surfaced new blockers on unchanged code.
+  let seen = []
+  let churnStreak = 0
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('production-code', 'Gate review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate')
+    const r = await runReviewSlice('production-code', 'Gate review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior)
     if (r?.error) return halt(`gate review could not run: ${r.error}`)
     // Unposted verdict (see the coverage-gate note above): the findings never reached
     // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
@@ -1203,9 +1381,29 @@ phase('Gate review')
     const stuck = stuckBlockers(stall)
     if (stuck.length)
       return halt(`Gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+    // Churn guard: rounds keep retiring blockers but surfacing NEW ones on code
+    // unchanged since the prior round → reviewer noise, not fix regressions.
+    if (prior) {
+      const churn = detectChurn(r, seen)
+      churnStreak = churn.length ? churnStreak + 1 : 0
+      if (churn.length)
+        log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
+      if (churnStreak >= CHURN_ROUNDS)
+        return halt(`Gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
+    }
+    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
+    if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
+    // The dispatch inlines every Fix-class gating finding (the workflow already
+    // holds them structurally) so the engineer doesn't have to re-find and re-parse
+    // the verdict comment — and so the gating I:M findings (class Fix, see
+    // scoreFinding) ride along in the same round instead of waiting to flap into a
+    // later-round blocker. The comment stays the source of full detail (BAD/GOOD
+    // snippets).
+    const fixList = (r.findings ?? []).filter(f => f.cls === 'Fix')
+      .map(f => `- [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
     await agent(
-      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment.`,
+      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment for full detail. Every finding below is \`Fix\`-class and MUST be addressed this round (gating findings are never deferred):\n${fixList}`,
       { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }
