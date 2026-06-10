@@ -37,6 +37,12 @@ const TODAY = input.today ?? 'unknown-date'
 // no env access — same reason args.today is threaded in) and passes
 // verifyLenses=true to turn the three lenses back on.
 const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
+// Round-1 recall sampling (issue #47, mirrored from implement-slice): the FIRST
+// gate-review round fans every gating dimension out K× in parallel and unions the
+// samples through dedup; anchored re-review rounds stay at 1 sample. The
+// orchestrator may thread $HCC_ROUND1_SAMPLES through args.round1Samples;
+// default 2, floor 1.
+const ROUND1_SAMPLES = Math.max(1, parseInt(input.round1Samples, 10) || 2)
 if (!/^\d+$/.test(String(ISSUE)))
   throw new Error(`fix-bug: args.issue must be a bug issue number; got ${typeof ISSUE}: ${JSON.stringify(ISSUE) ?? String(ISSUE)}`)
 
@@ -394,9 +400,13 @@ Read \`${f.file}\` (and its surroundings) in the worktree yourself before decidi
   ))
 }
 
-async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx) {
-  return (await parallel(dims.map(d => () =>
-    agent(dimensionPrompt(d, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
+// `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
+// samples of the same catalogue over the same diff — and unions the results; the
+// caller's dedupeFindings collapses the overlap (keeping the highest severity).
+async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx, samples = 1) {
+  const jobs = dims.flatMap(d => Array.from({ length: samples }, (_, i) => ({ d, i })))
+  return (await parallel(jobs.map(({ d, i }) => () =>
+    agent(dimensionPrompt(d, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}${samples > 1 ? `:s${i + 1}` : ''}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
   ))).filter(Boolean).flatMap(r => (r.findings || []).map(f => ({ ...f, dimension: r.dimension, reviewPhase })))
 }
 
@@ -485,7 +495,10 @@ ${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] $
     let specMerged = 0
     if (runSpec) {
       const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
-      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, diffCtx))
+      // Round 1 (no anchor) fans each gating dimension out ROUND1_SAMPLES×, union
+      // through dedup (issue #47). Anchored rounds stay at 1 sample.
+      const specSamples = roundCtx ? 1 : ROUND1_SAMPLES
+      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, diffCtx, specSamples))
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)

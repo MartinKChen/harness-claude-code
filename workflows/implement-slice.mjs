@@ -35,6 +35,14 @@ const TODAY = input.today ?? 'unknown-date'
 // no env access — same reason args.today is threaded in) and passes
 // verifyLenses=true to turn the three lenses back on.
 const VERIFY_ENABLED = input.verifyLenses === true || input.verifyLenses === 'true'
+// Round-1 recall sampling (issue #47): an LLM reviewer is a stochastic sampler
+// with imperfect single-pass recall, so the FIRST round of each gating review
+// fans every gating dimension out K× in parallel and unions the samples through
+// dedup — one extra dimension agent is far cheaper than the extra fix round a
+// missed defect costs. Rounds after the first stay at 1 sample (they are
+// anchored closure-checks, not discovery). The orchestrator may thread
+// $HCC_ROUND1_SAMPLES through args.round1Samples; default 2, floor 1.
+const ROUND1_SAMPLES = Math.max(1, parseInt(input.round1Samples, 10) || 2)
 if (!/^\d+$/.test(String(SLICE)))
   throw new Error(`implement-slice: args.slice must be a slice issue number; got ${typeof SLICE}: ${JSON.stringify(SLICE) ?? String(SLICE)}`)
 
@@ -635,9 +643,13 @@ async function verifyFindings(list, tag, diffCtx, phaseTitle) {
 }
 
 // Fan out a dimension set → flat list of findings tagged with their dimension + phase.
-async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx) {
-  return (await parallel(dims.map(d => () =>
-    agent(dimensionPrompt(d, scope, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
+// `samples` > 1 dispatches each dimension K× in parallel — independent stochastic
+// samples of the same catalogue over the same diff — and unions the results; the
+// caller's dedupeFindings collapses the overlap (keeping the highest severity).
+async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx, samples = 1) {
+  const jobs = dims.flatMap(d => Array.from({ length: samples }, (_, i) => ({ d, i })))
+  return (await parallel(jobs.map(({ d, i }) => () =>
+    agent(dimensionPrompt(d, scope, diffCtx), { agentType: AXIS_REVIEWER, label: `${reviewPhase}:${d.key}${samples > 1 ? `:s${i + 1}` : ''}`, phase: phaseTitle, schema: FINDINGS, model: AGENT_MODEL }),
   ))).filter(Boolean).flatMap(r => (r.findings || []).map(f => ({ ...f, dimension: r.dimension, reviewPhase })))
 }
 
@@ -817,7 +829,11 @@ ${manifestBlock}${ledgerBlock}${refactorBlock}${anchorBlock}`
     let specMerged = 0
     if (runSpec) {
       const specDims = DIMENSIONS.filter(d => d.phase === 'spec' && d.applies(surfaces))
-      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx))
+      // Round 1 (no anchor) fans each gating dimension out ROUND1_SAMPLES×, union
+      // through dedup — spend the recall budget where it counts (issue #47).
+      // Anchored rounds are closure-checks and stay at 1 sample.
+      const specSamples = roundCtx ? 1 : ROUND1_SAMPLES
+      const specDedup = dedupeFindings(await runDimensions(specDims, 'spec', phaseTitle, scope, diffCtx, specSamples))
       specMerged = specDedup.merged
       specConfirmed = (await verifyFindings(specDedup.kept, 'spec', diffCtx, phaseTitle)).filter(f => f.survives)
       log(`${phaseTitle}: spec ${specDedup.kept.length} deduped, ${specConfirmed.length} ${verifyNote}.`)
