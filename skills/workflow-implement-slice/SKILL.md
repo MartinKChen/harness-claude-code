@@ -29,7 +29,7 @@ GitHub keeps only durable, human-relevant state: the slice issue, the
 | Implement | `agent({agentType: engineer})` | Groups run **serially** (shared worktree). Done groups skipped. |
 | Pass E2E | `agent({agentType: engineer})` diagnose → per-group fix loop | Each round: one **diagnose** dispatch boots the stack, runs the specs, and categorizes failures into correlated groups; then one **fix** dispatch per group runs **serially** (shared worktree). Loops (uncapped) until a round diagnoses GREEN; a test-case constraint → `halt()`. |
 | Slice review | `runReviewSlice('production-code')` + `engineer` fix loop, then a one polish cycle + debt triage, then AC-tick | Loops to APPROVE on **gating** blockers only (spec / contract / security `I:H`; no round cap), judging each task at its **owning layer** (the per-task discharge ledger). On the gating APPROVE, runs **one** code-quality polish cycle (a single `engineer` fix over the non-gating findings + one re-review), ticks every AC checkbox (the verified gate), and **triages the residual non-gating findings into tracking issues — one per review dimension**, routed by kind: `non-functional` → `kind:enhancement` (feature-shaped, gets E2E), every other dimension → `kind:refactor` (behavior-preserving, no-e2e task checklist); both at `status:ready-to-review`, deduped. |
-| PR | `agent()` | Open the idempotent `merge:manual` draft PR (`Closes #<slice>`). |
+| PR | `agent()` | Open the idempotent `merge:auto` draft PR (`Closes #<slice>`). |
 
 ## Contract
 
