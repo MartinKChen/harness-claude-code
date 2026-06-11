@@ -89,7 +89,7 @@ Read every ADR file and extract:
 - **Compose topology** — the list of services the product needs (e.g. `backend`, `frontend`, `db`). Service names and image references in the rendered `compose.yaml` come from here.
 - **Product slug** — short kebab-case name used as the compose project name and image-tag prefix.
 
-Then **distill the declaration into `docs/stack.yaml`** — the machine-readable mirror that agents, workflow surface-classifiers, and hooks consume to resolve framework-conditional patterns (fastapi vs generic api, vite vs ssr, node) without re-inferring from file spellings. The prose ADR stays the authoritative decision record; the manifest is derived from it and regenerated whenever an ADR changes the stack:
+Then assert `docs/stack.yaml` exists — the machine-readable mirror of the ADRs' stack decision, **published by the `adr` writer scope of `workflow-writer-publish-architecture` during `/deep-dive-feature`** and kept current by that same scope whenever a later ADR changes the stack. Agents, workflow surface-classifiers, and hooks consume it to resolve framework-conditional patterns (fastapi vs generic api, vite vs ssr, node) without re-inferring from file spellings. **Fallback** (lock-in predates the manifest convention): distill it from the ADR now, using the writer skill's `templates/stack-manifest.yaml` shape, and commit — never introducing a choice the ADR didn't make:
 
 ```yaml
 # docs/stack.yaml — distilled from docs/architecture-decision-record/.
@@ -109,8 +109,10 @@ services: [backend, frontend, db]
 
 ```bash
 git add docs/stack.yaml
-git commit -m "chore(scaffold): stack manifest (distilled from ADR)"
+git commit -m "chore(scaffold): stack manifest (fallback distillation from ADR)"
 ```
+
+(Skip this commit when the manifest already exists — the `stack-manifest` surface is a no-op then, and the commit order below starts at `backend`.)
 
 ### 3. Create the scaffold branch
 
@@ -297,7 +299,7 @@ Report the PR URL and stop.
 
 - **Greenfield only.** If any scaffold surface (`backend/`, `frontend/`, compose file, `e2e/`) already exists, STOP. This skill does not partial-fill.
 - **No defaulted URIs, service names, ports, or framework choices.** Stack variants and topology come from `docs/architecture-decision-record/`. If the ADR doesn't say, STOP and surface — never guess. A declared stack WITHOUT a template is not a guess — it takes the skeleton path; a missing declaration is what stops the run.
-- **The stack manifest is derived, never decided.** `docs/stack.yaml` mirrors the ADR for machine consumption (pattern selection, surface classification, hooks). Scaffold writes it from the ADR verbatim; it never introduces a choice the ADR didn't make, and it is regenerated when an ADR changes the stack.
+- **The stack manifest is derived, never decided.** `docs/stack.yaml` mirrors the ADR for machine consumption (pattern selection, surface classification, hooks). Its owner is the `adr` writer scope of `workflow-writer-publish-architecture` (published at ADR lock, updated when a later ADR changes the stack); scaffold only asserts it exists and falls back to distilling it for lock-ins that predate the convention — never introducing a choice the ADR didn't make.
 - **Templates are a baseline to tailor — for *configuration*, never for application code.** Project configuration (manifests, lint/type/format rule sets, framework-specific lint whitelists, version/runtime pins, surface wiring) IS adapted to the ADR-declared stack and the surfaces that land — a template is a starting point, not a verbatim drop. Application code is still never authored: no routes beyond what the template ships (none), no components/pages beyond the placeholder, no middleware, settings logic, auth, migrations, or router — those are the engineer lane. **Tailoring may hold or raise a gate, never loosen it below the template baseline**; if a baseline gate cannot hold for the declared stack, STOP and surface rather than weaken it (the same anti-masking rule that governs the boot check).
 - **One commit per surface, in the order `stack-manifest` → `backend` → `frontend` → `compose` → `e2e` → `ci` → `design-tokens`.** Subject is `chore(scaffold): <surface> — <short detail>` in Conventional Commits format. Never bundle, never reorder, never use `feat:`.
 - **The boot check is mandatory and non-negotiable.** Compose must bring the stack up locally before e2e lands; if it doesn't, STOP and surface — do not mutate templates to mask the failure.

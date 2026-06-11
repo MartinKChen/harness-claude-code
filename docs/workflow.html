@@ -857,7 +857,7 @@
   </p>
   <ol>
     <li>Confirm greenfield — all four surfaces (<code>backend</code>, <code>frontend</code>, <code>compose</code>, <code>e2e</code>) must be missing.</li>
-    <li>Read the ADRs to pick backend / frontend stack variants and the compose service list; distill them into the machine-readable <code>docs/stack.yaml</code> → commit. A declared stack without a template takes the skeleton path (layout + manifests + <code>ci-checks.sh</code> pinned; framework entry owned by the first engineer slice).</li>
+    <li>Read the ADRs to pick backend / frontend stack variants and the compose service list; assert the ADR-published <code>docs/stack.yaml</code> manifest exists (the <code>adr</code> writer publishes it at lock-in — scaffold distills it only as a fallback for older lock-ins). A declared stack without a template takes the skeleton path (layout + manifests + <code>ci-checks.sh</code> pinned; framework entry owned by the first engineer slice).</li>
     <li>Create <code>chore/scaffold-project</code>.</li>
     <li>Materialize backend → commit. Materialize frontend → commit. Materialize <code>docker-compose.yaml</code> → commit.</li>
     <li><strong>Boot check</strong>: <code>docker compose up -d --build</code>, probe each framework-metadata endpoint, then <code>docker compose down</code>. Stops on failure — does not mutate templates to mask a broken boot.</li>

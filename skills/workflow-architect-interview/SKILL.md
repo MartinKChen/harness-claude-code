@@ -178,6 +178,7 @@ Compose **5 separate dispatch prompts** — one per writer — and surface them 
 - The supersession list — every existing ADR ID whose row should be marked `Superseded` and whose `.md` file should be deleted, paired with the new ADR ID that replaces it.
 - Any deferred-with-trigger items so they land in the relevant ADR's Consequences/Future-triggers section.
 - Whether the high-level topology shifted, so the writer knows whether to update the architecture-context section of `CLAUDE.md`.
+- Whether the stack decision changed — backend/frontend language, framework, rendering mode (CSR vs SSR), or the compose service topology — so the writer knows whether to create/update the machine-readable `docs/stack.yaml` mirror (and which ADR ID each field traces to). "Unchanged" is the common case after the first lock-in.
 - Which C4 levels need updating (context / container / component) and what changes per level. For frontend-bearing features, the **component** diagram for the frontend container MUST include the app shell / nav container as a real component (per step 4f).
 
 `api-contract-writer` needs:

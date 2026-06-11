@@ -1,0 +1,20 @@
+# docs/stack.yaml — machine-readable mirror of the stack decision in
+# docs/architecture-decision-record/ (decided by ADR-{NNNN}<, topology by ADR-{MMMM}>).
+# Derived, never decisive: every field traces to an ADR. Updated by the adr
+# writer scope of workflow-writer-publish-architecture whenever an ADR decides
+# or changes the stack. Do not edit by hand.
+#
+# Consumed by: engineer/reviewer pattern selection (fastapi vs api, vite vs
+# ssr, node), the workflows' review-surface classifiers, the engineer
+# pre-push hook, and /scaffold-project.
+product: <slug>
+backend:
+  stack: <language>-<framework>   # matches the ADR verbatim, e.g. python-fastapi
+  language: <language>            # python | typescript | go | rust | java | kotlin | swift
+  framework: <framework>          # fastapi | express | fastify | nestjs | gin | axum | spring-boot | ktor | vapor | …
+frontend:
+  stack: <framework>-<toolchain>  # e.g. react-vite, nextjs
+  language: typescript
+  framework: <framework>          # react | svelte | vue | …
+  rendering: <mode>               # csr | ssr
+services: [backend, frontend, db] # compose topology from the ADR
