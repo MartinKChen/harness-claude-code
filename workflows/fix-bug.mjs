@@ -1,7 +1,7 @@
 export const meta = {
   name: 'fix-bug',
-  description: 'Drive one approved kind:bug issue through regression-test RED → fix GREEN → refactor → gate review (regression/contract/security fix loop until APPROVE) → quality review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) → open draft PR',
-  whenToUse: 'Launched (background) by the unified implement command kickoff once per eligible kind:bug, after a human approved the `# Bug Analysis` comment and the orchestrator flipped status:ready-to-implement → status:in-progress (the bug lock). Owns the post-approval automatic half: it creates the fix branch, writes the regression test first, drives it green, runs the fan-out reviews (inlined as runReview(): gate review + quality review), loops the gating fix until APPROVE, opens a merge:manual draft PR, and releases the lock. Pass { issue, today }.',
+  description: 'Drive one approved kind:bug issue through regression-test RED → fix GREEN (verified by running the test) → refactor → gate review (regression/contract/security fix loop until APPROVE) → quality review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) → open draft PR',
+  whenToUse: 'Launched (background) by the unified implement command kickoff once per eligible kind:bug, after a human approved the `# Bug Analysis` comment and the orchestrator flipped status:ready-to-implement → status:in-progress (the bug lock). Owns the post-approval automatic half: it creates the fix branch, writes the regression test first, drives it green (a completion check re-runs the planned regression test and re-dispatches an engineer that returned without finishing), runs the fan-out reviews (inlined as runReview(): gate review + quality review), loops the gating fix until APPROVE, opens a merge:manual draft PR, and releases the lock. A relaunch resumes from the durable # Bug Fix Gate Review verdict comment — an APPROVE still at the fix-branch tip skips Fix + Gate review, and the loop guards re-seed from the newest BLOCK. Pass { issue, today }.',
   phases: [
     { title: 'Prep' },
     { title: 'Fix' },
@@ -137,20 +137,70 @@ const PUBLISH = {
   properties: { posted: { type: 'boolean' }, error: { type: ['string', 'null'] } },
   required: ['posted', 'error'],
 }
-// Returned by the resume probe (reviewEntryAction) that runs ONCE before the Review
-// loop. `review` = run the fan-out (the default — fresh fix, or a fix already landed
+// Returned by the resume probe (reviewEntryAction) that runs ONCE before the Fix
+// phase. `review` = run the fan-out (the default — fresh fix, or a fix already landed
 // since the last verdict). `fix-first` = a standing BLOCK verdict that nothing has
 // been done about, so skip the redundant re-review and dispatch the fix straight
-// away.
+// away. The durable-resume fields (found / atTip / resumeState) are read off the
+// newest verdict comment, which composeComment stamps with the reviewed tip SHA and
+// the loop-guard state exactly so a relaunch can consume them here: an APPROVE still
+// at the fix-branch tip skips Fix + Gate review, and a BLOCK re-seeds the
+// oscillation/churn guards instead of resetting them.
+const FPRINT = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    file:  { type: 'string' },
+    title: { type: 'string' },
+  },
+  required: ['file', 'title'],
+}
+const STALL_ENTRY = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    file:   { type: 'string' },
+    title:  { type: 'string' },
+    streak: { type: 'integer' },
+  },
+  required: ['file', 'title', 'streak'],
+}
+const RESUME_STATE = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    stall:       { type: 'array', items: STALL_ENTRY, description: 'per-blocker no-progress streaks (oscillation guard)' },
+    seen:        { type: 'array', items: FPRINT, description: "every prior round's finding fingerprints (churn guard)" },
+    churnStreak: { type: 'integer', description: 'consecutive rounds that surfaced new blockers on unchanged code' },
+  },
+  required: ['stall', 'seen', 'churnStreak'],
+}
 const REVIEW_ENTRY = {
   type: 'object',
   additionalProperties: false,
   properties: {
     action:      { type: 'string', enum: ['review', 'fix-first'] },
     lastVerdict: { type: ['string', 'null'], enum: ['APPROVE', 'BLOCK', null] },
+    found:       { type: 'boolean', description: 'a comment with the expected header exists at all (true even when its verdict line is ADVISORY)' },
+    atTip:       { type: 'boolean', description: 'the newest header comment carries a **Reviewed tip:** SHA equal to the current remote branch tip; false when the SHA differs, is absent (legacy comment), or found=false' },
+    resumeState: { ...RESUME_STATE, description: "the JSON from the newest header comment's `<!-- resume-state: ... -->` marker; empty defaults when absent" },
     reason:      { type: 'string', description: 'one line citing the commit / comment timestamps compared' },
   },
-  required: ['action', 'lastVerdict', 'reason'],
+  required: ['action', 'lastVerdict', 'found', 'atTip', 'resumeState', 'reason'],
+}
+const EMPTY_RESUME_STATE = { stall: [], seen: [], churnStreak: 0 }
+// Returned by the post-Fix completion check — the bug-side analogue of
+// implement-slice's Implement-phase checkbox verification. A bug has no `## Tasks`
+// ledger, so the durable done-proof is the fix branch itself: a `Refs #<n>`
+// regression test that actually passes when run.
+const FIX_CHECK = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    complete: { type: 'boolean', description: 'the planned regression test exists on the fix branch and passes' },
+    reason:   { type: ['string', 'null'], description: 'set when complete=false: what is missing or failing, specific enough for a re-dispatched engineer to act on' },
+  },
+  required: ['complete', 'reason'],
 }
 
 // ── Review catalogue + verify lenses (production-code scope) ──────────────────
@@ -289,7 +339,7 @@ function scoreFinding(f) {
   return { ...f, impact, gating, cls }
 }
 
-function composeComment(scored, { reviewMode, scopeNote, dedupMerged, verdict }) {
+function composeComment(scored, { reviewMode, scopeNote, dedupMerged, verdict, reviewedSha, resumeState }) {
   const shown = scored.filter(f => f.cls !== 'Drop')
   const count = (i, e) => shown.filter(f => f.impact === i && f.effort === e).length
   const fixNow = shown.filter(f => f.cls === 'Fix').length
@@ -321,6 +371,13 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, verdict })
   const section = (label, items, emptyText) =>
     `### ${label}\n\n` + (items.length ? items.map(renderFinding).join('\n\n') : `_${emptyText}_`)
 
+  // Durable resume stamps: the reviewed tip SHA proves which commit this verdict
+  // covers (a relaunch skips a re-review only while it still matches the branch
+  // tip), and the invisible resume-state marker carries the loop guards across a
+  // kill. Both are consumed by reviewEntryAction on relaunch.
+  const tipLine = `**Reviewed tip:** \`${reviewedSha}\``
+  const resumeFooter = `\n\n<!-- resume-state: ${JSON.stringify(resumeState ?? EMPTY_RESUME_STATE)} -->`
+
   // GATE review: spec-compliance / contract / security only. Blocks on a gating I:H.
   if (reviewMode === 'gate') {
     return [
@@ -335,13 +392,14 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, verdict })
       scopeNote ? `\n**Note:** ${scopeNote}` : '',
       '',
       `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
+      tipLine,
       '',
       '_This is the GATE review. It blocks the fix only on spec-compliance (the regression test locks the fix in), contract, and security findings (`I:H`). Code quality is reviewed separately in the quality review and never blocks the fix._',
       '',
       '## Findings',
       '',
       section('Spec, contract & security findings (gating)', shown, 'No spec, contract, or security findings.'),
-    ].filter(s => s !== '').join('\n')
+    ].filter(s => s !== '').join('\n') + resumeFooter
   }
 
   // QUALITY review: code-quality axes only — advisory, never blocks. After one polish
@@ -358,13 +416,14 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, verdict })
     scopeNote ? `\n**Note:** ${scopeNote}` : '',
     '',
     '**Verdict:** ADVISORY',
+    tipLine,
     '',
     '_This is the QUALITY review (runs AFTER the gate review APPROVES). These code-quality findings never block the fix: one engineer polish pass addresses them, then any residual is triaged into `kind:refactor` / `kind:enhancement` tracking issues._',
     '',
     '## Findings',
     '',
     section('Code-quality findings', shown, 'No code-quality findings.'),
-  ].filter(s => s !== '').join('\n')
+  ].filter(s => s !== '').join('\n') + resumeFooter
 }
 
 function dimensionPrompt(dim, diffCtx) {
@@ -486,10 +545,15 @@ async function runDimensions(dims, reviewPhase, phaseTitle, diffCtx, samples = 1
 //                (1) closure-checks every prior finding instead of re-sampling the
 //                whole diff, and (2) hunts NEW findings only in the hunks changed
 //                since reviewedSha (see implement-slice for the rationale).
-// Returns { verdict, publishError, blockers, findings, reviewedSha } on success or
-// { error } on infra failure.
+//   guardIn    — the gate loop's { stall, seen, churnStreak } entering this round
+//                (null in quality mode, which has no blocking loop). The round's
+//                updated guard is computed HERE — before publish — so the posted
+//                verdict comment carries it durably in the `<!-- resume-state -->`
+//                marker, and returned as `guard`.
+// Returns { verdict, publishError, blockers, findings, reviewedSha, guard } on
+// success or { error } on infra failure.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReview(phaseTitle, fixBranch, reviewMode = 'gate', roundCtx = null) {
+async function runReview(phaseTitle, fixBranch, reviewMode = 'gate', roundCtx = null, guardIn = null) {
   try {
     const rprep = await agent(
       `You are setting up a READ-ONLY production-code review of the bug-fix branch for issue #${ISSUE}. Do NOT edit, push, or run destructive git. Use the operation-git scripts (invoke as \`bash skills/operation-git/scripts/<name>.sh ...\`).
@@ -598,7 +662,23 @@ ${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] $
     const blockers = confirmed.filter(f => f.impact === 'H' && f.gating).map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
-    const body = composeComment(confirmed, { reviewMode, scopeNote: rprep.scopeNote, dedupMerged, verdict })
+    // Loop-guard accounting happens HERE (not in the caller) so the posted verdict
+    // comment can carry the updated state durably (the `<!-- resume-state -->`
+    // marker): a killed run's relaunch re-seeds the oscillation + churn guards from
+    // the newest BLOCK comment instead of resetting every streak to zero — which
+    // would let a structurally stuck blocker evade STALL_ROUNDS / CHURN_ROUNDS
+    // forever across kills. guardIn=null (quality mode) skips the accounting.
+    let guard = null
+    if (guardIn) {
+      const stall = trackStall(guardIn.stall ?? [], blockers)
+      const anchored = !!(roundCtx && roundCtx.reviewedSha)
+      const churn = anchored ? detectChurn({ blockers, changedSincePaths: rprep.changedSincePaths ?? [] }, guardIn.seen ?? []) : []
+      const churnStreak = anchored ? (churn.length ? (guardIn.churnStreak ?? 0) + 1 : 0) : (guardIn.churnStreak ?? 0)
+      const seen = [...(guardIn.seen ?? []), ...confirmed.map(f => ({ file: f.file, title: f.title }))]
+      guard = { stall, seen, churnStreak, churn }
+    }
+
+    const body = composeComment(confirmed, { reviewMode, scopeNote: rprep.scopeNote, dedupMerged, verdict, reviewedSha: rprep.headSha, resumeState: guard ? { stall: guard.stall, seen: guard.seen, churnStreak: guard.churnStreak } : EMPTY_RESUME_STATE })
 
     const publish = await agent(
       `You are the terminal publisher for the bug #${ISSUE} fix review. You perform the ONLY write in this review: posting the verdict comment.
@@ -623,7 +703,7 @@ ${body}
     // caller threads { reviewedSha, findings } back in as the next round's anchor.
     // `changedSincePaths` (vs the prior round's sha; [] on a first round) feeds the
     // caller's churn guard: a NEW blocker outside it sits on unchanged code.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [] }
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [], guard }
   } catch (e) {
     return { error: `bug-fix review crashed: ${e?.message || String(e)}` }
   }
@@ -656,21 +736,23 @@ async function reviewEntryAction(phaseTitle, fixBranch, reviewHeader) {
 Steps:
 1. Read what has landed on the fix branch \`${fixBranch}\`:
    - \`git fetch origin ${fixBranch}\` (ignore failure if the branch is missing — treat as no commits).
-   - Branch tip commit date: \`git log -1 --format=%cI origin/${fixBranch}\`.
+   - Branch tip commit date + sha: \`git log -1 --format='%cI %H' origin/${fixBranch}\`.
    - Dates of the bug's own commits: \`git log --format=%cI --grep "Refs #${ISSUE}" origin/${fixBranch}\`.
-2. Read the issue comments: \`gh issue view ${ISSUE} --comments\`. Find the NEWEST comment whose body begins with the header \`${reviewHeader}\` — the latest verdict. Parse its verdict from the \`**Verdict:**\` line (APPROVE or BLOCK) and note its timestamp. Set lastVerdict to that verdict, or null if NO such review comment exists.
-3. Decide the action:
-   - No prior \`${reviewHeader}\` comment → action="review" (first pass; nothing reviewed yet).
-   - Newest verdict is APPROVE → action="review" (let the loop re-confirm and break).
+2. Read the issue comments: \`gh issue view ${ISSUE} --comments\`. Find the NEWEST comment whose body begins with the header \`${reviewHeader}\` — the latest verdict. found = whether such a comment exists. Parse its verdict from the \`**Verdict:**\` line — APPROVE or BLOCK → lastVerdict (an ADVISORY or missing verdict line → lastVerdict=null; found stays true).
+3. atTip ← extract the 40-char SHA from that comment's \`**Reviewed tip:**\` line and compare it to the current \`origin/${fixBranch}\` tip sha from step 1. true iff identical; false when the comment has no Reviewed-tip line (older format) or found=false.
+4. resumeState ← the JSON object inside that comment's \`<!-- resume-state: {...} -->\` marker, verbatim; { "stall": [], "seen": [], "churnStreak": 0 } when the marker is absent or found=false.
+5. Decide the action:
+   - found=false → action="review" (first pass; nothing reviewed yet).
+   - Newest verdict is APPROVE (or ADVISORY / no verdict line) → action="review" (the caller decides whether atTip lets it skip the review entirely).
    - Newest verdict is BLOCK → check whether ANYTHING has been done about it since that comment:
      • a commit on \`origin/${fixBranch}\` authored AFTER the BLOCK comment's timestamp (compare the ISO dates from step 1), OR
      • a later comment that is a fix / work summary (NOT itself a \`${reviewHeader}\` review comment, and not a halt / need-attention notice).
      If NEITHER exists → action="fix-first" (the BLOCK stands unaddressed; re-reviewing would only reproduce it). If EITHER exists → action="review" (a fix — possibly partial — landed; re-evaluate the current diff).
 
-Return { action, lastVerdict, reason } where reason is one line citing the timestamps / commit you compared.`,
-    { label: 'review-entry', phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
+Return { action, lastVerdict, found, atTip, resumeState, reason } where reason is one line citing the timestamps / sha you compared.`,
+    { label: `review-entry:${reviewHeader.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '')}`, phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
   )
-  return r ?? { action: 'review', lastVerdict: null, reason: 'resume probe returned nothing — defaulting to review' }
+  return r ?? { action: 'review', lastVerdict: null, found: false, atTip: false, resumeState: { ...EMPTY_RESUME_STATE }, reason: 'resume probe returned nothing — defaulting to review' }
 }
 
 // ── halt(): the only path to a human ─────────────────────────────────────────
@@ -717,12 +799,65 @@ if (!prep || !prep.ok) return halt(prep?.haltReason || 'prep could not read the 
 // analysis plan), drives it GREEN, refactors, and pushes. The engineer loads
 // workflow-engineer-fix-bug; it reads the approved # Bug Analysis comment itself
 // for the root cause + regression-test plan (dispatch stays minimal).
+//
+// Entered through the resume probe (reviewEntryAction, hoisted here so its result
+// can skip the whole Fix → Gate review stretch): a run killed between the
+// `# Bug Fix Gate Review` APPROVE and the terminal PR would otherwise re-pay
+// fix + review just to rediscover the verdict, so an APPROVE whose Reviewed-tip
+// SHA still equals the remote fix-branch tip skips ahead to the quality/PR tail.
+// A standing BLOCK with no landed fix routes the FIRST dispatch to the
+// review-feedback verb instead of the plain fix verb — the same fix-first
+// semantics the probe had when it lived at the gate.
+//
+// Dispatch → VERIFY → re-dispatch (parity with implement-slice's Implement
+// phase): an `await agent()` that simply RETURNS is not proof the fix landed — an
+// engineer killed mid-run (memory pressure) leaves a partial fix that would
+// otherwise flow into the gate review, where the static test-coverage axis can
+// catch a MISSING regression test but never an existing-but-failing one
+// (reviewers read code; nothing else in this workflow executes the suite). The
+// durable done-proof for a bug is the fix branch itself: a `Refs #<n>` regression
+// test that passes when run.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Fix')
-await agent(
-  `Fix bug #${ISSUE}.`,
-  { agentType: ENGINEER, phase: 'Fix', label: 'fix' },
-)
+const gateEntry = await reviewEntryAction('Fix', prep.fixBranch, '# Bug Fix Gate Review')
+const gateApprovedAtTip = gateEntry.lastVerdict === 'APPROVE' && gateEntry.atTip === true
+if (gateApprovedAtTip) {
+  log('Fix: durable # Bug Fix Gate Review APPROVE at the current fix-branch tip — skipping Fix + Gate review.')
+} else {
+  for (let attempt = 1; ; attempt++) {
+    const fixFirst = attempt === 1 && gateEntry.action === 'fix-first'
+    if (fixFirst) log(`Fix: standing BLOCK with no landed fix — ${gateEntry.reason}. Routing the first dispatch to the review-feedback verb.`)
+    await agent(
+      fixFirst
+        ? `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment.`
+        : `Fix bug #${ISSUE}.`,
+      { agentType: ENGINEER, phase: 'Fix', label: fixFirst ? 'gate-fix:resume' : attempt > 1 ? `fix:retry${attempt - 1}` : 'fix' },
+    )
+    const check = await agent(
+      `Verify the bug #${ISSUE} fix actually landed on \`${prep.fixBranch}\` — the engineer dispatch returning is not proof. READ-ONLY on production code: do NOT edit code or specs, push, post comments, or flip labels; you may only run tests.
+
+Steps:
+1. The Regression-test plan from the approved analysis (test kind + the observable it asserts):
+${prep.regressionPlan}
+2. Set up a worktree on the fix branch: \`bash skills/operation-git/scripts/setup-worktree.sh ${prep.fixBranch}\`.
+3. Confirm the branch carries the fix: \`git -C <worktreePath> log --oneline origin/main..HEAD\` must include at least one \`Refs #${ISSUE}\` commit, and the planned regression test must exist in the tree. If either is missing → complete=false with a reason.
+4. Run THAT regression test (the single spec/test the plan names, not the whole suite) with the project's own test runner, booting whatever the test kind needs (a Playwright spec needs the dev stack; a unit/API test usually doesn't). complete=true iff it passes; on failure put the failing assertion/output in reason.
+
+Return { complete, reason }.`,
+      { phase: 'Fix', label: `verify-fix:${attempt}`, schema: FIX_CHECK, model: AGENT_MODEL },
+    )
+    // A missing / garbled check counts as incomplete (re-dispatch) rather than
+    // falsely advancing into the gate review on an unconfirmed fix.
+    if (check?.complete) break
+    const reason = check?.reason || 'fix-completion check returned nothing'
+    // Same no-progress discipline as the review loops: a fix that cannot produce
+    // a passing regression test after STALL_ROUNDS dedicated dispatches is stuck,
+    // not slow — escalate instead of re-dispatching forever.
+    if (attempt >= STALL_ROUNDS)
+      return halt(`bug fix incomplete after ${attempt} engineer dispatches — the planned regression test still does not exist/pass on ${prep.fixBranch}: ${reason}`)
+    log(`Fix: completion check failed after dispatch ${attempt} (${reason}) — re-dispatching the engineer.`)
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE: Gate review — runReview('gate'), the UNCAPPED fix↔re-review loop over the
@@ -731,57 +866,48 @@ await agent(
 // until APPROVE; the oscillation guard halts to a human only on NO PROGRESS. Code
 // quality is NOT touched here: it is a separate, bounded pass (Quality review). A bug
 // has no acceptance-criteria ledger (the regression test is the gate), so unlike
-// implement-slice there is no AC-tick.
+// implement-slice there is no AC-tick. Skipped entirely when the resume probe
+// (hoisted to the Fix phase) found a durable APPROVE still at the current
+// fix-branch tip.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Gate review')
-{
-  let stall = []
+if (gateApprovedAtTip) {
+  log('Gate review: durable APPROVE at the current fix-branch tip — skipping re-review.')
+} else {
+  // Loop guards seeded from the newest BLOCK comment's resume-state (embedded by
+  // composeComment), so a structurally stuck blocker can't evade the STALL_ROUNDS /
+  // CHURN_ROUNDS halts by being killed and relaunched. (The fix-first dispatch for
+  // a standing BLOCK already ran in the Fix phase, which routed its first engineer
+  // dispatch to the review-feedback verb.)
+  let guard = gateEntry.lastVerdict === 'BLOCK' ? gateEntry.resumeState ?? EMPTY_RESUME_STATE : EMPTY_RESUME_STATE
+  if (guard.stall.length || guard.churnStreak) log(`Gate review: re-seeded loop guards from the newest BLOCK comment (${guard.stall.length} stall streak(s), churn streak ${guard.churnStreak}).`)
   let lastSpent = tokensSpent()
-  // Resume optimization (see reviewEntryAction): a relaunch onto a bug that already
-  // carries a standing BLOCK gate review with no landed fix skips the redundant
-  // re-review and dispatches the engineer fix first; the loop below then re-reviews.
-  // A partial fix that DID land falls through to review, which catches the remainder.
-  const entry = await reviewEntryAction('Gate review', prep.fixBranch, '# Bug Fix Gate Review')
-  if (entry.action === 'fix-first') {
-    log(`Gate review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
-    await agent(
-      `Fix the gating review feedback (regression coverage / contract / security) on bug #${ISSUE} — see the newest \`# Bug Fix Gate Review\` comment.`,
-      { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
-    )
-  }
   // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
   // re-review closure-checks the priors + scopes new findings to the fix's own
   // diff instead of independently re-sampling the whole branch (see runReview).
   let prior = null
-  // Churn-guard state: every prior round's finding fingerprints + the streak of
-  // consecutive rounds that surfaced new blockers on unchanged code.
-  let seen = []
-  let churnStreak = 0
   for (let round = 1; ; round++) {
-    const r = await runReview('Gate review', prep.fixBranch, 'gate', prior)
+    const r = await runReview('Gate review', prep.fixBranch, 'gate', prior, guard)
     if (r?.error) return halt(`bug-fix gate review could not run: ${r.error}`)
     if (r?.publishError) return halt(`bug-fix gate review verdict was not posted to #${ISSUE}: ${r.publishError}`)
     const spent = tokensSpent()
     log(`Gate review: round ${round} — ${r.verdict}, ${r.blockers.length} gating I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
     lastSpent = spent
     if (r?.verdict === 'APPROVE') break
-    // Oscillation guard: halt if a gating I:H blocker survives STALL_ROUNDS dedicated
-    // engineer fixes — structurally stuck, not slow.
-    stall = trackStall(stall, r.blockers)
-    const stuck = stuckBlockers(stall)
+    // Loop guards (computed inside runReview so the posted BLOCK comment carries
+    // them durably — see resume-state). Oscillation: a gating I:H blocker that
+    // survives STALL_ROUNDS dedicated engineer fixes. Churn: CHURN_ROUNDS
+    // consecutive rounds of new blockers on unchanged code (reviewer noise, not
+    // fix regressions).
+    guard = r.guard ?? guard
+    const stuck = stuckBlockers(guard.stall)
     if (stuck.length)
       return halt(`Bug-fix gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
-    // Churn guard: rounds keep retiring blockers but surfacing NEW ones on code
-    // unchanged since the prior round → reviewer noise, not fix regressions.
-    if (prior) {
-      const churn = detectChurn(r, seen)
-      churnStreak = churn.length ? churnStreak + 1 : 0
-      if (churn.length)
-        log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
-      if (churnStreak >= CHURN_ROUNDS)
-        return halt(`Bug-fix gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
-    }
-    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
+    const churn = guard.churn ?? []
+    if (churn.length)
+      log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${guard.churnStreak}/${CHURN_ROUNDS}.`)
+    if (churn.length && guard.churnStreak >= CHURN_ROUNDS)
+      return halt(`Bug-fix gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
     if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
     // The dispatch inlines every Fix-class gating finding (the workflow already
@@ -809,7 +935,18 @@ phase('Gate review')
 // are skipped and there is no debt to triage.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Quality review')
-{
+// Resume: quality runs AFTER the gate APPROVE, so a relaunch that skipped the gate
+// (APPROVE at tip) may find the quality pass ALSO already ran at this tip —
+// re-running it would re-pay the quality fan-out and re-triage duplicate debt
+// issues. Probed only on that resume path (fresh runs skip the probe; the quality
+// comment's verdict line is ADVISORY, so `found` + `atTip` are the signal).
+let qualityAlreadyRan = false
+if (gateApprovedAtTip) {
+  const qEntry = await reviewEntryAction('Quality review', prep.fixBranch, '# Bug Fix Quality Review')
+  qualityAlreadyRan = qEntry.found === true && qEntry.atTip === true
+  if (qualityAlreadyRan) log('Quality review: durable # Bug Fix Quality Review at the current fix-branch tip — already ran; skipping re-run + re-triage.')
+}
+if (!qualityAlreadyRan) {
   let lastSpent = tokensSpent()
   // Review #1 — the one review of the review/fix cycle.
   const q1 = await runReview('Quality review', prep.fixBranch, 'quality')
