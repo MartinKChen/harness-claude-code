@@ -156,9 +156,11 @@ jobs:
         run: npm ci || npm install
       - name: Mutation test (diff-scoped — deletable-code lens, deterministic)
         # Single-sourced runner (parallel to ci-checks.sh): Stryker --since mutates
-        # ONLY the files this branch changed vs the PR base, exits non-zero when a
-        # mutant survives. Kept out of ci-checks.sh / the pre-push hook — it runs the
-        # suite once per mutant, too slow for the interactive path.
+        # ONLY the files this branch changed vs the PR base, exits non-zero when the
+        # mutation score falls below stryker.config.json's thresholds.break (a score
+        # gate, not zero-survivors — equivalent mutants are unkillable). Kept out of
+        # ci-checks.sh / the pre-push hook — it runs the suite once per mutant, too
+        # slow for the interactive path.
         run: bash scripts/mutation.sh "origin/${{ github.base_ref }}"
       - name: Upload surviving-mutant report
         if: always()

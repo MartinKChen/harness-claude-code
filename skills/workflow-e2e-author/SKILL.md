@@ -41,6 +41,8 @@ Fetch the slice issue (number, title, body, labels, url) via `bash skills/operat
 
 For each named e2e task, translate its own `scenario:` Gherkin block (the task carries the Given/When/Then it walks; `covers:` names the AC clause it discharges) into a Playwright spec inside the worktree — plus the pattern-mandated non-happy-paths (`pattern-test-coverage`). The agent's loaded pattern set owns the conventions (semantic selectors, fixture identity, extend-vs-fragment, what to assert). Read the slice's Acceptance criteria (EARS) plus the task's `scenario:` Gherkin for the behavior under test.
 
+While authoring, **lock each behavioral outcome state the spec asserts** in the surface's `docs/ui-contract/<screen>.yaml` (per `pattern-e2e-coding-standard`): if the asserted toast / banner / redirect has no `states` entry yet, add it — naming the queryable proof — in the same worktree, and include the contract edit in the task's commit. The engineer renders to that locked entry; do NOT touch the skeleton (regions/actions — `design-lead`'s lane; a skeleton gap is a halt, not an edit).
+
 Smoke-run touched specs (`npx playwright test <files>`) and confirm each spec reaches a real assertion. Parse / load / locator-API errors → fix and re-run. Assertion failures (production code missing) → expected; don't patch production code.
 
 ### 4. Tick the authored tasks' checkboxes

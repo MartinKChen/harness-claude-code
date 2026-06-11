@@ -136,7 +136,7 @@ For each surface, settle the **skeleton only**:
 Hold three lines firmly:
 
 - **Declare interface, not coverage or build order.** What gets tested is the slice's Gherkin + `pattern-test-coverage`; when a surface ships is slice ordering. Neither belongs here.
-- **Surface-level complete, element-level only where known.** Every surface gets an entry; populate `actions` only with controls the requirement and critical paths genuinely establish — never invent a control to fill the file. The behavioral `states` block is left to engineers, who extend it per slice as each adds behavior.
+- **Surface-level complete, element-level only where known.** Every surface gets an entry; populate `actions` only with controls the requirement and critical paths genuinely establish — never invent a control to fill the file. The behavioral `states` block is left downstream: the e2e-author locks each state its specs assert at spec-authoring time, and engineers add the frontend-only states no E2E covers as each slice adds behavior.
 - **Accessible names are the contract.** Names must match the component patterns you're locking; querying by CSS/DOM structure is out of scope by construction.
 
 Don't interview this as a separate ceremony — derive it from the surfaces and components you just locked, and only ask the user where a surface's primary controls are genuinely ambiguous.

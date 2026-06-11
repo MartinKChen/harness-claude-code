@@ -198,7 +198,7 @@ For every `regions` / `actions` entry the contract declares **and that this slic
 
 #### Declared states (HIGH)
 
-For every `states` entry the contract declares **and whose behavior this slice builds**, the surface renders the declared proof — the `status`/`alert` role+name, the `field_errors` message tied to its field, the `redirects_to` navigation. If the slice builds a behavior whose state is **absent** from the contract, the finding is "engineer must extend the `states` block" (see the UI-contract exception in Iron rules) — cleared by adding the entry, not by an off-contract render.
+For every `states` entry the contract declares **and whose behavior this slice builds**, the surface renders the declared proof — the `status`/`alert` role+name, the `field_errors` message tied to its field, the `redirects_to` navigation. If the slice builds a behavior whose state is **absent** from the contract, the finding names the owner per the split in Iron rules: an outcome an E2E spec asserts → "the e2e-author owes the locked `states` entry" (it should have landed at spec-authoring time); a frontend-only outcome no E2E covers → "the engineer must extend the `states` block". Either way it is cleared by adding the entry, not by an off-contract render.
 
 #### Spec queries only the declared surface (HIGH)
 

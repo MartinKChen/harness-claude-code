@@ -1,6 +1,6 @@
 ---
 name: pattern-engineer-frontend-standard
-description: "React frontend bullets: composition-first components, custom hooks, route registration + entry-source reachability (a real inbound path, not just a passing URL-render test) in one slice, render to the surface's `docs/ui-contract/<screen>.yaml` (declared role+accessible-name interface; extend its `states` per slice) + a contract-conformance test asserting that interface by role+name, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, per-route error boundaries, native a11y elements, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
+description: "React frontend bullets: composition-first components, custom hooks, route registration + entry-source reachability (a real inbound path, not just a passing URL-render test) in one slice, render to the surface's `docs/ui-contract/<screen>.yaml` (declared role+accessible-name interface; render to E2E-locked `states`, add only frontend-only ones) + a contract-conformance test asserting that interface by role+name, route-param queries gated by `enabled: !!param`, `onSuccess` cache invalidation, idempotency-key rotation on 4xx, API via `src/lib/api`, Context+Reducer state, RHF+Zod forms, per-route error boundaries, native a11y elements, Tailwind ↔ `docs/design-system/tokens.md`. Activate on frontend `.tsx`/`.ts`."
 ---
 
 # pattern-engineer-frontend-standard

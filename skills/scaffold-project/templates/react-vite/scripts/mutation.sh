@@ -16,7 +16,12 @@
 #   - argument $1 = the base git ref to diff against (default: origin/main).
 #   - mutate ONLY files changed vs that base (Stryker `--since`).
 #   - write the surviving-mutant report to mutation-report.txt at the surface root.
-#   - exit non-zero iff a mutant SURVIVED on a changed line (that is the gate).
+#   - exit non-zero iff the mutation score on the changed files falls below
+#     stryker.config.json's `thresholds.break` (that is the gate). NOT a literal
+#     zero-survivor gate: EQUIVALENT mutants (semantically identical to the
+#     original code) are unkillable by any test, so a 100% bar would wedge PRs
+#     on noise — the threshold absorbs them while still failing an uncovered
+#     change. The reviewer judges the listed survivors individually.
 #   - tool absent → exit 0 with a loud note (never a silent pass).
 set -uo pipefail
 
@@ -31,12 +36,13 @@ fi
 
 echo "==> [frontend] mutation: diff-scoped Stryker (--since=${BASE})"
 # `--since` restricts mutation to files changed vs the base ref; the clear-text
-# reporter lists survivors. Stryker's exit code is non-zero when the mutation score
-# falls under the configured `thresholds.break`, which we set to gate on survivors.
+# reporter lists survivors. Stryker exits non-zero when the mutation score falls
+# under `thresholds.break` (stryker.config.json) — the score-based gate from the
+# contract above.
 if npx --no-install stryker run --since="${BASE}" --reporters clear-text,json 2>&1 | tee -a "$REPORT"; then
-  echo "==> [frontend] mutation: no surviving mutants on changed lines — diff is mutation-covered."
+  echo "==> [frontend] mutation: score above the break threshold — any listed survivors are for reviewer judgement (see ${REPORT})."
   exit 0
 fi
 
-echo "==> [frontend] mutation: SURVIVING mutants on changed lines — coverage gap (see ${REPORT})." >&2
+echo "==> [frontend] mutation: score fell below the break threshold — the changed code is under-covered (see ${REPORT})." >&2
 exit 1

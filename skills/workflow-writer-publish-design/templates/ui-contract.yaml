@@ -15,14 +15,18 @@
 #
 # Target path on disk:  docs/ui-contract/<screen-slug>.yaml   (e.g. article-editor.yaml)
 #
-# Authoring split (a living file, two authoring moments):
+# Authoring split (a living file, three authoring moments):
 #   - `design-lead` authors the SKELETON at design time — `screen`, `route`, `regions`,
 #     primary `actions` (role + accessible name), `accessibility` baseline — for EVERY
 #     surface in `surfaces.md`. Surface-level complete; element detail only where the IA
 #     and critical paths genuinely establish it (never invent a control to fill the file).
-#   - ENGINEERS extend `states` (and add late-discovered actions) PER SLICE, as each slice
-#     adds behavior — the same way a slice extends an existing `api-contract` resource.
-#     Gated against the slice's acceptance criteria + `docs/api-contract/<entity>.yaml`.
+#   - The E2E AUTHOR locks each `states` entry its specs ASSERT, at spec-authoring time
+#     (pre-implementation) — the author-owned assertion surface the engineer then renders
+#     to, which pins the behavioral outcome before either side moves.
+#   - ENGINEERS add the remaining `states` (frontend-only outcomes no E2E covers) and
+#     late-discovered actions PER SLICE, as each slice adds behavior — the same way a
+#     slice extends an existing `api-contract` resource. Gated against the slice's
+#     acceptance criteria + `docs/api-contract/<entity>.yaml`.
 #
 # Iron discipline (mirrors api-contract / data-model): if a spec needs an element not
 # declared here, HALT and extend the contract first — never invent a selector in the test.
@@ -40,7 +44,7 @@
 screen: <PascalCaseScreenName>          # e.g. ArticleEditor
 route: <route copied from surfaces.md>  # e.g. /articles/:id/edit  — OMIT for a cross-screen component
 surface_kind: <top-level | detail-child | contextual | external-entry | redirect-system | component>
-owner: design-lead                      # skeleton; `states` extended per slice by engineers
+owner: design-lead                      # skeleton; E2E-asserted `states` locked by the e2e-author, frontend-only `states` added by engineers
 
 # ── Landmark regions an E2E scopes queries to, or asserts the presence of ──
 regions:
@@ -56,9 +60,11 @@ actions:
     # disabled_when: <plain-language condition>   # e.g. "Title or Body is empty"
 
 # ── Async / outcome states the E2E asserts on (the assertion surface) ──
-# The skeleton MAY leave this minimal. Engineers ADD an entry per slice as the behavior
-# ships; each state names the queryable proof (role + accessible name) or the navigation
-# it triggers. Common keys: saving / save_succeeded / validation_error / server_error / empty.
+# The skeleton MAY leave this minimal. The E2E AUTHOR locks each entry its specs assert
+# at authoring time (the engineer renders to it — never redefines it); engineers ADD
+# only frontend-only entries no E2E covers, as the behavior ships. Each state names the
+# queryable proof (role + accessible name) or the navigation it triggers. Common keys:
+# saving / save_succeeded / validation_error / server_error / empty.
 states:
   # <state-name>:
   #   indicator:    { role: status, name: <name> }     # transient in-flight signal

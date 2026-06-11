@@ -17,6 +17,10 @@
 #   - mutate ONLY the changed application source vs that base.
 #   - write the surviving-mutant report to mutation-report.txt at the surface root.
 #   - exit non-zero iff a mutant SURVIVED on a changed line (that is the gate).
+#     EQUIVALENT mutants (semantically identical to the original, unkillable by
+#     any test) are exempted at the source with `# pragma: no mutate` on the
+#     line — the idiomatic mutmut escape; never silence a survivor by weakening
+#     the gate or manufacturing a vacuous test.
 #   - no changed source / tool absent → exit 0 with a loud note (never a silent pass).
 set -uo pipefail
 
