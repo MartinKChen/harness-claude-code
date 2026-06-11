@@ -21,7 +21,7 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 
 ## Best Practices & Principles
 
-- **Pattern selection is touched-path driven.** Layer the conditional patterns the slice diff selects on top of the always-on test-coverage gate (`pattern-test-coverage` catalogue + its `pattern-reviewer-test-coverage` lens); read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select. In a `test-coverage`-scope run the artifact under review is the authored E2E specs (pre-implementation) — the "test files out of scope" rule inverts and only the test-coverage dimension runs.
+- **Pattern selection is touched-path driven.** Layer the conditional patterns the slice diff selects on top of the always-on test-coverage gate (`pattern-test-coverage` catalogue + its `pattern-reviewer-test-coverage` lens); read the slice diff to derive the set, never invent a pattern, never skip one the touched paths select. When the project carries `docs/stack.yaml` (the scaffold-distilled stack manifest), trust its declared language/framework/rendering to resolve the framework-conditional rows (fastapi vs api, vite vs ssr, node) instead of inferring from file spellings alone. In a `test-coverage`-scope run the artifact under review is the authored E2E specs (pre-implementation) — the "test files out of scope" rule inverts and only the test-coverage dimension runs.
 - **Aggregate, then post once.** Run every selected pattern to completion, collect every finding, then compose ONE structured comment. Do not stream partial findings.
 - **The verdict line is the agent's, not the patterns'.** Patterns emit raw findings tagged with their per-rule severity; the workflow skill maps each finding onto the 2-axis model — `Impact` (`I:H` / `I:M` / `I:L`, derived mechanically from pattern severity: CRITICAL+HIGH → H, MEDIUM → M, LOW → L) and `Effort/Risk` (`E:L` / `E:M` / `E:H`, the agent's judgement of cost-to-fix-now). The (Impact, Effort) pair projects onto a per-finding `Fix now` / `Defer` / `Nit` / `Drop` class via the matrix in `workflow-reviewer-review-slice`; `Drop` findings are suppressed entirely. **APPROVE / BLOCK is computed from Impact + dimension — Effort never blocks**: in a `production-code` review an `I:H` survivor from a **gating** dimension (spec-compliance / contract / security) → BLOCK, while an `I:H` from any other (code-quality) dimension is recorded as deferred debt and does **not** block; in a `test-coverage` review any confirmed gap → BLOCK; otherwise APPROVE. The per-finding `Fix` / `Defer` / `Nit` class drives the engineer's pickup, not the verdict.
 - **The comment is the record; the verdict is the return value.** Findings live as a single structured comment on the slice; the verdict (APPROVE / BLOCK) is reported back to the caller. Flip NO label, open NO PR, close NO issue — the calling `implement-slice` workflow owns the lock, the fix loop, and the terminal draft PR.
@@ -60,10 +60,18 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 | `pattern-reviewer-database` | When the slice touches backend code that includes ORM models or migrations. |
 | `pattern-reviewer-frontend-standard` | When the slice touches frontend code. |
 | `pattern-reviewer-container` | When the slice touches container artifacts (`Dockerfile`, `docker-compose.yaml`, `.dockerignore`, nginx config, entrypoint scripts). |
-| `pattern-reviewer-fastapi` | When the slice touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. |
+| `pattern-reviewer-fastapi` | When the slice touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. (FastAPI slices load this INSTEAD of `pattern-reviewer-api`.) |
+| `pattern-reviewer-api` | When the slice touches HTTP routes, handlers, middleware, or app wiring in any backend framework **other than FastAPI** (Express / Fastify / NestJS / Hono, Gin / Echo / Chi, Axum / Actix, Spring Boot / Ktor, Vapor, Flask / Django). |
+| `pattern-reviewer-node` | When the slice touches server-side JavaScript/TypeScript that runs under Node.js (server entrypoints, Express / Fastify / NestJS / Hono code) — not browser code. |
+| `pattern-reviewer-ssr` | When the slice touches a server-rendered frontend framework (Next.js `app/` / `pages/`, Remix loaders/actions, SvelteKit `+page.server.*`, Nuxt server routes). |
 | `pattern-reviewer-python` | When the slice touches Python (`.py`) files. |
 | `pattern-reviewer-typescript` | When the slice touches TypeScript (`.ts` / `.tsx`) files. |
 | `pattern-reviewer-vite` | When the slice touches frontend code that runs under Vite (`vite.config.*`, `vitest.config.*`, `import.meta.env`). |
+| `pattern-reviewer-go` | When the slice touches Go (`.go`, `go.mod`) files. |
+| `pattern-reviewer-rust` | When the slice touches Rust (`.rs`, `Cargo.toml`) files. |
+| `pattern-reviewer-java` | When the slice touches Java (`.java`, Maven / Gradle build files of a Java project) files. |
+| `pattern-reviewer-kotlin` | When the slice touches Kotlin (`.kt` / `.kts`) files. |
+| `pattern-reviewer-swift` | When the slice touches Swift (`.swift`, `Package.swift`) files. |
 
 **Conditionally invoked — workflow**
 

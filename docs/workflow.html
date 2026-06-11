@@ -857,12 +857,12 @@
   </p>
   <ol>
     <li>Confirm greenfield — all four surfaces (<code>backend</code>, <code>frontend</code>, <code>compose</code>, <code>e2e</code>) must be missing.</li>
-    <li>Read the ADRs to pick backend / frontend stack variants and the compose service list.</li>
+    <li>Read the ADRs to pick backend / frontend stack variants and the compose service list; assert the ADR-published <code>docs/stack.yaml</code> manifest exists (the <code>adr</code> writer publishes it at lock-in — scaffold distills it only as a fallback for older lock-ins). A declared stack without a template takes the skeleton path (layout + manifests + <code>ci-checks.sh</code> pinned; framework entry owned by the first engineer slice).</li>
     <li>Create <code>chore/scaffold-project</code>.</li>
     <li>Materialize backend → commit. Materialize frontend → commit. Materialize <code>docker-compose.yaml</code> → commit.</li>
     <li><strong>Boot check</strong>: <code>docker compose up -d --build</code>, probe each framework-metadata endpoint, then <code>docker compose down</code>. Stops on failure — does not mutate templates to mask a broken boot.</li>
     <li>Materialize Playwright e2e → <code>npm install</code> → commit.</li>
-    <li>Materialize the CI pipeline + CI-parity pre-push hook → commit.</li>
+    <li>Materialize the CI pipeline + CI-parity pre-push hook + gitleaks pre-commit hook → commit.</li>
     <li><strong>Assert the design system exists</strong>: <code>docs/design-system/tokens.md</code> and <code>surfaces.md</code> must be present (locked upstream by <code>design-lead</code> during <code>/deep-dive-feature</code>). Fails loudly if absent — scaffold consumes the design system, it does not generate it.</li>
     <li>Translate the locked <code>tokens.md</code> into <code>frontend/src/styles/tokens.css</code> and import it from the frontend entry → commit. (The <code>## Design taste</code> section of <code>CLAUDE.md</code> is already authored by <code>design-writer</code> — scaffold doesn't re-write it.)</li>
     <li>Push and open the PR.</li>
@@ -1174,7 +1174,7 @@
 <pre>
  gate mode    : Prep ─► Gating dims (fan-out) ──── dedup ─ verify ─► compose ─► Publish   (BLOCK on gating I:H)
  quality mode : Prep ─► Quality dims (fan-out) ─── dedup ─ verify ─► compose ─► Publish   (ADVISORY, never blocks)
-(worktree/diff)  gate: ≤3 gating pattern-reviewer-* dims · quality: the ~10 debt dims (by touched surface)
+(worktree/diff)  gate: ≤3 gating pattern-reviewer-* dims · quality: the debt dims the touched surfaces select (incl. per-language lenses)
                  each fan-out + 3-lens refutation (opt-in)                                 (code)    (1 agent)
 </pre>
   </div>

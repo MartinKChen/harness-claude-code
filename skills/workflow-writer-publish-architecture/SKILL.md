@@ -94,6 +94,12 @@ For the ADR index (`docs/architecture-decision-record/README.md`) — **scope: `
 - **Always update.** Add a row for each new ADR. For each superseded ADR, fill its `Superseded by` column with the new ID, then **delete that ADR's `.md` file** from `docs/architecture-decision-record/` — a superseded decision should not linger as a half-truth; the README is its tombstone.
 - Create the README from `templates/adr-index.md` if it does not yet exist.
 
+For the stack manifest (`docs/stack.yaml`) — **scope: `adr`, `all`**:
+
+- **Only touch when this feature's ADR set decides or changes the stack** — backend/frontend language, framework, rendering mode (CSR vs SSR), or the compose service topology. A feature whose ADRs leave the stack untouched leaves this file alone (the common case after the first lock-in).
+- Start from `templates/stack-manifest.yaml` when the file doesn't exist; otherwise edit the affected fields in place.
+- This is the **machine-readable mirror** of the ADRs' stack decision — consumed by engineer/reviewer pattern selection, the workflows' review-surface classifiers, the engineer pre-push hook, and `/scaffold-project`. It is derived, never decisive: every field traces to an ADR ID (cite it in the header comment), and it never introduces a choice an ADR didn't make.
+
 For the implement-detail doc (`docs/product-requirement-document/{feature-name}/implement-detail.md`) — **scope: `implement-detail`, `all`**:
 
 - Start from `templates/implement-detail.md`.
@@ -151,7 +157,7 @@ For `CLAUDE.md` — **scope: `adr`, `all`**:
 
 ### 3. Hand artifacts back for iteration
 
-Tell the user which files were written, which were deleted (superseded ADRs), and whether `docs/architecture-decision-record/README.md` and `CLAUDE.md` were updated. Then ask whether to iterate or confirm.
+Tell the user which files were written, which were deleted (superseded ADRs), and whether `docs/architecture-decision-record/README.md`, `docs/stack.yaml`, and `CLAUDE.md` were updated. Then ask whether to iterate or confirm.
 
 Do **NOT** summarize the contents — the user can read the files.
 
@@ -203,6 +209,7 @@ Each artifact has a template under `templates/` in this skill's directory. Copy 
 |-------|---------------------|---------|
 | `templates/adr.md` | `docs/architecture-decision-record/ADR-{NNNN}.md` | One file per coherent decision. Title each after its decision, not the feature. Name superseded ADR IDs in the Context section. Cross-reference sibling ADRs by ID where they constrain or inform each other. |
 | `templates/adr-index.md` | `docs/architecture-decision-record/README.md` | The canonical index of accepted ADRs. **Always update.** Add a row per new ADR. For each superseded ADR, change its `Status` to `Superseded`, fill its `Superseded by` column with the new ID, and delete the superseded `.md` file. IDs are immutable; rows sort ascending by ADR ID; append new rows at the bottom. |
+| `templates/stack-manifest.yaml` | `docs/stack.yaml` | Machine-readable mirror of the ADRs' stack decision (backend/frontend language + framework, rendering mode, compose services), consumed by pattern selection, review-surface classification, the pre-push hook, and `/scaffold-project`. **Only touch when this feature's ADRs decide or change the stack.** Derived, never decisive — every field traces to an ADR ID cited in the header comment. |
 | `templates/implement-detail.md` | `docs/product-requirement-document/{feature-name}/implement-detail.md` | The **only** feature-bounded (transient) architecture artifact — archived by `create-feature-issues` once the feature is sliced. Build explanation only. Companion to the feature's `requirement.md`. Cross-reference each ADR by ID, the C4 diagrams under `docs/architecture/`, the OpenAPI files under `docs/api-contract/`, the ODCS files under `docs/data-model/`, and the runbooks under `docs/runbooks/` rather than inlining their content. Never the sole home of a canonical fact. |
 | `templates/c4-context.puml` | `docs/architecture/c4-context.puml` | C4-PlantUML system-context diagram (level 1). Repo-wide. Update only when the design changes who interacts with the system or which external systems it depends on. |
 | `templates/c4-container.puml` | `docs/architecture/c4-container.puml` | C4-PlantUML container diagram (level 2). Repo-wide. Maintain whenever the system has more than one deployable unit. |
