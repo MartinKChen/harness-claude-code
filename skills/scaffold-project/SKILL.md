@@ -34,8 +34,8 @@ Each `templates/<variant>/` directory holds a working, bootable example. The ski
 
 | Asset | Purpose |
 |-------|---------|
-| `templates/python-fastapi/` | Backend variant: minimal `app/main.py` (`app = FastAPI()`), `pyproject.toml`, multi-stage `Dockerfile`, and `scripts/ci-checks.sh` (the single-sourced backend gate: ruff + ruff format --check + mypy + full pytest against an ephemeral Postgres). The booted container responds 200 on `GET /openapi.json`. |
-| `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json` (with `lint` / `format` scripts), `biome.json` (lint + format + import-organize config), multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path), and `scripts/ci-checks.sh` (the single-sourced frontend gate: `biome ci` + `tsc --noEmit` + `vitest run`). The booted container responds 200 on `GET /`. |
+| `templates/python-fastapi/` | Backend variant: minimal `app/main.py` (`app = FastAPI()`), `pyproject.toml` (incl. `mutmut` + `[tool.mutmut]`), multi-stage `Dockerfile`, `scripts/ci-checks.sh` (the single-sourced backend gate: ruff + ruff format --check + mypy + full pytest against an ephemeral Postgres), and `scripts/mutation.sh` (the single-sourced diff-scoped mutation runner — its own CI job, never in the push path). The booted container responds 200 on `GET /openapi.json`. |
+| `templates/react-vite/` | Frontend variant: `index.html`, `main.tsx` rendering a placeholder, `package.json` (with `lint` / `format` / `mutation` scripts + Stryker dev deps), `biome.json` (lint + format + import-organize config), `stryker.config.json`, multi-stage `Dockerfile` (build → static-serve via nginx, non-root, writable pid path), `scripts/ci-checks.sh` (the single-sourced frontend gate: `biome ci` + `tsc --noEmit` + `vitest run`), and `scripts/mutation.sh` (Stryker `--since`, diff-scoped). The booted container responds 200 on `GET /`. |
 | `templates/githooks/pre-push` | Committed pre-push hook wired via `git config core.hooksPath .githooks`. Runs the touched stack's `scripts/ci-checks.sh` — the **same** script CI runs — so a push that would fail CI is denied locally in one run. Bypassable with `git push --no-verify`. |
 | `templates/githooks/pre-commit` | Committed pre-commit hook (same `core.hooksPath` wiring). Runs `gitleaks protect --staged` so a secret is stopped **before it enters a commit** — push-time and CI scans are backstops that fire after the secret is already in history and must be rotated. Warns loudly (without blocking) when gitleaks isn't installed. |
 | `templates/compose.yaml` | Topology skeleton: backend + frontend + db services, `${VAR:-default}` port indirection, named volumes. The skill fills in service names / image targets per the ADR. No `migrate` service — that comes when the first migration lands. |
@@ -203,7 +203,7 @@ git commit -m "chore(scaffold): e2e (playwright + smoke spec)"
 
 ### 9. Scaffold CI pipeline + CI-parity pre-push hook → commit
 
-Materialize a minimal PR-validation pipeline so the draft PR opened at step 12 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run.
+Materialize a minimal PR-validation pipeline so the draft PR opened at step 12 has CI signal from the first commit. Copy `templates/ci/pr-validation.yml` to `.github/workflows/pr-validation.yml`. The workflow triggers on `pull_request` (`opened`, `synchronize`, `reopened`, `ready_for_review`) — both draft and ready PRs run. It includes a per-stack **diff-scoped mutation job** (`bash scripts/mutation.sh "origin/${{ github.base_ref }}"`, `fetch-depth: 0`) that gates on a surviving mutant on a changed line and uploads the surviving-mutant report as an artifact — kept a SEPARATE job from the checks (mutation runs the suite once per mutant, so it never goes in `ci-checks.sh` or the pre-push hook). Ensure both `scripts/ci-checks.sh` and `scripts/mutation.sh` keep their executable bit through the copy.
 
 **Materialize and wire the CI-parity pre-push hook (mandatory).** The workflow's per-stack check jobs run `bash scripts/ci-checks.sh`; the committed pre-push hook runs the *same* script for every touched stack, so a push that would fail CI is denied locally in one run — no peeling failures apart one PR-cycle at a time. Wire it:
 
@@ -277,7 +277,7 @@ gh pr create \
 - Frontend: <stack>
 - Compose services: <list>
 - E2E: Playwright smoke spec
-- CI: `.github/workflows/pr-validation.yml` (per-stack checks → docker build → e2e)
+- CI: `.github/workflows/pr-validation.yml` (per-stack checks + diff-scoped mutation → docker build → e2e)
 - Design tokens: seeded `frontend/src/styles/tokens.css` (compiled from locked `docs/design-system/tokens.md`)
 
 ## Boot check

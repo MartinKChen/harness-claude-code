@@ -2,8 +2,15 @@
 #
 # Triggers on draft PRs (opened/synchronize/reopened) and on a draft being
 # marked ready for review. Validates the surfaces that landed in this scaffold:
-# per-stack lint/type/format/test, per-stack docker image build, then a full
-# stack-up E2E run.
+# per-stack lint/type/format/test, per-stack DIFF-SCOPED mutation test, per-stack
+# docker image build, then a full stack-up E2E run.
+#
+# The mutation job is the deterministic discharge of pattern-test-coverage's
+# deletable-code lens (a surviving mutant = a line the code could get wrong with
+# the suite still green). It runs `bash scripts/mutation.sh` scoped to the branch
+# diff and uploads the surviving-mutant report as an artifact — deliberately a
+# SEPARATE job, never folded into ci-checks.sh / the pre-push hook, because it runs
+# the suite once per mutant (too slow for the interactive path, fast scoped to a diff).
 #
 # CI parity: each per-stack check job runs `bash scripts/ci-checks.sh` — the
 # SAME script the committed local pre-push hook (.githooks/pre-push) runs. The
@@ -53,6 +60,40 @@ jobs:
         # "what CI runs" and "what the hook runs" from ever drifting apart.
         run: bash scripts/ci-checks.sh
 
+  backend-mutation:
+    name: backend · diff-scoped mutation
+    needs: backend-checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so scripts/mutation.sh can diff this branch vs the PR base.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.11"
+      - name: Install dependencies
+        run: uv sync --all-extras --dev || uv sync --dev
+      - name: Mutation test (diff-scoped — deletable-code lens, deterministic)
+        # Single-sourced runner (parallel to ci-checks.sh): mutates ONLY the lines
+        # this branch changed vs the PR base, exits non-zero on a surviving mutant.
+        # Kept out of ci-checks.sh / the pre-push hook because it runs the suite once
+        # per mutant — too slow for the interactive path, fast enough scoped to a diff.
+        run: bash scripts/mutation.sh "origin/${{ github.base_ref }}"
+      - name: Upload surviving-mutant report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-mutation-report
+          path: backend/mutation-report.txt
+          if-no-files-found: ignore
+
   backend-build:
     name: backend · docker build
     needs: backend-checks
@@ -93,6 +134,39 @@ jobs:
         # scripts/ci-checks.sh (not inline here) is what stops "what CI runs"
         # and "what the hook runs" from ever drifting apart.
         run: bash scripts/ci-checks.sh
+
+  frontend-mutation:
+    name: frontend · diff-scoped mutation
+    needs: frontend-checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so Stryker's --since can diff this branch vs the PR base.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Mutation test (diff-scoped — deletable-code lens, deterministic)
+        # Single-sourced runner (parallel to ci-checks.sh): Stryker --since mutates
+        # ONLY the files this branch changed vs the PR base, exits non-zero when a
+        # mutant survives. Kept out of ci-checks.sh / the pre-push hook — it runs the
+        # suite once per mutant, too slow for the interactive path.
+        run: bash scripts/mutation.sh "origin/${{ github.base_ref }}"
+      - name: Upload surviving-mutant report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-mutation-report
+          path: frontend/mutation-report.txt
+          if-no-files-found: ignore
 
   frontend-build:
     name: frontend · docker build

@@ -51,7 +51,13 @@
 #              single-sourced gate: the SAME script the CI workflow and the
 #              project's committed .githooks/pre-push run) runs exactly that
 #              script and nothing else, so this hook can never drift from CI
-#              and a new stack never requires editing this file. FALLBACK —
+#              and a new stack never requires editing this file. NOTE: mutation
+#              testing (scripts/mutation.sh — the deterministic discharge of
+#              pattern-test-coverage's deletable-code lens) is DELIBERATELY NOT
+#              part of ci-checks.sh and is not run here: it executes the suite
+#              once per mutant, so it lives in its own diff-scoped PR-validation
+#              CI job, never in this interactive push path which must stay fast.
+#              FALLBACK —
 #              no ci-checks.sh: detect the surface's build manifest and run
 #              the built-in set matching the pattern-engineer-<lang> skill:
 #                pyproject.toml → uv run ruff / ruff format --check / mypy /

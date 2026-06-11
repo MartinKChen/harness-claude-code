@@ -54,6 +54,8 @@ A ticked AC checkbox is **never** discharge on its own.
 
 Every rule below is an instance of one test: **could I delete a single line of the production code under test — a branch, a mutation, a derivation, a log call, a parameter — and keep the whole suite green?** If yes, that line is uncovered, however many tests "touch" the area. Before calling a behavior done (engineer) or covered (reviewer), name the line you could delete, then close it. **The completeness bar is this deletable-code lens, not one-test-per-AC** — the AC list is the coverage *checklist*; the tests are the coverage. Mapping is many-to-many: one AC may need several tests (boundary/error/concurrency); several ACs may be covered by one walk.
 
+**Mutation testing is this lens, made mechanical.** A surviving mutant *is* a deletable line — the tool flips a branch / operator / return and the whole suite stays green, proving the gap deterministically where an eyeballed review can only guess. Where the project runs **diff-scoped** mutation (`scripts/mutation.sh` — Stryker `--since` / mutmut over the branch diff, wired as its own CI job), that surviving-mutant report is the authoritative discharge of this lens for both sides: the engineer closes every survivor on a changed line before calling the behavior green; the reviewer reads the report rather than re-deriving mutation adequacy by hand. Run it diff-scoped, never whole-repo — a mutant survives or dies on the lines this slice changed, and a whole-repo run is too slow to be a gate. Absence of the tool falls back to the manual lens below.
+
 A test fails this lens when it:
 
 - **pre-seeds the post-state** the production code is supposed to produce (e.g. sets `used_at` then asserts once, instead of a two-call round-trip);

@@ -13,6 +13,10 @@ dev = [
     "mypy",
     "ruff",
     "pytest",
+    # Diff-scoped mutation testing (scripts/mutation.sh) — the deterministic
+    # discharge of pattern-test-coverage's deletable-code lens. Runs in its own
+    # CI job, never in the pre-push hot path.
+    "mutmut",
 ]
 
 [tool.ruff]
@@ -61,3 +65,9 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mutmut]
+# Default mutation surface; scripts/mutation.sh narrows this to the branch diff
+# (--paths-to-mutate over changed files) so a CI run stays fast and meaningful.
+paths_to_mutate = ["app/"]
+tests_dir = ["tests/"]
