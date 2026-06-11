@@ -56,7 +56,13 @@ README.md         the authoritative prose catalogue of every surface
   repo expects.
 - **Engineer/reviewer pairing is load-bearing.** A new `pattern-engineer-X` should
   have a matching `pattern-reviewer-X`, and coverage *substance* belongs in the
-  shared `pattern-test-coverage` (so a dreamed rule reaches both sides).
+  shared `pattern-test-coverage` (so a dreamed rule reaches both sides). The split
+  within a pair: **same rules on both sides; the engineer gets the imperative, the
+  reviewer gets the apparatus**. Engineer skills stack many-at-once in one dispatch,
+  so they stay terse one-liners; reviewer skills load one-per-axis, so they carry
+  detection method, severity calibration, BAD/GOOD, and false-positive guards.
+  Never let a rule exist only on the reviewer side — prevention at authoring time
+  is cheaper than a review-fix round-trip.
 - **Workflow scripts are plain JavaScript, not TypeScript, and self-contained.**
   No shared imports between `.mjs` files — shared logic (the review fan-out) is
   duplicated inline by design. `Date.now()`/`Math.random()` are unavailable in

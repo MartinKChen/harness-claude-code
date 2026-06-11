@@ -23,23 +23,14 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - Never edit the DB schema directly (no `psql ALTER TABLE`) and backfill the model after — that produces drift.
 - Commit model + migration in the same commit.
 
-### `pytest-alembic` — non-negotiable
+### Migration testing — `pytest-alembic`, non-negotiable
 
-- Every migration is testable. Single-head + round-trip assertions are baseline.
-- "Round-trips without crashing" is NOT sufficient — assert post-state by name.
+What a *complete* migration test asserts (both directions, artifacts by exact name, negative-direction CHECKs, extension removal) is owned by `pattern-test-coverage` §3 — write to that bar. The authoring mechanics on top of it:
 
-### Required assertions per migration
-
-- **Upgrade adds every promised artifact, by name.** Query `information_schema` (or `inspect()`); assert every column lands with the right type and nullability, and every constraint / index lands with the explicit name from the naming convention (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`).
-- **Downgrade removes every artifact, including extensions.** Re-query the schema; assert tables / constraints / indexes are gone AND any extension the upgrade installed (`citext`, `uuid-ossp`, `pgcrypto`) is dropped (`op.execute("DROP EXTENSION IF EXISTS <name>")`).
-- **ORM model ↔ migration name parity.** `__table_args__ = (UniqueConstraint("email", name="uq_users_email"),)` — pass `name=` explicitly on the model side, matching the migration.
-- **Don't pre-create extensions in `conftest.py` that the migration is supposed to install.** Migration owns extension lifecycle.
-- **Every migration test owns its teardown.** Use `pytest-alembic`'s transactional fixture or add an explicit `migrate_down_to("base")` so each test starts from a known baseline.
-
-### Round-trip + rollback
-
-- Run the suite locally before pushing.
-- Irreversible migrations (e.g. dropping a column with data): document in the revision body, `raise NotImplementedError("irreversible: data loss")` in `downgrade()`, mark the roundtrip test `@pytest.mark.skip(reason="irreversible — see <revision>")`.
+- **ORM model ↔ migration name parity.** `__table_args__ = (UniqueConstraint("email", name="uq_users_email"),)` — pass `name=` explicitly on the model side, matching the migration (`pk_<table>`, `fk_<table>_<col>`, `uq_<table>_<col>`, `idx_<table>_<col>`, `ck_<table>_<rule>`).
+- **Don't pre-create extensions in `conftest.py` that the migration is supposed to install.** Migration owns extension lifecycle (`CREATE EXTENSION` in upgrade, `DROP EXTENSION IF EXISTS` in downgrade).
+- **Every migration test owns its teardown.** Use `pytest-alembic`'s transactional fixture or an explicit `migrate_down_to("base")` so each test starts from a known baseline.
+- **Irreversible migrations** (e.g. dropping a column with data): document in the revision body, `raise NotImplementedError("irreversible: data loss")` in `downgrade()`, mark the roundtrip test `@pytest.mark.skip(reason="irreversible — see <revision>")`.
 
 ### Schema design (PostgreSQL)
 
@@ -70,16 +61,12 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - Worker queues use `SELECT … FOR UPDATE SKIP LOCKED LIMIT 1` so concurrent workers don't block each other.
 - Lock acquisition order is fixed (e.g. `ORDER BY id FOR UPDATE`) to avoid deadlocks on concurrent multi-row updates.
 - Batch inserts use multi-row `INSERT` or `COPY`; one INSERT per loop iteration is an N-trips antipattern.
+- Verify a new join / non-PK-filter / list-endpoint query with `EXPLAIN (ANALYZE, BUFFERS)` — a `Seq Scan` on a growing table means a missing index.
 
 ### Transaction discipline
 
 - Transactions stay short: do the DB work and commit. No external HTTP / queue / email calls while a transaction is open — those hold row locks for whatever the network does.
 - Avoid `SERIALIZABLE` unless you've measured the contention cost; `READ COMMITTED` + an atomic conditional update (`UPDATE … WHERE balance >= :a`) is usually enough.
-
-### Performance verification
-
-- Run `EXPLAIN (ANALYZE, BUFFERS)` on any query that joins, filters on a non-PK column, or appears in a list endpoint. Look for `Seq Scan` on large tables and missing indexes.
-- `pg_stat_statements` for the long-tail offenders: `ORDER BY mean_exec_time DESC LIMIT 10`.
 
 ### `migrate` compose service
 

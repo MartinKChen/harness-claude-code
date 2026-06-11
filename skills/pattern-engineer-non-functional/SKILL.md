@@ -32,6 +32,7 @@ These are not "performance polish"; they are bounds whose absence is a latent co
 - **Bound the pools.** Connection pools (DB, HTTP) have explicit max sizes; a request that can't get a connection fails fast rather than queueing unboundedly.
 - **Don't accumulate unboundedly in memory.** Stream / paginate / batch when processing a set whose size scales with usage; no per-request cache that grows without eviction.
 - **Virtualize or paginate large UI lists.** A rendered collection that can grow with data is paginated or windowed, not a single map over thousands of nodes.
+- **Workers/consumers are idempotent on redelivery.** At-least-once delivery will double-apply a non-idempotent handler — key the effect on the message/event ID.
 
 ## Spec-gated targets — build these only when the slice declares the matching AC
 
@@ -55,25 +56,4 @@ When (and only when) the slice body's `## Acceptance criteria` declares a non-fu
 - Re-target a number the issue didn't state (inventing "p95 < 100 ms" because it "feels right"). If there is no non-functional AC, there is no non-functional target beyond the floor.
 - Disable a declared timeout / pool bound / back-pressure to make a slow path "work" — fix the slow path.
 
-## Guardrails — internal warning signs while authoring
-
-If one of these is forming under the keyboard, re-shape against the floor above before committing — don't surface to the user, just fix it:
-
-- A `for`/`map` body that issues a query or an HTTP call.
-- A list/collection handler whose query has no `LIMIT` and no pagination cursor.
-- A `fetch(...)` / `httpx`/`requests` / DB `execute` with no `timeout=` / `AbortSignal.timeout(...)`.
-- `requests.get(...)`, `time.sleep(...)`, a sync file read, or a heavy sync compute inside an `async def` handler.
-- Loading an entire table/collection into a list before filtering or counting.
-- A new filter/sort column on a growing table with no accompanying index.
-- A React component mapping over a prop array that can scale with data, with no windowing/pagination.
-- A worker/consumer that is not idempotent on redelivery (at-least-once delivery will double-apply).
-
-## Common rationalizations to push past
-
-| Rationalization | Reality |
-| --- | --- |
-| "It's fast enough with our test data" | Test data is 10 rows; production is 10 million. The bound is invisible until it isn't, and retrofitting pagination touches every caller. |
-| "We'll add the index later" | "Later" is a 3am page when the sequential scan finally tips over. Indexing the hot predicate in the introducing migration is free. |
-| "The dependency never hangs" | Until it does — and without a timeout one stalled dependency takes every worker with it. |
-| "We don't have scale requirements yet" | You don't need *capacity engineering* yet — but the floor (bounds, timeouts, no N+1) is correctness, not capacity. Build it regardless. |
-| "Async makes it non-blocking automatically" | Only if every call inside it is actually async. One sync call in an async handler blocks the whole event loop. |
+The floor is binding even with 10 rows of test data — the bound is correctness, not capacity, and it is cheapest in the introducing change. `pattern-reviewer-non-functional` advises against this same floor; close the gap while authoring rather than in a fix cycle.

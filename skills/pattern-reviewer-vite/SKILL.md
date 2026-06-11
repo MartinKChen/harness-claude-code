@@ -21,6 +21,21 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
 - **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 
+## Where to look
+
+Run these sweeps before walking the patterns — each feeds the matching check below:
+
+```bash
+rg "import\.meta\.env\." src/            # every env read → prefix, secret-shape, .env.example row
+rg "loadEnv\(" vite.config.*             # prefix discipline on the third argument
+rg "sourcemap" vite.config.*             # prod source-map exposure
+rg "vite preview" Dockerfile* *compose*  # preview serving production
+rg "server\.|host|port" vite.config.*    # host binding (when a dev Dockerfile exists) + committed port overrides
+rg "lazy\(" src/ && rg "Suspense" src/   # split points vs fallbacks
+```
+
+Also open: `.env.example` (diff against the `VITE_*` reads found above), the CI workflow + `package.json` scripts (look for `tsc --noEmit` / `vite-plugin-checker` — its absence is the type-check gap), and any `index.ts` barrel re-exports imported from hot-path modules.
+
 ## Patterns to review
 
 ### Stack choice (HIGH)
@@ -73,6 +88,18 @@ import { API_URL } from "@/env";
 - `lazy` without a meaningful `<Suspense fallback={...}>` → flag (default is empty; users see a blank screen).
 - Critical-path landing route lazy-loaded → flag (pays cost on the path you most want fast).
 
+```tsx
+// BAD — heavy route eager; lazy route with empty fallback
+import { Settings } from "./pages/Settings";
+const Editor = lazy(() => import("./pages/Editor"));
+<Suspense><Editor /></Suspense>
+
+// GOOD — heavy routes split, landing route eager, real fallback
+import { Home } from "./pages/Home";
+const Settings = lazy(() => import("./pages/Settings"));
+<Suspense fallback={<PageSkeleton />}><Settings /></Suspense>
+```
+
 ### Static assets (LOW)
 
 - Image / font imported as a string URL instead of `import logoUrl from './logo.svg'` → flag (no hashing → cache-busting breaks).
@@ -103,6 +130,15 @@ const env = loadEnv(mode, process.cwd(), ['VITE_']);
 
 - `build.sourcemap: true` (or `'inline'`) in a production config without evidence of upload to an error tracker (Sentry / Bugsnag) → HIGH; ships the original source code publicly.
 - Acceptable: `'hidden'` + upload-and-delete pipeline.
+
+```ts
+// BAD — original sources served to every visitor
+export default defineConfig({ build: { sourcemap: true } });
+
+// GOOD — maps generated for the tracker, never referenced from the bundle
+export default defineConfig({ build: { sourcemap: "hidden" } });
+// CI: sentry-cli sourcemaps upload dist/ && rm dist/**/*.map
+```
 
 ### Type-check gap (HIGH)
 

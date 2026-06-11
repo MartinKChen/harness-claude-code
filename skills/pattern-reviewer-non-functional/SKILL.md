@@ -50,6 +50,31 @@ Net effect: a slice with **no NFR ACs can never be blocked by this lens** — it
 - **Never refer to a finding as `#N` (N a number).** GitHub auto-links `#1`, `#2`, … to issues. Use a non-numeric handle: the AC label (`AC4`), the floor-rule name (`unbounded-read`, `n-plus-one`, `missing-timeout`, `event-loop-block`), the quoted title, or `F1` / `F2`.
 - **Acknowledge a clean axis.** If the diff holds the floor and meets every declared NFR AC, **zero findings is the correct result** — never manufacture a finding to look thorough.
 
+## What a floor gap looks like in the diff
+
+Concrete shapes to scan for while walking the floor — each maps to a floor rule and, absent a declared NFR AC, grades MEDIUM/LOW:
+
+- A `for`/`map` body that issues a query or an HTTP call (`n-plus-one`).
+- A list/collection handler whose query has no `LIMIT` and no pagination cursor (`unbounded-read`).
+- A `fetch(...)` / `httpx`/`requests` / DB `execute` with no `timeout=` / `AbortSignal.timeout(...)` (`missing-timeout`).
+- `requests.get(...)`, `time.sleep(...)`, a sync file read, or heavy sync compute inside an `async def` handler (`event-loop-block`).
+- Loading an entire table/collection into a list before filtering or counting (`unbounded-read`).
+- A new filter/sort column on a growing table with no accompanying index in the same migration (`missing-index`).
+- A React component mapping over a prop array that scales with data, with no windowing/pagination (`unwindowed-list`).
+- A worker/consumer that is not idempotent on redelivery (`non-idempotent-consumer`).
+
+## Rationalizations don't dissolve a finding
+
+When the diff (or a pushback in the fix flow) leans on one of these, the finding stands — restate the reality in the impact sentence:
+
+| Rationalization | Reality |
+| --- | --- |
+| "It's fast enough with our test data" | Test data is 10 rows; production is 10 million. Retrofitting pagination touches every caller. |
+| "We'll add the index later" | "Later" is a 3am page when the sequential scan tips over. The introducing migration is the free moment. |
+| "The dependency never hangs" | Without a timeout, one stalled dependency takes every worker with it. |
+| "We don't have scale requirements yet" | The floor (bounds, timeouts, no N+1) is correctness, not capacity — it applies without an AC. (It is still advisory, never HIGH, without one.) |
+| "Async makes it non-blocking automatically" | One sync call in an async handler blocks the whole event loop. |
+
 ## Grading a gap
 
 Walk `pattern-engineer-non-functional` (floor + spec-gated targets) against the scoped diff. For each gap collect a record:

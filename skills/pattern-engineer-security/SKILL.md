@@ -79,31 +79,4 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 | File upload | size + MIME + extension whitelist • magic-byte check on high-trust uploads (avatars, payment attachments) |
 | Migrations / DB extensions | migration owns extension lifecycle (`CREATE EXTENSION` in upgrade, `DROP EXTENSION` in downgrade) — never pre-warm in `conftest.py` |
 
-## Guardrails — internal warning signs while authoring
-
-If any of the patterns below is forming under the keyboard, the surrounding code is on a path the catalogue above forbids. Re-shape the code against the matching row before committing — do not surface to the user, just fix it:
-
-- User input flowing into a query, shell command, file path, `eval`, or a server-side `fetch(url)`.
-- A new endpoint missing one of: input schema, authorize-before-act, CSRF (if cookie-auth), rate limit.
-- A login / signup / forgot-password / token-refresh route with no rate limit, or with a per-IP-only limit when authenticated requests are expected.
-- A stack trace or internal exception message in a 5xx response body.
-- A new dependency with known CRITICAL / HIGH advisories on its current version.
-- A balance / inventory / quota update without a row lock or atomic-compare.
-- A reset endpoint that calls `set_cookie("session", …)` or whose client invalidates `['me']` on success.
-- An OAuth callback that doesn't validate `state`, or a public client without PKCE.
-- A webhook handler that parses the body before verifying the signature.
-- `fetch(req.body.url)` with no host allowlist and no private-range block.
-- A CORS configuration with `origin: '*'` and `credentials: true`.
-- An `==` comparison on a password hash, HMAC, or signature.
-- A logger call with `password=…`, `token=…`, `email=<raw email>`, `card_number=…` in the structured fields.
-- A `Settings()` call inside `create_app()` purely to read the cookie-secure boolean — break the boolean out into a standalone `os.getenv()` helper instead.
-
-## Common rationalizations to push past
-
-| Rationalization | Reality |
-| --- | --- |
-| "This is an internal tool, security doesn't matter" | Internal tools get compromised. Attackers target the weakest link. |
-| "We'll add security later" | Security retrofitting is 10x harder than building it in. Add it now. |
-| "No one would try to exploit this" | Automated scanners will find it. Security by obscurity isn't security. |
-| "The framework handles security" | Frameworks provide tools, not guarantees. You still have to use them correctly. |
-| "It's just a prototype" | Prototypes become production. Security habits from day one. |
+Every rule above is binding regardless of project stage — "internal tool", "prototype", and "we'll add it later" do not waive a row. `pattern-reviewer-security` audits against this same catalogue; close the gap while authoring rather than in a fix cycle.

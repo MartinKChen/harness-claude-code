@@ -818,4 +818,16 @@ Before declaring the review done:
 5. **Walk the new outbound calls / integrations** — SSRF guard on user-controlled URLs; HMAC verify on webhook receivers; `state` + PKCE on OAuth flows.
 6. **Re-state the unfixed MEDIUM/LOW count** so the user has the number, not just "looks fine".
 
+## Rationalizations don't dissolve a finding
+
+When the diff, a code comment, or a fix-flow pushback leans on one of these, the finding stands — restate the reality in the impact sentence:
+
+| Rationalization | Reality |
+| --- | --- |
+| "This is an internal tool, security doesn't matter" | Internal tools get compromised. Attackers target the weakest link. |
+| "We'll add security later" | Security retrofitting is 10x harder than building it in. |
+| "No one would try to exploit this" | Automated scanners will find it. Obscurity isn't security. |
+| "The framework handles security" | Frameworks provide tools, not guarantees — they must be used correctly. |
+| "It's just a prototype" | Prototypes become production. |
+
 **Remember**: security is a posture, not a checklist. When a rule conflicts with a real requirement, document the deviation and the compensating control instead of silently turning the rule off.
