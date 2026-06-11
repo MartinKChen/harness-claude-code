@@ -29,6 +29,13 @@
 # Query by role + accessible name; CSS- or DOM-structure selectors are a contract violation.
 # Accessible names MUST agree with any sample markup under `docs/design-system/` and the
 # component patterns in `components.md` — the same promise, rendered two ways.
+#
+# Enforced by an executable CONTRACT-CONFORMANCE TEST, not by a human reading the diff:
+# the frontend ships a component-level test that renders the surface and asserts every
+# declared region/action resolves by getByRole(role, { name }) (and each shipped `states`
+# entry). That test is what keeps this file honest, and is the firewall that lets the E2E
+# specs locate purely by role+name — once it is green, a contract-derived locator cannot
+# break for a locator reason. See pattern-engineer-frontend-standard / pattern-test-coverage §9.
 
 screen: <PascalCaseScreenName>          # e.g. ArticleEditor
 route: <route copied from surfaces.md>  # e.g. /articles/:id/edit  — OMIT for a cross-screen component

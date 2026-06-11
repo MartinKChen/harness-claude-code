@@ -137,6 +137,12 @@ Before finalizing each assertion, run the **adversary check** — name one wrong
 
 If any named adversary passes, tighten until it can't. Bind to a named observable (exact slug, exact id, exact value) over a category word, and prefer "both A and B must hold" when each alone is insufficient. (This is §5's named-observable rule pushed one step further: §5 says assert the exact artifact, this says make that assertion fail for the nearest wrong artifact too.)
 
+### 9. UI-contract conformance (`type:frontend`)
+
+When a surface has a `docs/ui-contract/<screen>.yaml`, the contract's declared interface is itself a coverage obligation, discharged by a **contract-conformance test** that renders the surface and asserts every declared `region` + `action` resolves by `getByRole(role, { name })` (exact accessible name), plus each `states` entry the slice builds. A surface that renders the contracted interface with no test pinning it by role+name is under-covered even when the AC *behavior* is exercised — conformance is a code↔contract invariant the behavior tests structurally miss, because they query by their own assumptions, not the contract's. The deletable-code line is the `role` / `aria-label` / labelled-control that produces each accessible name: delete it and only the conformance test should fail.
+
+This test is the **firewall** the E2E layer depends on: once it is green, an E2E locator built from the contract's role+name cannot fail for a locator reason, so the selector-mismatch churn (§7) lives in a fast component test instead of the slow, brittle browser walk. Scope to what the slice builds — a `region`/`action`/`state` the contract declares but a later slice wires is not a gap here (the same carve-out `pattern-reviewer-contract` applies).
+
 ## Role framing (pointers, not duplication)
 
 - **Engineer (authoring).** Apply this catalogue as the red-phase completeness checklist: for each behavior you grow, before you call it green, walk §1–§8 for the parts that apply and write the test that would fail if the production line were deleted. See `principle-engineer-tdd`.
