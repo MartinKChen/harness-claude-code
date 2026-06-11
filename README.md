@@ -192,7 +192,7 @@ Skills live in [`skills/`](skills/) and auto-activate when their triggers match 
 
 ### Engineer patterns
 
-Bullet-form reminders for production-code authoring. Each is matched 1:1 by a `pattern-reviewer-*` skill that carries the detailed audit lens.
+Bullet-form reminders for production-code authoring. Each is matched 1:1 by a `pattern-reviewer-*` skill that carries the detailed audit lens — same rules on both sides; the engineer side keeps the terse imperative (it stacks many skills per dispatch), the reviewer side owns detection, severity, examples, and rebuttal apparatus (it loads one axis per dispatch).
 
 | Skill | What it does |
 | --- | --- |
@@ -206,7 +206,7 @@ Bullet-form reminders for production-code authoring. Each is matched 1:1 by a `p
 | `pattern-engineer-container` | Multi-stage Dockerfiles, pinned non-root images, mandatory `.dockerignore`, migration-aware entrypoints, `/healthz` endpoints, nginx ordering, deliberate networking/volumes, day-to-day `docker compose` commands. |
 | `pattern-engineer-database` | Migrations: autogenerate Alembic revisions from models, test with pytest-alembic (round-trip + named-artifact + extension cleanup), run via the one-shot `migrate` compose service. |
 | `pattern-engineer-observability` | OpenTelemetry as the only instrumentation API; traces / metrics / logs through OTel with shared resource attributes, semantic-convention names, bounded label cardinality, source-gated structured logs. |
-| `pattern-engineer-security` | Engineer-facing security brief — non-negotiables + quick-lookup table + red flags. Points back to `pattern-reviewer-security` for canonical bars. |
+| `pattern-engineer-security` | Engineer-facing security brief — non-negotiables + quick-lookup table keyed by surface. Points back to `pattern-reviewer-security` for canonical bars, detection, and rebuttal apparatus. |
 | `pattern-engineer-non-functional` | Engineer-facing non-functional guardrails (ISO-25010 / ISTQB quality characteristics) — a **thin always-build floor** (bounded reads, no N+1, hot-predicate indexes, request/upload caps, outbound timeouts, no event-loop-blocking sync calls, bounded pools, windowed UI lists) plus heavier **spec-gated targets** (latency / throughput / capacity / availability / resource-ceiling) built only when the slice declares the matching non-functional AC. Security is out of scope (`pattern-engineer-security`); query/timeout mechanics overlap `pattern-engineer-backend-standard` by design. |
 
 ### Design
@@ -214,7 +214,7 @@ Bullet-form reminders for production-code authoring. Each is matched 1:1 by a `p
 | Skill | What it does |
 | --- | --- |
 | `pattern-architect-api-endpoint` | Resource-oriented REST conventions: URLs, verbs, response/error shape, pagination, filtering, sorting, versioning, idempotency. |
-| `pattern-architect-data-model` | Data-model shape and naming: predictable naming for tables / columns / constraints / indexes / views, and the SQLAlchemy `MetaData` convention that emits those names automatically. |
+| `pattern-architect-data-model` | Data-model shape and naming: predictable naming for tables / columns / constraints / indexes / views, and the SQLAlchemy `MetaData` convention that emits those names automatically. Every entity decision lands in `docs/data-model/<entity>.yaml` (ODCS) — the contract engineers, seed helpers, and `pattern-reviewer-contract` hold as iron. |
 | `pattern-architect-deep-module` | Ousterhout-style "deep module" design: narrow interfaces, hidden complexity, no shallow wrappers or pass-through layers. |
 
 ### Reviewer patterns

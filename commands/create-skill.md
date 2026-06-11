@@ -63,6 +63,8 @@ Header: `## Workflow`. Include only if the skill walks through ordered steps. Nu
 
 Header: `## Pattern`. Include only if the skill standardizes a coding style or design pattern. Show the canonical form with a fenced code block, then bullet the rules. Include a "Bad" / "Good" pair when contrast clarifies the rule.
 
+For a `pattern-engineer-X` / `pattern-reviewer-X` pair, the split is **same rules on both sides; engineer gets the imperative, reviewer gets the apparatus**. The engineer skill stacks with up to ~11 others in one dispatch, so each rule is a terse one-liner — no rationale essays, no "warning signs" checklists, no rationalization-rebuttal tables (those are reviewer apparatus). The reviewer skill loads alone (one axis per dispatch), so it carries the detection method (where to look / what to grep), severity calibration, BAD/GOOD pairs, and false-positive guards for the *same* rule set. Never let a rule exist only on the reviewer side — that converts cheap authoring-time prevention into a review-fix round-trip. Coverage *substance* goes in the shared role-neutral `pattern-test-coverage` so it reaches both sides at once.
+
 ### 5. Templates (optional)
 
 Header: `## Templates`. Include only if the skill produces structured artifacts. Reference each template by its relative path; do NOT paste the artifact structure inline — the file under `templates/` is the source of truth.

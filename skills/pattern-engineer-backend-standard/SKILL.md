@@ -36,13 +36,8 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 
 ### AuthN + AuthZ implementation
 
-- Authentication answers "who is this?"; authorization answers "are they allowed to do this *to this resource*?"
-- Every state-changing handler checks identity AND ownership/role server-side.
-- Multi-tenant tables get RLS where the DB supports it.
-- Session tokens in `HttpOnly; Secure; SameSite` cookies; never in `localStorage`.
-- `Secure` / `SameSite` driven by `SECURE_COOKIES` env var read at the call site (default `true`) — not from a fully-validated Settings object that test fixtures can't satisfy.
-- Constant-time auth paths: run password verify against a sentinel hash on the missing-user branch so timing doesn't leak existence.
-- Password-reset completion does NOT issue a session and does NOT auto-navigate to authed routes.
+- Every state-changing handler checks identity AND ownership/role server-side; multi-tenant tables get RLS where the DB supports it.
+- Cookie attributes, constant-time auth paths, reset-flow rules, and the rest of the auth surface are owned by `pattern-engineer-security` — it loads on any auth/endpoint work; follow its catalogue rather than this skill restating it.
 
 ### Atomic mutations
 
@@ -68,7 +63,7 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 - Log identifiers (user_id, request_id), never secrets.
 - Log a sensitive value at exactly one layer — never the same value at service AND router.
 - Redaction allow-list key names match the keys the code emits **exactly** (case-sensitive).
-- `RequestIdMiddleware` is registered last so it runs first on the rejection path; every 4xx / 5xx body carries a non-null `request_id`.
+- Request-id middleware runs first on the rejection path so every 4xx / 5xx body carries a non-null `request_id` (FastAPI ordering mechanics: `pattern-engineer-fastapi`).
 
 ### Health endpoint mechanics
 
@@ -113,20 +108,20 @@ Same rule for the data model: `docs/data-model/<entity>.yaml` is the source of t
 
 ### External-integration discipline
 
-These rules govern any external service the system integrates with — message / email delivery, payment gateways, object storage, SMS, third-party REST APIs, brokers, webhook senders, identity providers. Service-specific facts (a given emulator's ordering, a vendor's quirk) belong in the project's `.claude/memory/patterns/` overlay, never inline here.
+For any external service integrated (email/message delivery, payment gateways, object storage, brokers, webhook senders, IdPs). Service-specific quirks belong in the project's `.claude/memory/patterns/` overlay, never inline here.
 
-- **Emitted artifacts conform to the *consuming* contract, not the emitter's intent.** A value the system hands to an external system and another component later consumes — a link / redirect / callback URL, a webhook payload, a signed object URL, a queue message — must match what the consumer requires (the route table, the webhook spec, the vendor's expected schema). The emitter's unit test passes by asserting its own output, so the same defect repeats across every emitter; fix and test all emitters of one artifact together.
-- **Async delivery through an external sink is an inherent race.** When work is committed locally then delivered to an external service by a worker / queue, the artifact is not guaranteed present the instant the API returns. Provide a synchronous, delivery-confirmed path the caller can rely on, or document that observers must poll the sink until it's visible — never tune `sleep` values in production code to win the race.
-- **External-client connection strings match the runtime's required scheme / protocol, applied identically at every entrypoint that builds the client.** A driver / URL rewrite (e.g. an async vs sync driver prefix) present in one entrypoint (worker) but missing in another (web server) is invisible to unit tests and only fails once a real connection is opened.
-- **Knobs that gate external calls are env-configurable** — rate limits, retry / backoff, poll / tick intervals, timeouts. In-process limiter / quota state persists across test runs and silently throttles E2E; never hard-code.
-- **Transport / serialization can mangle payloads in transit.** Verify the artifact survives the external service's encoding round-trip (line-folding, charset, content-transfer-encoding, JSON escaping) — assert the consumer receives exactly what was emitted.
+- **Emitted artifacts conform to the *consuming* contract, not the emitter's intent** — a link/callback URL, webhook payload, signed URL, or queue message matches what the consumer requires; fix and test all emitters of one artifact together (test substance: `pattern-test-coverage` §6).
+- **Async delivery through an external sink is an inherent race.** Provide a synchronous, delivery-confirmed path, or document that observers must poll the sink — never tune `sleep` values in production code to win the race.
+- **External-client connection strings match the runtime's required scheme/protocol at every entrypoint that builds the client** (a driver-prefix rewrite present in the worker but missing in the web server only fails once a real connection opens).
+- **Knobs that gate external calls are env-configurable** — rate limits, retry/backoff, poll/tick intervals, timeouts. Never hard-code.
+- **Verify the artifact survives the external service's encoding round-trip** (line-folding, charset, JSON escaping) — assert the consumer receives exactly what was emitted.
 
 ### Caching — cache-aside
 
 - Read path: check cache → miss → fetch from source → populate cache with TTL → return. Single helper per cache key family.
 - Every write that changes a cached value invalidates the cache for that key in the same transaction (or immediately after commit). Write-through-only is a stale-read trap.
 - TTL is the safety net, not the strategy.
-- Cache layer is shared (Redis / Memcached / platform cache), not a per-process map — that splits across replicas and leaks memory under load.
+- Cache layer is shared (Redis / Memcached / platform cache), never a per-process map.
 
 ### Authorization — table-driven RBAC
 

@@ -16,6 +16,26 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 ## Iron rules
 
+- **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
+- **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
+
+## Where to look
+
+Run these sweeps before walking the patterns — each feeds the matching check below:
+
+```bash
+rg "fetch\(|axios\." src/ -g '!src/lib/api/**'        # API-access violations outside src/lib/api
+rg "key=\{(i|index)\}" src/                            # index-as-key in lists
+rg "#[0-9a-fA-F]{3,8}|\[\d+px\]" src/ -g '*.tsx'       # hard-coded colors / pixel sizes
+rg "useQuery\(" src/ -A 6                              # route-param queries → check for `enabled:` guards
+rg "useMutation\(" src/ -A 8                           # mutations → check onSuccess invalidation + return stability
+git diff origin/main -- '**/App.test.tsx'              # wholesale-replacement of accumulated route tests
+```
+
+For reachability: list the new route paths added to `App.tsx`, then for each one `rg "to=\"<path>|navigate\(.*<path>"` across `src/` — a `top-level` route with zero inbound `Link`/`navigate` hits outside its own page is the orphan candidate; confirm against the task body's declared Entry source before flagging.
+
 ## Patterns to review
 
 ### React / Next.js (HIGH)

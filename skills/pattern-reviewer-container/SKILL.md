@@ -18,8 +18,17 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 - **>80% confidence filter.** Report only when you are >80% confident. Consolidate similar findings.
 - **Cite `path/to/file.ext:line`.** Quote the offending snippet in a BAD block; show the fix in a GOOD block.
-- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
+- **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below. The banding: CRITICAL = secret exposure; HIGH = the container fails, races, or leaks in production; MEDIUM = drift that bites later (lost SIGTERM, LAN-exposed port); LOW = build-cache / ergonomics advice that never blocks.
 - **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
+
+## Where to look
+
+- Read every stage of each touched `Dockerfile` top-to-bottom: stage names (`AS`), base-image tags, `USER` lines, `ENV`/`ARG` values, `COPY` order, what lands in `final`.
+- `ls` next to the Dockerfile for `.dockerignore`; open it and diff against the exclusion list below.
+- In compose files scan `ports:`, `environment:`, `volumes:`, and the `migrate` service wiring.
+- Open the entrypoint script (whatever `ENTRYPOINT` names): migration step, `exec` on the server line.
+- Run `docker scout cves` (or Trivy) against the slug-tagged image when one is built; quote counts in the finding.
+- For frontend images, open the nginx config and check `location` order against the BAD/GOOD below.
 
 ## Patterns to review
 
@@ -59,6 +68,17 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 - `COPY . .` before `COPY package*.json + npm ci` → flag (dep layer cache never hits on source edits).
 
+```dockerfile
+# BAD — any source edit invalidates the npm ci layer
+COPY . .
+RUN npm ci
+
+# GOOD — dep layer cached until the manifests change
+COPY package*.json ./
+RUN npm ci
+COPY . .
+```
+
 ### Backend entrypoint (HIGH)
 
 - Backend image owns its DB schema but no migration step in entrypoint → flag.
@@ -66,6 +86,19 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - Migration step in a FastAPI `startup` hook instead of the entrypoint → flag (the app accepts traffic against a stale schema; N replicas race).
 - Migration CLI (`alembic`) missing from `final` stage even though entrypoint calls it (`command not found: alembic`) → flag; copy the CLI from the build stage or install it in `final`.
 - Missing `exec` on the server line in the entrypoint (`uvicorn ...` instead of `exec uvicorn ...`) → MEDIUM (SIGTERM doesn't forward to the server).
+
+```bash
+# BAD — server runs as a child of the shell; SIGTERM stops at the shell
+#!/bin/sh
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0
+
+# GOOD — migrations first, then the server replaces the shell
+#!/bin/sh
+set -e
+alembic upgrade head
+exec uvicorn app.main:app --host 0.0.0.0
+```
 
 ### `/healthz` endpoint (HIGH)
 

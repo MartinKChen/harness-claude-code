@@ -91,15 +91,15 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 
 ### Banned APIs (bandit blocks these)
 
-| API | Why | Use |
-|-----|-----|-----|
-| `urllib.request.urlopen` | B310 — historically accepted `file://` / `ftp://` (SSRF vector). | `http.client.HTTPSConnection` for stdlib-only; `httpx` otherwise. |
-| `subprocess.Popen(..., shell=True)` | B602 — shell injection. | `shell=False` (the default) with a list of args; if you genuinely need shell expansion, document the safe-input invariant and add `# nosec B602`. |
-| `xml.etree.ElementTree` on untrusted XML | B314 — XXE / billion-laughs. | `defusedxml`. |
-| `yaml.load(...)` without `Loader` | B506 — arbitrary Python execution. | `yaml.safe_load(...)`. |
-| `assert` for runtime invariants in production code | B101 — strips under `python -O`. | Raise an exception. Asserts in test code are fine. |
+| Banned | Use instead |
+|--------|-------------|
+| `urllib.request.urlopen` | `http.client.HTTPSConnection` for stdlib-only; `httpx` otherwise. |
+| `subprocess.Popen(..., shell=True)` | `shell=False` (the default) with a list of args; if you genuinely need shell expansion, document the safe-input invariant and add `# nosec B602`. |
+| `xml.etree.ElementTree` on untrusted XML | `defusedxml`. |
+| `yaml.load(...)` without `Loader` | `yaml.safe_load(...)`. |
+| `assert` for runtime invariants in production code | Raise an exception. Asserts in test code are fine. |
 
-The pre-push hook runs `uv run bandit -r .` — anything above LOW severity blocks the push.
+The pre-push hook runs `uv run bandit -r .` — anything above LOW severity blocks the push. (`pattern-reviewer-python` carries the per-API bandit codes and rationale.)
 
 ### Backend layout (`src/`)
 
