@@ -1,7 +1,7 @@
 export const meta = {
   name: 'implement-slice',
   description: 'Drive one slice through author-E2E → coverage gate → plan → implement → pass-E2E → gate-review (spec/contract/security fix loop until APPROVE, rounds anchored to the prior round\'s findings + reviewed sha) → quality-review (one code-quality fix cycle + one re-review, residual triaged into refactor/enhancement issues) to an open draft PR',
-  whenToUse: 'Launched (background) by the /implement-feature Stage-1 kickoff once per eligible slice, after the orchestrator flips status:ready-to-implement → status:in-progress (the slice lock). Owns the WHOLE inner cycle — including the fan-out reviews (coverage gate + gate review + quality review) inlined as runReviewSlice(); the outer /loop only handles the PR (fix-pr / close-pr). Pass { slice, today }.',
+  whenToUse: 'Launched (background) by the /implement-feature Stage-1 kickoff once per eligible slice, after the orchestrator flips status:ready-to-implement → status:in-progress (the slice lock). Owns the WHOLE inner cycle — including the fan-out reviews (coverage gate + gate review + quality review) inlined as runReviewSlice(); the outer /loop only handles the PR (fix-pr / close-pr). A relaunch resumes from durable GitHub state: the task checklist for authoring/implementation progress, plus the SHA-stamped verdict comments for review passage — a gate-review APPROVE still at the branch tip skips Pass E2E + Gate review, and the loop guards re-seed from the newest BLOCK. Pass { slice, today }.',
   phases: [
     { title: 'Prep' },
     { title: 'Author E2E' },
@@ -291,17 +291,54 @@ const PUBLISH = {
 // review loop. `review` = run the fan-out (the default — fresh slice, or a fix
 // already landed since the last verdict). `fix-first` = a standing BLOCK verdict
 // that nothing has been done about, so skip the redundant re-review and dispatch
-// the fix straight away.
+// the fix straight away. The durable-resume fields (found / atTip / resumeState)
+// are read off the newest verdict comment, which composeComment stamps with the
+// reviewed tip SHA and the loop-guard state exactly so a relaunch can consume
+// them here: an APPROVE still at the branch tip skips the whole re-review, and a
+// BLOCK re-seeds the oscillation/churn guards instead of resetting them.
+const FPRINT = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    file:  { type: 'string' },
+    title: { type: 'string' },
+  },
+  required: ['file', 'title'],
+}
+const STALL_ENTRY = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    file:   { type: 'string' },
+    title:  { type: 'string' },
+    streak: { type: 'integer' },
+  },
+  required: ['file', 'title', 'streak'],
+}
+const RESUME_STATE = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    stall:       { type: 'array', items: STALL_ENTRY, description: 'per-blocker no-progress streaks (oscillation guard)' },
+    seen:        { type: 'array', items: FPRINT, description: "every prior round's finding fingerprints (churn guard)" },
+    churnStreak: { type: 'integer', description: 'consecutive rounds that surfaced new blockers on unchanged code' },
+  },
+  required: ['stall', 'seen', 'churnStreak'],
+}
 const REVIEW_ENTRY = {
   type: 'object',
   additionalProperties: false,
   properties: {
     action:      { type: 'string', enum: ['review', 'fix-first'] },
     lastVerdict: { type: ['string', 'null'], enum: ['APPROVE', 'BLOCK', null] },
+    found:       { type: 'boolean', description: 'a comment with the expected header exists at all (true even when its verdict line is ADVISORY)' },
+    atTip:       { type: 'boolean', description: 'the newest header comment carries a **Reviewed tip:** SHA equal to the current remote branch tip; false when the SHA differs, is absent (legacy comment), or found=false' },
+    resumeState: { ...RESUME_STATE, description: "the JSON from the newest header comment's `<!-- resume-state: ... -->` marker; empty defaults when absent" },
     reason:      { type: 'string', description: 'one line citing the commit / comment timestamps compared' },
   },
-  required: ['action', 'lastVerdict', 'reason'],
+  required: ['action', 'lastVerdict', 'found', 'atTip', 'resumeState', 'reason'],
 }
+const EMPTY_RESUME_STATE = { stall: [], seen: [], churnStreak: 0 }
 
 // ── Review catalogue + verify lenses ─────────────────────────────────────────
 // One row per pattern-reviewer-* lens. `phase` buckets it into the GATE review
@@ -473,7 +510,7 @@ function scoreFinding(f) {
   return { ...f, impact, gating, cls }
 }
 
-function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, verdict }) {
+function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, verdict, reviewedSha, resumeState }) {
   const coverage = scope === 'test-coverage'
   const shown = coverage ? scored : scored.filter(f => f.cls !== 'Drop')
   const count = (i, e) => shown.filter(f => f.impact === i && f.effort === e).length
@@ -506,12 +543,20 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, ver
   const section = (label, items, emptyText) =>
     `### ${label}\n\n` + (items.length ? items.map(renderFinding).join('\n\n') : `_${emptyText}_`)
 
+  // Durable resume stamps: the reviewed tip SHA proves which commit this verdict
+  // covers (a relaunch skips a re-review only while it still matches the branch
+  // tip), and the invisible resume-state marker carries the loop guards across a
+  // kill. Both are consumed by reviewEntryAction on relaunch.
+  const tipLine = `**Reviewed tip:** \`${reviewedSha}\``
+  const resumeFooter = `\n\n<!-- resume-state: ${JSON.stringify(resumeState ?? EMPTY_RESUME_STATE)} -->`
+
   // COVERAGE scope: a single pre-implementation gate over the authored E2E specs.
   if (coverage) {
     return [
       '# E2E Coverage Gate',
       '',
       `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
+      tipLine,
       '',
       blocked
         ? `The authored E2E specs do not yet cover every acceptance criterion + mandated non-happy-path. ${shown.length} coverage gap(s) below must be closed before implementation starts.`
@@ -521,7 +566,7 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, ver
       '## Coverage gaps',
       '',
       shown.length ? shown.map(renderFinding).join('\n\n') : '_No coverage gaps._',
-    ].filter(s => s !== '').join('\n')
+    ].filter(s => s !== '').join('\n') + resumeFooter
   }
 
   // GATE review: spec-compliance / contract / security only. Blocks on a gating I:H.
@@ -538,13 +583,14 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, ver
       scopeNote ? `\n**Note:** ${scopeNote}` : '',
       '',
       `**Verdict:** ${blocked ? 'BLOCK' : 'APPROVE'}`,
+      tipLine,
       '',
       '_This is the GATE review. It blocks the slice only on spec-compliance, contract, and security findings (`I:H`). Code quality is reviewed separately in the quality review and never blocks the slice._',
       '',
       '## Findings',
       '',
       section('Spec, contract & security findings (gating)', shown, 'No spec, contract, or security findings.'),
-    ].filter(s => s !== '').join('\n')
+    ].filter(s => s !== '').join('\n') + resumeFooter
   }
 
   // QUALITY review: code-quality axes only — advisory, never blocks. After one polish
@@ -561,13 +607,14 @@ function composeComment(scored, { reviewMode, scopeNote, dedupMerged, scope, ver
     scopeNote ? `\n**Note:** ${scopeNote}` : '',
     '',
     '**Verdict:** ADVISORY',
+    tipLine,
     '',
     '_This is the QUALITY review (runs AFTER the gate review APPROVES). These code-quality findings never block the slice: one engineer polish pass addresses them, then any residual is triaged into `kind:refactor` / `kind:enhancement` tracking issues._',
     '',
     '## Findings',
     '',
     section('Code-quality findings', shown, 'No code-quality findings.'),
-  ].filter(s => s !== '').join('\n')
+  ].filter(s => s !== '').join('\n') + resumeFooter
 }
 
 // Lean per-axis dispatch. The stable review framing (recall stance, honesty floor,
@@ -771,14 +818,19 @@ async function runDimensions(dims, reviewPhase, phaseTitle, scope, diffCtx, samp
 //                reviewedSha. Without this anchor every round is an independent
 //                stochastic sample of the full branch diff, and the loop "finds a
 //                different defect every round" instead of converging.
+//   guardIn    — the calling loop's { stall, seen, churnStreak } entering this
+//                round (null in quality mode, which has no blocking loop). The
+//                round's updated guard is computed HERE — before publish — so the
+//                posted verdict comment carries it durably in the
+//                `<!-- resume-state -->` marker, and returned as `guard`.
 // Returns { verdict: 'APPROVE'|'BLOCK', publishError, blockers, findings,
-// reviewedSha } on success (reviewedSha = the worktree HEAD this round judged —
-// the caller threads it back in as the next round's anchor), or { error } on any
-// infra failure (worktree setup, an uncaught throw). The whole body is try/caught
-// so a crash surfaces as { error } and the caller halt()s to a human, never
-// killing the run uncaught.
+// reviewedSha, guard } on success (reviewedSha = the worktree HEAD this round
+// judged — the caller threads it back in as the next round's anchor), or
+// { error } on any infra failure (worktree setup, an uncaught throw). The whole
+// body is try/caught so a crash surfaces as { error } and the caller halt()s to
+// a human, never killing the run uncaught.
 // ─────────────────────────────────────────────────────────────────────────────
-async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks, reviewMode = 'gate', roundCtx = null) {
+async function runReviewSlice(scope, phaseTitle, sliceBranch, scopeManifest, tasks, reviewMode = 'gate', roundCtx = null, guardIn = null) {
   try {
     // ── Prep: read-only worktree + diff ──
     const rprep = await agent(
@@ -961,7 +1013,23 @@ ${manifestBlock}${ledgerBlock}${refactorBlock}${anchorBlock}`
       .map(f => ({ file: f.file, title: f.title }))
     log(`${phaseTitle}: verdict ${verdict} (${confirmed.length} confirmed finding(s)).`)
 
-    const body = composeComment(confirmed, { reviewMode, scopeNote: rprep.scopeNote, dedupMerged, scope, verdict })
+    // Loop-guard accounting happens HERE (not in the caller) so the posted verdict
+    // comment can carry the updated state durably (the `<!-- resume-state -->`
+    // marker): a killed run's relaunch re-seeds the oscillation + churn guards from
+    // the newest BLOCK comment instead of resetting every streak to zero — which
+    // would let a structurally stuck blocker evade STALL_ROUNDS / CHURN_ROUNDS
+    // forever across kills. guardIn=null (quality mode) skips the accounting.
+    let guard = null
+    if (guardIn) {
+      const stall = trackStall(guardIn.stall ?? [], blockers)
+      const anchored = !!(roundCtx && roundCtx.reviewedSha)
+      const churn = anchored ? detectChurn({ blockers, changedSincePaths: rprep.changedSincePaths ?? [] }, guardIn.seen ?? []) : []
+      const churnStreak = anchored ? (churn.length ? (guardIn.churnStreak ?? 0) + 1 : 0) : (guardIn.churnStreak ?? 0)
+      const seen = [...(guardIn.seen ?? []), ...confirmed.map(f => ({ file: f.file, title: f.title }))]
+      guard = { stall, seen, churnStreak, churn }
+    }
+
+    const body = composeComment(confirmed, { reviewMode, scopeNote: rprep.scopeNote, dedupMerged, scope, verdict, reviewedSha: rprep.headSha, resumeState: guard ? { stall: guard.stall, seen: guard.seen, churnStreak: guard.churnStreak } : EMPTY_RESUME_STATE })
 
     // ── Publish: post the verdict comment on the slice ISSUE. The ONLY write. ──
     const publish = await agent(
@@ -987,7 +1055,7 @@ ${body}
     // caller threads { reviewedSha, findings } back in as the next round's anchor.
     // `changedSincePaths` (vs the prior round's sha; [] on a first round) feeds the
     // caller's churn guard: a NEW blocker outside it sits on unchanged code.
-    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [] }
+    return { verdict, publishError: publish?.error ?? null, blockers, findings: confirmed, reviewedSha: rprep.headSha, changedSincePaths: rprep.changedSincePaths ?? [], guard }
   } catch (e) {
     return { error: `${scope} review crashed: ${e?.message || String(e)}` }
   }
@@ -1024,21 +1092,23 @@ async function reviewEntryAction(scope, branch, reviewHeader, phaseTitle) {
 Steps:
 1. Read what has landed on the branch \`${branch}\`:
    - \`git fetch origin ${branch}\` (ignore failure if the branch is missing — treat as no commits).
-   - Branch tip commit date: \`git log -1 --format=%cI origin/${branch}\`.
+   - Branch tip commit date + sha: \`git log -1 --format='%cI %H' origin/${branch}\`.
    - Dates of the slice's own commits: \`git log --format=%cI --grep "Refs #${SLICE}" origin/${branch}\`.
-2. Read the issue comments: \`gh issue view ${SLICE} --comments\`. Find the NEWEST comment whose body begins with the header \`${reviewHeader}\` — the latest ${scope} verdict. Parse its verdict from the \`**Verdict:**\` line (APPROVE or BLOCK) and note its timestamp. Set lastVerdict to that verdict, or null if NO such review comment exists.
-3. Decide the action:
-   - No prior \`${reviewHeader}\` comment → action="review" (first pass; nothing reviewed yet).
-   - Newest verdict is APPROVE → action="review" (let the loop re-confirm and break).
+2. Read the issue comments: \`gh issue view ${SLICE} --comments\`. Find the NEWEST comment whose body begins with the header \`${reviewHeader}\` — the latest ${scope} verdict. found = whether such a comment exists. Parse its verdict from the \`**Verdict:**\` line — APPROVE or BLOCK → lastVerdict (an ADVISORY or missing verdict line → lastVerdict=null; found stays true).
+3. atTip ← extract the 40-char SHA from that comment's \`**Reviewed tip:**\` line and compare it to the current \`origin/${branch}\` tip sha from step 1. true iff identical; false when the comment has no Reviewed-tip line (older format) or found=false.
+4. resumeState ← the JSON object inside that comment's \`<!-- resume-state: {...} -->\` marker, verbatim; { "stall": [], "seen": [], "churnStreak": 0 } when the marker is absent or found=false.
+5. Decide the action:
+   - found=false → action="review" (first pass; nothing reviewed yet).
+   - Newest verdict is APPROVE (or ADVISORY / no verdict line) → action="review" (the caller decides whether atTip lets it skip the review entirely).
    - Newest verdict is BLOCK → check whether ANYTHING has been done about it since that comment:
      • a commit on \`origin/${branch}\` authored AFTER the BLOCK comment's timestamp (compare the ISO dates from step 1), OR
      • a later comment that is a fix / work summary (NOT itself a \`${reviewHeader}\` review comment, and not a halt / need-attention notice).
      If NEITHER exists → action="fix-first" (the BLOCK stands unaddressed; re-reviewing would only reproduce it). If EITHER exists → action="review" (a fix — possibly partial — landed; re-evaluate the current diff).
 
-Return { action, lastVerdict, reason } where reason is one line citing the timestamps / commit you compared.`,
-    { label: `review-entry:${scope}`, phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
+Return { action, lastVerdict, found, atTip, resumeState, reason } where reason is one line citing the timestamps / sha you compared.`,
+    { label: `review-entry:${reviewHeader.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '')}`, phase: phaseTitle, schema: REVIEW_ENTRY, model: AGENT_MODEL },
   )
-  return r ?? { action: 'review', lastVerdict: null, reason: 'resume probe returned nothing — defaulting to review' }
+  return r ?? { action: 'review', lastVerdict: null, found: false, atTip: false, resumeState: { ...EMPTY_RESUME_STATE }, reason: 'resume probe returned nothing — defaulting to review' }
 }
 
 // ── halt(): the only path to a human ────────────────────────────────────────────
@@ -1095,14 +1165,15 @@ const done = new Set(prep.tasks.filter(t => t.done).map(t => t.id))
 const e2eTasks = prep.tasks.filter(t => t.type === 'e2e')
 const implTasks = prep.tasks.filter(t => t.type !== 'e2e')
 
-// Snapshot the E2E coverage state from the durable checklist BEFORE Phase A
-// authoring mutates `done`. The coverage gate (Phase B) is bypassed when EITHER:
-//   1. the slice has no e2e tasks (nothing to cover), or
-//   2. every e2e task was already ticked [x] on entry — a prior run already
-//      authored the specs AND passed the gate, so re-gating is redundant.
-// Computed here (not inline at Phase B) because Phase A adds freshly-authored ids
-// to `done`; reading it there would make condition 2 spuriously true the moment
-// brand-new specs are written, skipping the gate that should vet them.
+// Snapshot the E2E authoring state from the durable checklist BEFORE Phase A
+// mutates `done`. Ticked e2e boxes prove AUTHORING only — the e2e-author ticks at
+// authoring time, before the gate has ever run — NEVER gate passage, which lives
+// in the `# E2E Coverage Gate` verdict comment and is consulted by Phase B's
+// resume probe (reviewEntryAction). allE2EAlreadyDone only gates the probe's skip
+// decision: a run that authored anything fresh always re-gates. Computed here
+// (not inline at Phase B) because Phase A adds freshly-authored ids to `done`;
+// reading it there would make it spuriously true the moment brand-new specs are
+// written, skipping the gate that should vet them.
 const allE2EAlreadyDone = e2eTasks.length > 0 && e2eTasks.every(t => done.has(t.id))
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1123,77 +1194,84 @@ if (pendingE2E.length) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE B: Coverage gate — runReviewSlice('test-coverage'), looping to an e2e-author
-// fix until the specs cover every AC + non-happy-path. Bypassed when the slice has
-// no e2e tasks (nothing to gate) OR every e2e task was already marked done on entry
-// (a prior run already passed this gate).
+// fix until the specs cover every AC + non-happy-path. Skipped when the slice has
+// no e2e tasks (nothing to gate) or when the DURABLE gate verdict — the newest
+// `# E2E Coverage Gate` comment — is APPROVE with every e2e task already ticked on
+// entry. Ticked e2e boxes alone never skip the gate (they prove authoring, not
+// passage), so a run killed between a BLOCK verdict and its fix re-gates instead
+// of resuming past its own open gaps. APPROVE deliberately bypasses WITHOUT a
+// tip-SHA match: implementation commits land on the same slice branch after the
+// gate, and no lane edits specs post-approve (Pass E2E halts on test-case
+// constraints rather than editing), so the approved specs are still the specs at
+// any later tip.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Coverage gate')
-if (e2eTasks.length && !allE2EAlreadyDone) {
-  let stall = []
-  let lastSpent = tokensSpent()
-  // Resume optimization: if a prior (dead) run left a standing BLOCK coverage
-  // verdict that nothing has been done about — no e2e-author commit and no fix
-  // comment landed on the branch since — re-gating would only reproduce the same
-  // BLOCK. Dispatch the e2e-author fix first; the loop below then re-gates it.
+if (e2eTasks.length) {
+  // One durable probe decides the whole phase: skip (prior APPROVE), fix-first
+  // (standing BLOCK with no landed fix), or review — and re-seeds the loop guards
+  // from the newest BLOCK comment's resume-state so a structurally stuck gap can't
+  // evade the STALL_ROUNDS / CHURN_ROUNDS halts by being killed and relaunched.
   const entry = await reviewEntryAction('test-coverage', prep.sliceBranch, '# E2E Coverage Gate', 'Coverage gate')
-  if (entry.action === 'fix-first') {
-    log(`Coverage gate: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an e2e-author fix before the first gate.`)
-    await agent(
-      `Fix E2E coverage feedback on slice #${SLICE}.`,
-      { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: 'coverage-fix:resume' },
-    )
-  }
-  // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
-  // re-gate closure-checks the priors + scopes new gaps to the changed specs
-  // instead of independently re-sampling the whole branch (see runReviewSlice).
-  let prior = null
-  // Churn-guard state: every prior round's finding fingerprints + the streak of
-  // consecutive rounds that surfaced new gaps on unchanged specs.
-  let seen = []
-  let churnStreak = 0
-  for (let round = 1; ; round++) {
-    const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior)
-    if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
-    // A set publishError means the verdict comment never reached GitHub. The gate's
-    // findings would then be invisible to the fix loop — halt rather than loop blind
-    // or APPROVE on an unposted verdict.
-    if (r?.publishError) return halt(`E2E coverage gate verdict was not posted to #${SLICE}: ${r.publishError}`)
-    const spent = tokensSpent()
-    log(`Coverage gate: round ${round} — ${r.verdict}, ${r.blockers.length} gap(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
-    lastSpent = spent
-    if (r?.verdict === 'APPROVE') break
-    // Oscillation guard: halt if a coverage gap survives STALL_ROUNDS dedicated
-    // e2e-author fixes — the loop is stuck, not slow.
-    stall = trackStall(stall, r.blockers)
-    const stuck = stuckBlockers(stall)
-    if (stuck.length)
-      return halt(`E2E coverage gate stalled — ${stuck.length} gap(s) survived ${STALL_ROUNDS} consecutive e2e-author fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
-    // Churn guard: rounds keep retiring gaps but surfacing NEW ones on specs
-    // unchanged since the prior round → reviewer noise, not coverage debt.
-    if (prior) {
-      const churn = detectChurn(r, seen)
-      churnStreak = churn.length ? churnStreak + 1 : 0
-      if (churn.length)
-        log(`Coverage gate: round ${round} — ${churn.length} churn gap(s) (new, on specs unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
-      if (churnStreak >= CHURN_ROUNDS)
-        return halt(`E2E coverage gate churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW gap(s) on specs unchanged since the prior round (reviewer noise, not coverage debt); a human should look. Latest churn: ${fmtChurn(churn)}`)
+  if (allE2EAlreadyDone && entry.lastVerdict === 'APPROVE') {
+    log('Coverage gate: durable verdict is APPROVE and every e2e task was authored on entry — a prior run already passed this gate; skipping.')
+  } else {
+    let guard = entry.lastVerdict === 'BLOCK' ? entry.resumeState ?? EMPTY_RESUME_STATE : EMPTY_RESUME_STATE
+    if (guard.stall.length || guard.churnStreak) log(`Coverage gate: re-seeded loop guards from the newest BLOCK comment (${guard.stall.length} stall streak(s), churn streak ${guard.churnStreak}).`)
+    let lastSpent = tokensSpent()
+    // Resume optimization: if a prior (dead) run left a standing BLOCK coverage
+    // verdict that nothing has been done about — no e2e-author commit and no fix
+    // comment landed on the branch since — re-gating would only reproduce the same
+    // BLOCK. Dispatch the e2e-author fix first; the loop below then re-gates it.
+    if (entry.action === 'fix-first') {
+      log(`Coverage gate: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an e2e-author fix before the first gate.`)
+      await agent(
+        `Fix E2E coverage feedback on slice #${SLICE}.`,
+        { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: 'coverage-fix:resume' },
+      )
     }
-    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
-    if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
-    log(`Coverage gate: round ${round} returned BLOCK — dispatching an e2e-author fix and re-gating.`)
-    // The dispatch inlines the confirmed gaps (the workflow already holds them
-    // structurally) so the e2e-author doesn't have to re-find and re-parse the
-    // verdict comment; the comment stays the source of full detail.
-    const gapList = (r.findings ?? []).map(f => `- ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
-    await agent(
-      `Fix E2E coverage feedback on slice #${SLICE}. The newest \`# E2E Coverage Gate\` comment carries full detail; the confirmed gaps to close are:\n${gapList}`,
-      { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: `coverage-fix:${round}` },
-    )
+    // Anchor for round N>1: the prior round's { reviewedSha, findings }, so the
+    // re-gate closure-checks the priors + scopes new gaps to the changed specs
+    // instead of independently re-sampling the whole branch (see runReviewSlice).
+    let prior = null
+    for (let round = 1; ; round++) {
+      const r = await runReviewSlice('test-coverage', 'Coverage gate', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior, guard)
+      if (r?.error) return halt(`E2E coverage gate could not run: ${r.error}`)
+      // A set publishError means the verdict comment never reached GitHub. The gate's
+      // findings would then be invisible to the fix loop — halt rather than loop blind
+      // or APPROVE on an unposted verdict.
+      if (r?.publishError) return halt(`E2E coverage gate verdict was not posted to #${SLICE}: ${r.publishError}`)
+      const spent = tokensSpent()
+      log(`Coverage gate: round ${round} — ${r.verdict}, ${r.blockers.length} gap(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
+      lastSpent = spent
+      if (r?.verdict === 'APPROVE') break
+      // Loop guards (computed inside runReviewSlice so the posted BLOCK comment
+      // carries them durably — see resume-state). Oscillation: halt if a coverage
+      // gap survives STALL_ROUNDS dedicated e2e-author fixes. Churn: halt after
+      // CHURN_ROUNDS consecutive rounds of new gaps on unchanged specs (reviewer
+      // noise, not coverage debt).
+      guard = r.guard ?? guard
+      const stuck = stuckBlockers(guard.stall)
+      if (stuck.length)
+        return halt(`E2E coverage gate stalled — ${stuck.length} gap(s) survived ${STALL_ROUNDS} consecutive e2e-author fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
+      const churn = guard.churn ?? []
+      if (churn.length)
+        log(`Coverage gate: round ${round} — ${churn.length} churn gap(s) (new, on specs unchanged since the prior round); churn streak ${guard.churnStreak}/${CHURN_ROUNDS}.`)
+      if (churn.length && guard.churnStreak >= CHURN_ROUNDS)
+        return halt(`E2E coverage gate churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW gap(s) on specs unchanged since the prior round (reviewer noise, not coverage debt); a human should look. Latest churn: ${fmtChurn(churn)}`)
+      if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
+      log(`Coverage gate: round ${round} returned BLOCK — dispatching an e2e-author fix and re-gating.`)
+      // The dispatch inlines the confirmed gaps (the workflow already holds them
+      // structurally) so the e2e-author doesn't have to re-find and re-parse the
+      // verdict comment; the comment stays the source of full detail.
+      const gapList = (r.findings ?? []).map(f => `- ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
+      await agent(
+        `Fix E2E coverage feedback on slice #${SLICE}. The newest \`# E2E Coverage Gate\` comment carries full detail; the confirmed gaps to close are:\n${gapList}`,
+        { agentType: E2E_AUTHOR, phase: 'Coverage gate', label: `coverage-fix:${round}` },
+      )
+    }
   }
 } else {
-  log(e2eTasks.length
-    ? 'Coverage gate: all e2e tasks already marked done on entry — skipping.'
-    : 'Coverage gate: no e2e tasks — skipping.')
+  log('Coverage gate: no e2e tasks — skipping.')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1280,7 +1358,19 @@ Return openIds = the subset of [${ids}] whose checkbox is still \`[ ]\` (empty a
 // round diagnoses green, and the only halt is the test-case-constraint bail.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Pass E2E')
-if (e2eTasks.length) {
+// ── Hoisted gate-review resume probe ─────────────────────────────────────────
+// Runs the Gate review's reviewEntryAction HERE (one probe per run, the same cost
+// as before — just earlier) so a durable `# Slice Gate Review` APPROVE still at
+// the current branch tip can skip Pass E2E too: the gate APPROVE was judged on a
+// tip that had already diagnosed green, so re-paying the stack boot + suite to
+// rediscover it is pure redundancy. Any commit since the APPROVE (atTip=false)
+// re-runs both phases. The probe result also carries the fix-first decision and
+// resume-state the Gate review phase below consumes.
+const gateEntry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Gate Review', 'Pass E2E')
+const gateApprovedAtTip = gateEntry.lastVerdict === 'APPROVE' && gateEntry.atTip === true
+if (gateApprovedAtTip) {
+  log('Pass E2E: durable # Slice Gate Review APPROVE at the current branch tip — skipping straight to the AC-tick (the approved tip already diagnosed green).')
+} else if (e2eTasks.length) {
   let stall = []
   let lastSpent = tokensSpent()
   for (let round = 1; ; round++) {
@@ -1337,20 +1427,30 @@ Fix: ${g.fixHint}`,
 // security). It runs until APPROVE — a real blocker is fixed for however many rounds
 // it takes; the oscillation guard halts to a human only on NO PROGRESS. Code quality
 // is NOT touched here: it is a separate, bounded pass (Phase G). On APPROVE we tick
-// the ACs — the reviewer's VERIFIED GATE.
+// the ACs — the reviewer's VERIFIED GATE. Skipped entirely (straight to the
+// idempotent AC-tick) when the hoisted resume probe found a durable APPROVE still
+// at the current branch tip — see the Pass E2E phase.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Gate review')
-{
-  let stall = []
+if (gateApprovedAtTip) {
+  log('Gate review: durable APPROVE at the current branch tip — skipping re-review.')
+} else {
+  // Loop guards seeded from the newest BLOCK comment's resume-state (embedded by
+  // composeComment), so a structurally stuck blocker can't evade the STALL_ROUNDS /
+  // CHURN_ROUNDS halts by being killed and relaunched.
+  let guard = gateEntry.lastVerdict === 'BLOCK' ? gateEntry.resumeState ?? EMPTY_RESUME_STATE : EMPTY_RESUME_STATE
+  if (guard.stall.length || guard.churnStreak) log(`Gate review: re-seeded loop guards from the newest BLOCK comment (${guard.stall.length} stall streak(s), churn streak ${guard.churnStreak}).`)
   let lastSpent = tokensSpent()
-  // Resume optimization (see reviewEntryAction): a relaunch onto a slice that
-  // already carries a standing BLOCK gate review with no landed fix skips the
-  // redundant re-review and dispatches the engineer fix first; the loop below then
-  // re-reviews. A partial fix that DID land falls through to review, which catches
-  // whatever remains.
-  const entry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Gate Review', 'Gate review')
-  if (entry.action === 'fix-first') {
-    log(`Gate review: standing BLOCK with no landed fix — ${entry.reason}. Dispatching an engineer fix before the first review.`)
+  // Resume optimization (see reviewEntryAction, hoisted to the Pass E2E phase): a
+  // relaunch onto a slice that already carries a standing BLOCK gate review with
+  // no landed fix skips the redundant re-review and dispatches the engineer fix
+  // first; the loop below then re-reviews. A partial fix that DID land falls
+  // through to review, which catches whatever remains. (A Pass-E2E fix landing
+  // between the hoisted probe and here can stale a fix-first into one redundant
+  // dispatch — the engineer reads the newest comment and no-ops when everything is
+  // already fixed.)
+  if (gateEntry.action === 'fix-first') {
+    log(`Gate review: standing BLOCK with no landed fix — ${gateEntry.reason}. Dispatching an engineer fix before the first review.`)
     await agent(
       `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment.`,
       { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
@@ -1360,12 +1460,8 @@ phase('Gate review')
   // re-review closure-checks the priors + scopes new findings to the fix's own
   // diff instead of independently re-sampling the whole branch (see runReviewSlice).
   let prior = null
-  // Churn-guard state: every prior round's finding fingerprints + the streak of
-  // consecutive rounds that surfaced new blockers on unchanged code.
-  let seen = []
-  let churnStreak = 0
   for (let round = 1; ; round++) {
-    const r = await runReviewSlice('production-code', 'Gate review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior)
+    const r = await runReviewSlice('production-code', 'Gate review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'gate', prior, guard)
     if (r?.error) return halt(`gate review could not run: ${r.error}`)
     // Unposted verdict (see the coverage-gate note above): the findings never reached
     // #${SLICE}, so a BLOCK would loop blind and an APPROVE would open a PR whose
@@ -1375,23 +1471,20 @@ phase('Gate review')
     log(`Gate review: round ${round} — ${r.verdict}, ${r.blockers.length} gating I:H blocker(s); +${kb(spent - lastSpent)}k tok this round (${kb(spent)}k turn total).`)
     lastSpent = spent
     if (r?.verdict === 'APPROVE') break
-    // Oscillation guard: halt if a gating I:H blocker survives STALL_ROUNDS dedicated
-    // engineer fixes — structurally stuck, not slow.
-    stall = trackStall(stall, r.blockers)
-    const stuck = stuckBlockers(stall)
+    // Loop guards (computed inside runReviewSlice so the posted BLOCK comment
+    // carries them durably — see resume-state). Oscillation: a gating I:H blocker
+    // that survives STALL_ROUNDS dedicated engineer fixes. Churn: CHURN_ROUNDS
+    // consecutive rounds of new blockers on unchanged code (reviewer noise, not
+    // fix regressions).
+    guard = r.guard ?? guard
+    const stuck = stuckBlockers(guard.stall)
     if (stuck.length)
       return halt(`Gate review stalled — ${stuck.length} gating I:H blocker(s) survived ${STALL_ROUNDS} consecutive engineer fixes unresolved; a human should look. Stuck: ${fmtStuck(stuck)}`)
-    // Churn guard: rounds keep retiring blockers but surfacing NEW ones on code
-    // unchanged since the prior round → reviewer noise, not fix regressions.
-    if (prior) {
-      const churn = detectChurn(r, seen)
-      churnStreak = churn.length ? churnStreak + 1 : 0
-      if (churn.length)
-        log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${churnStreak}/${CHURN_ROUNDS}.`)
-      if (churnStreak >= CHURN_ROUNDS)
-        return halt(`Gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
-    }
-    seen.push(...(r.findings ?? []).map(f => ({ file: f.file, title: f.title })))
+    const churn = guard.churn ?? []
+    if (churn.length)
+      log(`Gate review: round ${round} — ${churn.length} churn blocker(s) (new, on code unchanged since the prior round); churn streak ${guard.churnStreak}/${CHURN_ROUNDS}.`)
+    if (churn.length && guard.churnStreak >= CHURN_ROUNDS)
+      return halt(`Gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
     if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
     // The dispatch inlines every Fix-class gating finding (the workflow already
@@ -1407,20 +1500,24 @@ phase('Gate review')
       { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }
+}
 
-  // ── AC-tick: the reviewer-gated VERIFIED GATE (vs. the engineer's task-box claim). ──
-  // The engineer self-ticks TASK boxes as a progress claim; the reviewer ticks the
-  // AC boxes — and only that AC tick is the verified gate. A gate-review APPROVE
-  // means no I:H spec-compliance finding survived, i.e. every AC's `covers:` task was
-  // discharged at its owning layer (the test-coverage axis blocks I:H on any
-  // undischarged AC). So on APPROVE we flip every `- [ ] AC<n>` → `- [x] AC<n>`. A
-  // re-run that re-enters on an already-APPROVE'd slice just re-ticks idempotently.
+// ── AC-tick: the reviewer-gated VERIFIED GATE (vs. the engineer's task-box claim). ──
+// The engineer self-ticks TASK boxes as a progress claim; the reviewer ticks the
+// AC boxes — and only that AC tick is the verified gate. A gate-review APPROVE
+// means no I:H spec-compliance finding survived, i.e. every AC's `covers:` task was
+// discharged at its owning layer (the test-coverage axis blocks I:H on any
+// undischarged AC). So on APPROVE we flip every `- [ ] AC<n>` → `- [x] AC<n>`. A
+// re-run that re-enters on an already-APPROVE'd slice — including the
+// gateApprovedAtTip skip path, where the kill may have landed between the APPROVE
+// and this tick — just re-ticks idempotently.
+{
   const acIds = prep.scopeManifest?.acIds ?? []
   if (acIds.length) {
     await agent(
       `The slice #${SLICE} gate review (acceptance / contract / security) has APPROVED — every acceptance criterion is now discharged at its owning layer. Tick the AC checkboxes in the slice body (the reviewer's VERIFIED GATE; the engineer only ticks task boxes). Do exactly this:
 1. \`bash skills/operation-git/scripts/issue-body.sh ${SLICE} number,body\` to read the current body.
-2. In the \`## Acceptance criteria (EARS)\` section, flip each unchecked AC checkbox \`- [ ] AC<n> — …\` to \`- [x] AC<n> — …\` for these ids: ${acIds.join(', ')}. Leave the AC text and every other line byte-for-byte unchanged; touch ONLY the \`[ ]\`→\`[x]\` of those AC lines (NOT task lines).
+2. In the \`## Acceptance criteria (EARS)\` section, flip each unchecked AC checkbox \`- [ ] AC<n> — …\` to \`- [x] AC<n> — …\` for these ids: ${acIds.join(', ')}. Leave the AC text and every other line byte-for-byte unchanged; touch ONLY the \`[ ]\`→\`[x]\` of those AC lines (NOT task lines). If every listed AC is already \`[x]\`, change nothing and return ok=true.
 3. Write the edited full body to /tmp/ac-tick-${SLICE}.md and apply it: \`gh issue edit ${SLICE} --body-file /tmp/ac-tick-${SLICE}.md\`.
 Return ok=true (or error set on failure). prNumber=null.`,
       { label: 'tick-acs', phase: 'Gate review', schema: SIDE_EFFECT, model: WRITER_MODEL },
@@ -1438,7 +1535,18 @@ Return ok=true (or error set on failure). prNumber=null.`,
 // to fix, the polish + re-review are skipped and there is no debt to triage.
 // ─────────────────────────────────────────────────────────────────────────────
 phase('Quality review')
-{
+// Resume: quality runs AFTER the gate APPROVE, so a relaunch that skipped the gate
+// (APPROVE at tip) may find the quality pass ALSO already ran at this tip —
+// re-running it would re-pay the quality fan-out and re-triage duplicate debt
+// issues. Probed only on that resume path (fresh runs skip the probe; the quality
+// comment's verdict line is ADVISORY, so `found` + `atTip` are the signal).
+let qualityAlreadyRan = false
+if (gateApprovedAtTip) {
+  const qEntry = await reviewEntryAction('production-code', prep.sliceBranch, '# Slice Quality Review', 'Quality review')
+  qualityAlreadyRan = qEntry.found === true && qEntry.atTip === true
+  if (qualityAlreadyRan) log('Quality review: durable # Slice Quality Review at the current branch tip — already ran; skipping re-run + re-triage.')
+}
+if (!qualityAlreadyRan) {
   let lastSpent = tokensSpent()
   // Review #1 — the one review of the review/fix cycle.
   const q1 = await runReviewSlice('production-code', 'Quality review', prep.sliceBranch, prep.scopeManifest, prep.tasks, 'quality')
