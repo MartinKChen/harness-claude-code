@@ -1,6 +1,6 @@
 ---
 name: scaffold-project
-description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` for stack + topology, asserts the ADR-published `docs/stack.yaml` manifest (fallback-distilling it for older lock-ins), materializes backend/frontend/e2e/compose from templates (or a layout-pinning skeleton for stacks without one), verifies the stack boots, seeds the locked design tokens, wires CI + pre-commit/pre-push githooks, then pushes and opens a PR. Activate on '/scaffold-project'. Do NOT activate if any scaffold surface already exists."
+description: "Bootstrap a greenfield project to a bootable stack. Reads `docs/architecture-decision-record/` + the ADR-published `docs/stack.yaml` (fallback-distills it for older lock-ins), materializes backend/frontend/e2e/compose from templates (or a layout-pinning skeleton for stacks without one), verifies boot, seeds locked design tokens, wires CI + pre-commit/pre-push githooks, pushes, opens a PR. Activate on '/scaffold-project'. Do NOT activate if any scaffold surface exists."
 ---
 
 # scaffold-project
