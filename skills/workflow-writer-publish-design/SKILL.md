@@ -1,6 +1,6 @@
 ---
 name: workflow-writer-publish-design
-description: "Materialize and commit every artifact for an approved design system: `docs/design-system/{overview,tokens,components,accessibility}.md`, the surface + navigation inventory at `docs/design-system/surfaces.md`, the per-surface UI interaction contracts at `docs/ui-contract/*.yaml`, plus the optional `## Design taste` section of `CLAUDE.md`. Commits on the current branch; no PR. Activate on '/workflow-writer-publish-design'."
+description: "Materialize and commit every artifact for an approved design system: `docs/design-system/{overview,tokens,components,accessibility}.md`, the surface + navigation inventory at `docs/design-system/surfaces.md`, the per-surface UI interaction contracts at `docs/ui-contract/*.yaml`, the optional `## Design taste` section of `CLAUDE.md`, plus — when the dispatch names a sample-page winner — moving the winning designer's plain-HTML candidates into `docs/design-system/samples/` and deleting `sample-candidates/`. Commits on the current branch; no PR. Activate on '/workflow-writer-publish-design'."
 ---
 
 # workflow-writer-publish-design
@@ -26,7 +26,7 @@ Do NOT activate when:
 
 ## Workflow
 
-Inputs from the dispatching orchestrator: a `<feature-name>` (kebab-case), the **trigger phrase** (`Publish design system for <feature-name>`), and the **working directory** of the worktree on the feature branch. The substantive content (locked visual language, the surface + navigation inventory, optional `CLAUDE.md` design-taste update) is **not** in the dispatch prompt — you pull it from `design-lead` in step 1.
+Inputs from the dispatching orchestrator: a `<feature-name>` (kebab-case), the **trigger phrase** (`Publish design system for <feature-name>`), the **working directory** of the worktree on the feature branch, and — when the sample-page phase ran — the **winner's candidate directory** (`docs/design-system/sample-candidates/<winner-name>/`, voted by the human). The substantive content (locked visual language, the surface + navigation inventory, optional `CLAUDE.md` design-taste update) is **not** in the dispatch prompt — you pull it from `design-lead` in step 1.
 
 Everything else (an existing `docs/design-system/` that may need editing in place, current `CLAUDE.md` shape) you read from disk.
 
@@ -59,6 +59,12 @@ For `CLAUDE.md` — **only if** `design-lead` flagged the `## Design taste` sect
 - Append the section if `CLAUDE.md` already exists without one; edit the existing section in place if present; create the file with just this section if it does not exist.
 - The taste description MUST be verbose and evocative (multiple sentences, not a one-liner). The reference paths MUST be machine-greppable backticked relative paths on their own lines under a `### References` sub-heading.
 
+**Only if the dispatch names a sample-page winner** (the human-voted designer-duel result — skip entirely otherwise):
+
+- Move the winner's `.html` pages (including `index.html` if present, excluding any `proposal.md`) from `docs/design-system/sample-candidates/<winner-name>/` into `docs/design-system/samples/`.
+- Delete the entire `docs/design-system/sample-candidates/` directory — losing candidates included.
+- The samples are moved verbatim — do not redesign or edit them; they are the human-voted record of the winning direction.
+
 ### 3. Hand artifacts back for iteration
 
 Tell the user which files were written and whether `CLAUDE.md` was updated. Then ask whether to iterate or confirm.
@@ -76,7 +82,7 @@ The caller (typically the orchestrator running `/deep-dive-feature`) has already
 Run, in the working directory you were briefed with:
 
 ```bash
-git add docs/design-system/ docs/ui-contract/ CLAUDE.md   # CLAUDE.md only if the design-taste section changed
+git add docs/design-system/ docs/ui-contract/ CLAUDE.md   # CLAUDE.md only if the design-taste section changed; docs/design-system/ also picks up samples/ + the sample-candidates/ deletion when the duel ran
 git commit -m "docs(design): <feature-name> design system + surface inventory"
 ```
 

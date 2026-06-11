@@ -711,7 +711,13 @@
         <td class="role">design-lead</td>
         <td class="model">opus</td>
         <td><span class="badge r">read</span></td>
-        <td>Interviews the user about the visual language and information architecture. Locks the design system + the <strong>surface / navigation inventory</strong> (every routed surface and how it's reached). Composes a dispatch prompt for the <code>design-writer</code>; <code>ui-ux-pro-max</code> is its toolbox. Reads PRD; never writes files.</td>
+        <td>Interviews the user about the visual language and information architecture. Locks the design system + the <strong>surface / navigation inventory</strong> (every routed surface and how it's reached). Composes a dispatch prompt for the <code>design-writer</code>; <code>ui-ux-pro-max</code> is its toolbox. Answers the <code>designer</code> teammates' requests for the locked interview results and folds the human-voted winner into its payload. Reads PRD; never writes files.</td>
+      </tr>
+      <tr>
+        <td class="role">designer</td>
+        <td class="model">sonnet</td>
+        <td><span class="badge w">write</span></td>
+        <td>Sample-page generator, 1–2 named instances after the design interview: <code>designer-pro-max</code> (toolbox <code>ui-ux-pro-max</code>) and <code>designer-taste</code> (toolbox <code>taste-skill</code>) — one per installed toolbox plugin. Each pulls the interview results from <code>design-lead</code> and writes self-contained plain-HTML candidates under <code>docs/design-system/sample-candidates/&lt;name&gt;/</code>; <strong>the human votes the winner</strong> (solo mode skips the vote and adds a token proposal; with neither plugin the phase is skipped — <code>design-lead</code>'s own taste, the pre-existing fallback). Writes uncommitted candidates only; <code>design-writer</code> moves the winner into <code>docs/design-system/samples/</code> and commits.</td>
       </tr>
       <tr>
         <td class="role">architect</td>
@@ -793,12 +799,13 @@
     <div class="step">
       <div class="n">STEP 6A–6D</div>
       <h4>Phase 1.5: design</h4>
-      <div class="who"><code>design-lead</code> + user + <code>design-writer</code></div>
+      <div class="who"><code>design-lead</code> + user + 1–2 <code>designer</code>s + <code>design-writer</code></div>
       <ul>
         <li>Orchestrator invites <code>design-lead</code> after the requirement is published</li>
         <li>User talks to <code>design-lead</code> directly</li>
         <li>Locks the visual language + the surface / navigation inventory + a per-surface UI interaction contract skeleton (the semantic interface E2E specs drive against)</li>
-        <li><code>design-writer</code> commits <code>docs/design-system/{overview,tokens,components,accessibility}.md</code> + <code>surfaces.md</code> + <code>docs/ui-contract/&lt;screen&gt;.yaml</code></li>
+        <li>Sample-page duel: 1–2 <code>designer</code> teammates (toolboxes <code>ui-ux-pro-max</code> / <code>taste-skill</code>, one per installed plugin) generate plain-HTML candidates; <strong>the human votes the winner</strong> (no plugins → skip, <code>design-lead</code>'s own taste)</li>
+        <li><code>design-writer</code> commits <code>docs/design-system/{overview,tokens,components,accessibility}.md</code> + <code>surfaces.md</code> + <code>docs/ui-contract/&lt;screen&gt;.yaml</code> + the winning samples into <code>docs/design-system/samples/</code></li>
       </ul>
     </div>
     <div class="step">
@@ -1529,8 +1536,8 @@
   <p>
     Two distinct channels: a <strong>Team</strong>-shared channel for the
     interactive discovery agents (<code>product-owner</code>,
-    <code>design-lead</code>, <code>architect</code>, <code>doc-writer</code>
-    instances) and a <strong>workflow dispatch</strong> channel for the
+    <code>design-lead</code>, <code>designer</code> and <code>doc-writer</code>
+    instances, <code>architect</code>) and a <strong>workflow dispatch</strong> channel for the
     lifecycle agents (<code>engineer</code>, <code>e2e-author</code>,
     <code>axis-reviewer</code> agents) — almost all of which are now
     dispatched <em>by the <code>implement-slice</code> Workflow</em>, not the
@@ -1551,6 +1558,7 @@
         <li><code>product-owner</code> ↔ user (direct)</li>
         <li><code>product-owner</code> ↔ <code>requirement-writer</code> (pull payload)</li>
         <li><code>design-lead</code> ↔ user (direct)</li>
+        <li><code>design-lead</code> ↔ <code>designer-pro-max</code> / <code>designer-taste</code> (pull interview results; user votes the winner)</li>
         <li><code>design-lead</code> ↔ <code>design-writer</code> (pull payload)</li>
         <li><code>architect</code> ↔ user (direct)</li>
         <li><code>architect</code> ↔ 5 writers (pull scoped payloads)</li>
