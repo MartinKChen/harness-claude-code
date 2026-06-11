@@ -1050,7 +1050,7 @@
       <tr>
         <td class="role">Coverage gate</td>
         <td class="model">runReviewSlice('test-coverage')</td>
-        <td><strong>New in 0.40.</strong> Static review of the authored specs vs the slice AC + non-happy-paths, <em>before</em> any production code. Loops to an <code>e2e-author</code> fix until covered (no round cap).</td>
+        <td><strong>New in 0.40.</strong> Static review of the authored specs vs the slice AC + non-happy-paths, <em>before</em> any production code. Loops to an <code>e2e-author</code> fix until covered (no round cap). On resume it is skipped only when the newest <code># E2E Coverage Gate</code> comment says APPROVE — ticked e2e boxes prove authoring, not passage, so a run killed on a BLOCK re-gates.</td>
       </tr>
       <tr>
         <td class="role">Plan</td>
@@ -1122,16 +1122,25 @@
     prior round — reviewer noise, not defects).
     <strong>Resume</strong> is the slice branch's WIP commits (each carrying
     <code>Task: &lt;id&gt;</code> + <code>Refs #&lt;slice&gt;</code>) + the durable
-    checklist + the <code>Workflow</code> resume journal. There are no handoff
-    docs. Each <em>looping</em> review (coverage gate, gate review) also runs a
-    one-shot read-only
-    <code>reviewEntryAction</code> probe before its first review: when the branch
-    already carries a standing <code>BLOCK</code> verdict that nothing landed
-    against — <strong>no commit and no fix-summary comment after it</strong> — it
+    checklist + the <code>Workflow</code> resume journal — plus the
+    <strong>verdict comments</strong> for review passage: every gate/review
+    comment is stamped with the reviewed branch-tip SHA
+    (<code>**Reviewed tip:**</code>) and an invisible
+    <code>&lt;!-- resume-state --&gt;</code> marker carrying the loop-guard
+    streaks. Each <em>looping</em> review (coverage gate, gate review) runs a
+    one-shot read-only <code>reviewEntryAction</code> probe before its first
+    review (the gate review's probe is hoisted to the Pass&nbsp;E2E phase): a
+    durable coverage-gate APPROVE skips the gate; a gate APPROVE still at the
+    remote tip skips Pass&nbsp;E2E + Gate review (straight to the idempotent
+    AC-tick + PR, and the quality pass too when its comment already exists at
+    that tip); a standing <code>BLOCK</code> verdict that nothing landed
+    against — <strong>no commit and no fix-summary comment after it</strong> —
     returns <code>fix-first</code>, dispatching the fix straight away instead of
-    re-running the fan-out only to reproduce the same <code>BLOCK</code>. A fix
-    that <em>did</em> land (even a partial commit after the BLOCK) falls through to
-    <code>review</code>, which re-evaluates the current diff and catches the rest.
+    re-running the fan-out only to reproduce the same <code>BLOCK</code> (a fix
+    that <em>did</em> land, even partially, falls through to
+    <code>review</code>, which catches the rest); and any BLOCK re-seeds the
+    oscillation + churn streaks from its resume-state marker instead of
+    resetting them. There are no handoff docs.
   </p>
 
   <h3><code>runReviewSlice()</code> — inlined fan-out review</h3>
@@ -1435,8 +1444,11 @@
       <div class="flow-loop">
         <strong>resume:</strong> a SIGKILL leaves the lock set but the run gone.
         Stage 0 reconcile releases it; the next pass relaunches a fresh workflow
-        that re-reads the checklist (ticked boxes skipped) and replays its
-        <code>agent()</code> prefix from the resume journal — no handoff docs.
+        that re-reads the checklist (ticked boxes skipped), probes the newest
+        SHA-stamped verdict comments (a passed gate is skipped; an APPROVE at the
+        current tip jumps to AC-tick + PR; a BLOCK re-seeds the stall streaks),
+        and replays its <code>agent()</code> prefix from the resume journal — no
+        handoff docs.
       </div>
     </div>
 

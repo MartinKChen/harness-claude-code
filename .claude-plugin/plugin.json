@@ -1,7 +1,7 @@
 {
   "name": "harness-claude-code",
-  "version": "0.54.0",
-  "description": "Opinionated Claude Code dev workflow: a unified /ship command driving the feature, enhancement, and bug lifecycles through deterministic multi-agent Workflow orchestration over GitHub-issue state, plus a /deep-dive-feature discovery command; product-owner / design-lead / architect / engineer / e2e-author / reviewer / doc-writer / sre agents; and a curated skill library — outside-in TDD with paired engineer/reviewer pattern skills (coding standards, TypeScript, Python, Go, Rust, Java, Kotlin, Swift, FastAPI, generic HTTP APIs, Node backends, SSR, Vite, database, backend, frontend, container, observability, security, non-functional), git, and API/module design.",
+  "version": "0.55.0",
+"description": "Opinionated Claude Code dev workflow: a unified /ship command driving the feature, enhancement, and bug lifecycles through deterministic multi-agent Workflow orchestration over GitHub-issue state, plus a /deep-dive-feature discovery command; product-owner / design-lead / architect / engineer / e2e-author / reviewer / doc-writer / sre agents; and a curated skill library — outside-in TDD with paired engineer/reviewer pattern skills (coding standards, TypeScript, Python, Go, Rust, Java, Kotlin, Swift, FastAPI, generic HTTP APIs, Node backends, SSR, Vite, database, backend, frontend, container, observability, security, non-functional), git, and API/module design.",
   "author": {
     "name": "Martin Chen",
     "email": "martinchen77813@gmail.com"
