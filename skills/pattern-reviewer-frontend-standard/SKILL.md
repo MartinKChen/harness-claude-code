@@ -91,6 +91,34 @@ A new page lands with BOTH the `App.tsx` route entry AND an `App.test.tsx` reach
 - A `top-level` page whose only entry is the route registration is a **HIGH** finding: it's unreachable in the running app. The global-nav link belongs to the foundation/shell slice — confirm the page is wired into it.
 - The inbound path should be pinned by a test (render the shell/parent, activate the link/control, assert navigation) — flag a missing reachability test, not just a missing link.
 
+### UI-contract conformance test (HIGH)
+
+When the surface has a `docs/ui-contract/<screen>.yaml`, the frontend must ship a **contract-conformance test** that renders the surface and asserts every declared `region` + `action` resolves by `getByRole(role, { name })` (plus each `states` entry the slice builds). This is the executable firewall that keeps the contract from drifting and that the E2E locators depend on — its absence is the conformance gap `pattern-reviewer-contract` can only catch by eyeballing the diff, one round too late.
+
+Detection: for each surface the diff builds, find the test (`<Screen>.test.tsx` / `<Screen>.contract.test.tsx`) that renders it and queries each contracted `region`/`action` by role + accessible name. Flag when:
+
+- the surface renders the contracted interface but no test asserts it by `getByRole(role, { name })`;
+- the "conformance" test queries by CSS class / `data-testid` / DOM structure instead of the contracted role+name (it proves the wrong thing — the contract is a role+name promise);
+- a `states` entry this slice builds has no assertion pinning its declared proof.
+
+```tsx
+// Contract (docs/ui-contract/article-editor.yaml):
+//   regions: [{ role: main, name: Article editor }]
+//   actions: [{ role: button, name: Publish }]
+
+// BAD — surface ships, nothing pins the contracted interface; drift surfaces in E2E at run time
+// (no <ArticleEditor> test queries role:main "Article editor" or role:button "Publish")
+
+// GOOD — a conformance test renders the surface and pins each contracted entry by role+name
+test("ArticleEditor conforms to its UI contract", () => {
+  render(<ArticleEditor />, { wrapper: AppProviders });
+  const main = screen.getByRole("main", { name: "Article editor" });
+  expect(within(main).getByRole("button", { name: "Publish" })).toBeInTheDocument();
+});
+```
+
+False positives to avoid: a surface with NO `docs/ui-contract/` file falls back to the a11y floor below — do not demand a conformance test where there is no contract. Do not demand assertions for `regions`/`actions`/`states` the contract declares but this slice does not build (a slicing decision, the same carve-out `pattern-reviewer-contract` applies). A reachability test (`App.test.tsx`) that already queries the surface's contracted heading/region by role+name partially discharges this — flag only the un-pinned contracted entries, not a missing separate file.
+
 ### TanStack Query — route-param guards (HIGH)
 
 ```tsx

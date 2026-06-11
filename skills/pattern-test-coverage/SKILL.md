@@ -54,6 +54,8 @@ A ticked AC checkbox is **never** discharge on its own.
 
 Every rule below is an instance of one test: **could I delete a single line of the production code under test — a branch, a mutation, a derivation, a log call, a parameter — and keep the whole suite green?** If yes, that line is uncovered, however many tests "touch" the area. Before calling a behavior done (engineer) or covered (reviewer), name the line you could delete, then close it. **The completeness bar is this deletable-code lens, not one-test-per-AC** — the AC list is the coverage *checklist*; the tests are the coverage. Mapping is many-to-many: one AC may need several tests (boundary/error/concurrency); several ACs may be covered by one walk.
 
+**Mutation testing is this lens, made mechanical.** A surviving mutant *is* a deletable line — the tool flips a branch / operator / return and the whole suite stays green, proving the gap deterministically where an eyeballed review can only guess. Where the project runs **diff-scoped** mutation (`scripts/mutation.sh` — Stryker `--since` / mutmut over the branch diff, wired as its own CI job), that surviving-mutant report is the authoritative discharge of this lens for both sides: the engineer closes every survivor on a changed line before calling the behavior green; the reviewer reads the report rather than re-deriving mutation adequacy by hand. Run it diff-scoped, never whole-repo — a mutant survives or dies on the lines this slice changed, and a whole-repo run is too slow to be a gate. Absence of the tool falls back to the manual lens below.
+
 A test fails this lens when it:
 
 - **pre-seeds the post-state** the production code is supposed to produce (e.g. sets `used_at` then asserts once, instead of a two-call round-trip);
@@ -136,6 +138,12 @@ Before finalizing each assertion, run the **adversary check** — name one wrong
 - redirect to `/sessions/{uuid}` instead of the list → anchor the URL to the surface (`/sessions(\?|$)`).
 
 If any named adversary passes, tighten until it can't. Bind to a named observable (exact slug, exact id, exact value) over a category word, and prefer "both A and B must hold" when each alone is insufficient. (This is §5's named-observable rule pushed one step further: §5 says assert the exact artifact, this says make that assertion fail for the nearest wrong artifact too.)
+
+### 9. UI-contract conformance (`type:frontend`)
+
+When a surface has a `docs/ui-contract/<screen>.yaml`, the contract's declared interface is itself a coverage obligation, discharged by a **contract-conformance test** that renders the surface and asserts every declared `region` + `action` resolves by `getByRole(role, { name })` (exact accessible name), plus each `states` entry the slice builds. A surface that renders the contracted interface with no test pinning it by role+name is under-covered even when the AC *behavior* is exercised — conformance is a code↔contract invariant the behavior tests structurally miss, because they query by their own assumptions, not the contract's. The deletable-code line is the `role` / `aria-label` / labelled-control that produces each accessible name: delete it and only the conformance test should fail.
+
+This test is the **firewall** the E2E layer depends on: once it is green, an E2E locator built from the contract's role+name cannot fail for a locator reason, so the selector-mismatch churn (§7) lives in a fast component test instead of the slow, brittle browser walk. Scope to what the slice builds — a `region`/`action`/`state` the contract declares but a later slice wires is not a gap here (the same carve-out `pattern-reviewer-contract` applies).
 
 ## Role framing (pointers, not duplication)
 

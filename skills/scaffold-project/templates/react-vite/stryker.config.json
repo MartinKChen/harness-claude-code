@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Diff-scoped mutation config (driven by scripts/mutation.sh, which passes --since). Mutates src/ via the vitest runner; thresholds.break gates CI on a surviving-mutant score so a covered diff stays green and an uncovered change fails the mutation job.",
+  "testRunner": "vitest",
+  "reporters": ["clear-text", "json"],
+  "mutate": ["src/**/*.ts", "src/**/*.tsx", "!src/**/*.test.ts", "!src/**/*.test.tsx"],
+  "since": { "target": "origin/main" },
+  "thresholds": { "high": 90, "low": 80, "break": 80 }
+}
