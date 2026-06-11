@@ -122,8 +122,11 @@ const SURFACES = {
     backend: { type: 'boolean' }, frontend: { type: 'boolean' }, python: { type: 'boolean' },
     typescript: { type: 'boolean' }, fastapi: { type: 'boolean' }, database: { type: 'boolean' },
     container: { type: 'boolean' }, vite: { type: 'boolean' }, hasContractFiles: { type: 'boolean' },
+    httpApi: { type: 'boolean' }, node: { type: 'boolean' }, ssr: { type: 'boolean' },
+    go: { type: 'boolean' }, rust: { type: 'boolean' }, java: { type: 'boolean' },
+    kotlin: { type: 'boolean' }, swift: { type: 'boolean' },
   },
-  required: ['backend', 'frontend', 'python', 'typescript', 'fastapi', 'database', 'container', 'vite', 'hasContractFiles'],
+  required: ['backend', 'frontend', 'python', 'typescript', 'fastapi', 'database', 'container', 'vite', 'hasContractFiles', 'httpApi', 'node', 'ssr', 'go', 'rust', 'java', 'kotlin', 'swift'],
 }
 const REFUTE_VERDICT = {
   type: 'object',
@@ -183,9 +186,19 @@ const DIMENSIONS = [
   { key: 'frontend-standard', phase: 'quality', skill: 'pattern-reviewer-frontend-standard', applies: s => s.frontend },
   { key: 'container',         phase: 'quality', skill: 'pattern-reviewer-container',         applies: s => s.container },
   { key: 'fastapi',           phase: 'quality', skill: 'pattern-reviewer-fastapi',           applies: s => s.fastapi },
+  // `api` is the framework-agnostic sibling of `fastapi` — exactly one of the two
+  // runs for HTTP-boundary code (the classifier sets httpApi only for non-FastAPI frameworks).
+  { key: 'api',               phase: 'quality', skill: 'pattern-reviewer-api',               applies: s => s.httpApi },
+  { key: 'node',              phase: 'quality', skill: 'pattern-reviewer-node',              applies: s => s.node },
+  { key: 'ssr',               phase: 'quality', skill: 'pattern-reviewer-ssr',               applies: s => s.ssr },
   { key: 'python',            phase: 'quality', skill: 'pattern-reviewer-python',            applies: s => s.python },
   { key: 'typescript',        phase: 'quality', skill: 'pattern-reviewer-typescript',        applies: s => s.typescript },
   { key: 'vite',              phase: 'quality', skill: 'pattern-reviewer-vite',              applies: s => s.vite },
+  { key: 'go',                phase: 'quality', skill: 'pattern-reviewer-go',                applies: s => s.go },
+  { key: 'rust',              phase: 'quality', skill: 'pattern-reviewer-rust',              applies: s => s.rust },
+  { key: 'java',              phase: 'quality', skill: 'pattern-reviewer-java',              applies: s => s.java },
+  { key: 'kotlin',            phase: 'quality', skill: 'pattern-reviewer-kotlin',            applies: s => s.kotlin },
+  { key: 'swift',             phase: 'quality', skill: 'pattern-reviewer-swift',             applies: s => s.swift },
 ]
 
 // Build the gating set from the catalogue above so the policy stays co-located with
@@ -524,11 +537,19 @@ Return these booleans:
 - database: ORM models or alembic migrations touched.
 - container: Dockerfile/compose/.dockerignore/nginx/entrypoint touched.
 - vite: vite.config/vitest.config or import.meta.env usage touched.
+- httpApi: HTTP routes/handlers/middleware/app wiring touched in a backend framework OTHER than FastAPI (Express/Fastify/Nest/Hono, Gin/Echo/Chi, Axum/Actix, Spring/Ktor, Vapor, Flask/Django — FastAPI has its own dimension, so fastapi=true implies httpApi=false for the same code).
+- node: server-side JavaScript/TypeScript running under Node.js touched (service entrypoints, Express/Fastify/Nest/Hono code) — not browser code.
+- ssr: server-rendered frontend framework code touched (Next.js app/ or pages/ routes, "use client"/server components, Remix loaders/actions, SvelteKit +page.server.*, Nuxt server routes, next.config.*).
+- go: any .go file or go.mod touched.
+- rust: any .rs file or Cargo.toml touched.
+- java: any .java file (or a Maven/Gradle build file of a Java project) touched.
+- kotlin: any .kt/.kts file touched.
+- swift: any .swift file or Package.swift touched.
 - hasContractFiles: any docs/api-contract/*.yaml or docs/data-model/*.yaml exists in the repo (check with \`ls\` in the worktree — a repo-existence check, not a touched-path check).
 
 When a path could plausibly belong to a surface, prefer setting the boolean true: a false negative silently skips that review dimension, which is worse than running one extra lens.`,
       { label: 'review-surfaces', phase: phaseTitle, schema: SURFACES, model: AGENT_MODEL },
-    ) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true }
+    ) ?? { backend: true, frontend: true, python: true, typescript: true, fastapi: true, database: true, container: true, vite: true, hasContractFiles: true, httpApi: true, node: true, ssr: true, go: true, rust: true, java: true, kotlin: true, swift: true }
 
     // Round anchoring (the convergence fix — see implement-slice): a re-review
     // round closure-checks the prior findings and scopes NEW findings to the code

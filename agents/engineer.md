@@ -51,10 +51,18 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 | `pattern-engineer-database` | When implementing or fixing backend code that touches ORM models or migrations. |
 | `pattern-engineer-frontend-standard` | When implementing or fixing frontend code. |
 | `pattern-engineer-container` | When implementing or fixing container artifacts (`Dockerfile`, `docker-compose.yaml`, `.dockerignore`, entrypoint scripts, nginx config). |
-| `pattern-engineer-fastapi` | When implementing or fixing FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. |
+| `pattern-engineer-fastapi` | When implementing or fixing FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. (FastAPI projects load this INSTEAD of `pattern-engineer-api`.) |
+| `pattern-engineer-api` | When implementing or fixing HTTP routes, handlers, middleware, or app wiring in any backend framework **other than FastAPI** (Express / Fastify / NestJS / Hono, Gin / Echo / Chi, Axum / Actix, Spring Boot / Ktor, Vapor, Flask / Django). Mutually exclusive with `pattern-engineer-fastapi` — exactly one of the two loads for HTTP-boundary work. |
+| `pattern-engineer-node` | When implementing or fixing server-side JavaScript/TypeScript that runs under Node.js (Express / Fastify / NestJS / Hono handlers, Node service entrypoints, `package.json` server scripts) — the runtime discipline layered on top of `pattern-engineer-typescript`. Skip for browser code. |
+| `pattern-engineer-ssr` | When implementing or fixing code in a server-rendered frontend framework (Next.js `app/` / `pages/`, Remix loaders/actions, SvelteKit `+page.server.*`, Nuxt server routes) — server/client boundary, data fetching, hydration. Pure-CSR Vite apps stay on `pattern-engineer-vite`. |
 | `pattern-engineer-python` | When implementing or fixing Python (`.py`) files. |
 | `pattern-engineer-typescript` | When implementing or fixing TypeScript (`.ts` / `.tsx`) files. |
 | `pattern-engineer-vite` | When implementing or fixing frontend code that runs under Vite (`vite.config.*`, `vitest.config.*`, `import.meta.env`). |
+| `pattern-engineer-go` | When implementing or fixing Go (`.go`, `go.mod`) files. |
+| `pattern-engineer-rust` | When implementing or fixing Rust (`.rs`, `Cargo.toml`) files. |
+| `pattern-engineer-java` | When implementing or fixing Java (`.java`, Maven / Gradle build files of a Java project) files. |
+| `pattern-engineer-kotlin` | When implementing or fixing Kotlin (`.kt` / `.kts`) files. |
+| `pattern-engineer-swift` | When implementing or fixing Swift (`.swift`, `Package.swift`) files. |
 
 **Conditionally invoked — workflow**
 

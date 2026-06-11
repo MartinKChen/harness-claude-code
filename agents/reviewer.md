@@ -60,10 +60,18 @@ Does NOT own: editing code, running tests, deciding product / architecture trade
 | `pattern-reviewer-database` | When the slice touches backend code that includes ORM models or migrations. |
 | `pattern-reviewer-frontend-standard` | When the slice touches frontend code. |
 | `pattern-reviewer-container` | When the slice touches container artifacts (`Dockerfile`, `docker-compose.yaml`, `.dockerignore`, nginx config, entrypoint scripts). |
-| `pattern-reviewer-fastapi` | When the slice touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. |
+| `pattern-reviewer-fastapi` | When the slice touches FastAPI routes, dependencies, middleware, handlers, or `create_app` wiring. (FastAPI slices load this INSTEAD of `pattern-reviewer-api`.) |
+| `pattern-reviewer-api` | When the slice touches HTTP routes, handlers, middleware, or app wiring in any backend framework **other than FastAPI** (Express / Fastify / NestJS / Hono, Gin / Echo / Chi, Axum / Actix, Spring Boot / Ktor, Vapor, Flask / Django). |
+| `pattern-reviewer-node` | When the slice touches server-side JavaScript/TypeScript that runs under Node.js (server entrypoints, Express / Fastify / NestJS / Hono code) — not browser code. |
+| `pattern-reviewer-ssr` | When the slice touches a server-rendered frontend framework (Next.js `app/` / `pages/`, Remix loaders/actions, SvelteKit `+page.server.*`, Nuxt server routes). |
 | `pattern-reviewer-python` | When the slice touches Python (`.py`) files. |
 | `pattern-reviewer-typescript` | When the slice touches TypeScript (`.ts` / `.tsx`) files. |
 | `pattern-reviewer-vite` | When the slice touches frontend code that runs under Vite (`vite.config.*`, `vitest.config.*`, `import.meta.env`). |
+| `pattern-reviewer-go` | When the slice touches Go (`.go`, `go.mod`) files. |
+| `pattern-reviewer-rust` | When the slice touches Rust (`.rs`, `Cargo.toml`) files. |
+| `pattern-reviewer-java` | When the slice touches Java (`.java`, Maven / Gradle build files of a Java project) files. |
+| `pattern-reviewer-kotlin` | When the slice touches Kotlin (`.kt` / `.kts`) files. |
+| `pattern-reviewer-swift` | When the slice touches Swift (`.swift`, `Package.swift`) files. |
 
 **Conditionally invoked — workflow**
 
