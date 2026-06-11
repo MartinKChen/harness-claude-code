@@ -873,6 +873,8 @@ Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to
       : (await agent(
         `Classify the touched paths of slice #${SLICE} into review surfaces. These files changed on the slice branch, checked out READ-ONLY at \`${rprep.worktreePath}\`. Read paths (and, where the spelling is ambiguous, the file contents in the worktree) before deciding — do NOT guess from extensions alone.
 
+If \`docs/stack.yaml\` exists in the worktree, read it first — it is the scaffold-distilled stack manifest (derived from the ADR); trust its declared language/framework/rendering to resolve the framework booleans (fastapi vs httpApi, vite vs ssr, node) instead of re-inferring them from file spellings.
+
 Touched paths:
 ${rprep.touchedPaths.map(p => `- ${p}`).join('\n') || '- (none)'}
 

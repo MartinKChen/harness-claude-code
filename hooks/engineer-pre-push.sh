@@ -46,9 +46,23 @@
 #              fail with "command not found" rather than running the check —
 #              an engineer who skipped local `npm ci` would have green hook
 #              output and red CI.
-#   backend:   uv run ruff check . / uv run ruff format --check . / uv run mypy . /
-#              uv run bandit -r . / uv run pytest
-#   frontend:  biome check . / tsc --noEmit / npm audit / jest
+#   stack-checks: per-surface toolchain gate, two tiers. DELEGATE — a surface
+#              that ships `scripts/ci-checks.sh` (scaffold-project's
+#              single-sourced gate: the SAME script the CI workflow and the
+#              project's committed .githooks/pre-push run) runs exactly that
+#              script and nothing else, so this hook can never drift from CI
+#              and a new stack never requires editing this file. FALLBACK —
+#              no ci-checks.sh: detect the surface's build manifest and run
+#              the built-in set matching the pattern-engineer-<lang> skill:
+#                pyproject.toml → uv run ruff / ruff format --check / mypy /
+#                                 bandit / pytest
+#                package.json   → biome check / tsc --noEmit / jest-or-vitest
+#                go.mod         → gofmt -l / go vet / golangci-lint / go test -race
+#                Cargo.toml     → cargo fmt --check / clippy -D warnings / cargo test
+#                gradlew|mvnw   → ./gradlew check | ./mvnw verify
+#                Package.swift  → swift build / swift test
+#              A manifest whose toolchain binary is absent is a recorded
+#              coverage gap (missing_toolchains), never a silent pass.
 #   container-smoke: presence ≠ correctness. `docker compose up -d --build`
 #              the worktree's stack with a slug-tagged image + slug-named
 #              project, poll `/healthz` (and the SPA root, and a sample
@@ -64,8 +78,32 @@
 #              auth-flow semantic regressions (e.g. reset auto-logging-in),
 #              empty-state-outside-`<main>`, and missing-endpoint-stub
 #              failures that previously only surfaced in CI.
-#   security:  gitleaks (secrets) / trivy fs (CVE + IaC) / semgrep (SAST).
-#              Behavior: when the scanner binary is present, it MUST pass;
+#   security:  universal, language-agnostic scans with a FIX-AWARE policy:
+#              - gitleaks (secrets): BACKSTOP only — the primary home is the
+#                consuming project's pre-commit hook (scaffold wires
+#                .githooks/pre-commit) so a secret never enters a commit at
+#                all; push-time is too late to prevent the leak from landing
+#                in history. Here we scan just the outgoing commit range and
+#                block on any hit.
+#              - trivy fs (dependency CVEs + secrets + IaC misconfig, all
+#                ecosystems): blocks ONLY on actionable findings — a CVE
+#                with a released FixedVersion (bump the dep / base image), a
+#                committed secret, or a misconfiguration. A HIGH/CRITICAL
+#                CVE with NO upstream fix never blocks the push: it is
+#                surfaced as an advisory via additionalContext and the
+#                engineer files a tracking issue instead — an unfixable CVE
+#                would otherwise wedge every push indefinitely.
+#              - osv-scanner: FALLBACK lockfile scanner when trivy is absent
+#                (broad lockfile coverage; its exit code can't split fixable
+#                from unfixable, so an accepted-unfixable finding is
+#                suppressed the OSV-idiomatic way — an IgnoredVulns entry in
+#                osv-scanner.toml citing the tracking issue).
+#              - semgrep (SAST): code-pattern findings are always actionable
+#                — there is no "upstream fix" to wait for — so ERROR
+#                severity blocks unconditionally.
+#              Language-specific SAST (bandit, njsscan, gosec) belongs to the
+#              stack-checks tier / ci-checks.sh, not here.
+#              Behavior: when a scanner binary is present, it MUST pass;
 #              when absent, the hook still emits a warning so the engineer
 #              and the user can see the coverage gap. We don't auto-install
 #              (toolchain churn isn't the hook's job), but we no longer let
@@ -98,6 +136,20 @@ deny() {
         + (if $context == "" then {} else {additionalContext: $context} end)
       )
     }'
+  exit 0
+}
+
+allow_with_context() {
+  # Let the push proceed (no permission decision — normal permission flow
+  # continues) but inject context back to Claude. Used for non-blocking
+  # advisories the engineer must act on AFTER the push (e.g. unfixable-CVE
+  # tracking issues).
+  jq -nc --arg context "$1" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: $context
+    }
+  }'
   exit 0
 }
 
@@ -315,67 +367,186 @@ run_dep_bootstrap() {
   note "dep bootstrap OK"
 }
 
-run_backend_checks() {
-  local backend_dir="$cwd/backend"
-  if [ ! -d "${backend_dir}" ]; then
-    note "backend/ not found under '$cwd' — skipping backend checks"
-    return
-  fi
-  pushd "${backend_dir}" >/dev/null
+# --- stack checks: delegate to ci-checks.sh, fall back to manifest detection --
 
-  run_step "backend:lint"     uv run ruff check .
-  run_step "backend:format"   uv run ruff format --check .
-  run_step "backend:type"     uv run mypy .
-  run_step "backend:security" uv run bandit -r .
-  run_step "backend:test"     uv run pytest
+missing_toolchains=()
 
-  popd >/dev/null
+require_toolchain() {
+  # require_toolchain <binary> <surface-label> → 0 when on PATH; otherwise
+  # record the coverage gap (same loud-warning policy as missing scanners)
+  # and return 1 so the caller skips that toolchain's checks.
+  if command -v "$1" >/dev/null 2>&1; then return 0; fi
+  note "  → ${2}: toolchain '$1' not on PATH — skipping its checks (coverage gap)"
+  missing_toolchains+=("$1 (${2})")
+  return 1
 }
 
-run_frontend_checks() {
-  local frontend_dir="$cwd/frontend"
-  if [ ! -d "${frontend_dir}" ]; then
-    note "frontend/ not found under '$cwd' — skipping frontend checks"
+run_surface_checks() {
+  # One deployable surface (backend/, frontend/, or the worktree root for a
+  # single-package layout). Tier 1: a committed scripts/ci-checks.sh — the
+  # scaffold's single-sourced gate that CI and the project's .githooks
+  # pre-push also run — wins outright; running anything else alongside it
+  # would reintroduce the hook↔CI drift it exists to kill. Tier 2: built-in
+  # checks per build manifest, matching the corresponding
+  # pattern-engineer-<lang> skill's tooling section.
+  local dir="$1" label="$2"
+
+  if [ -f "$dir/scripts/ci-checks.sh" ]; then
+    run_step "${label}:ci-checks" bash -c "cd '$dir' && bash scripts/ci-checks.sh"
     return
   fi
-  pushd "${frontend_dir}" >/dev/null
 
-  run_step "frontend:lint"     npx --no-install biome check .
-  run_step "frontend:format"   npx --no-install biome check .
-  run_step "frontend:type"     npx --no-install tsc --noEmit
-  run_step "frontend:security" npm audit
-  run_step "frontend:test"     npx --no-install jest
-
-  popd >/dev/null
+  if [ -f "$dir/pyproject.toml" ]; then
+    require_toolchain uv "$label" || return 0
+    pushd "$dir" >/dev/null
+    run_step "${label}:lint"     uv run ruff check .
+    run_step "${label}:format"   uv run ruff format --check .
+    run_step "${label}:type"     uv run mypy .
+    run_step "${label}:security" uv run bandit -r .
+    run_step "${label}:test"     uv run pytest
+    popd >/dev/null
+  elif [ -f "$dir/go.mod" ]; then
+    require_toolchain go "$label" || return 0
+    run_step "${label}:format" bash -c "cd '$dir' && unformatted=\"\$(gofmt -l .)\" && { [ -z \"\$unformatted\" ] || { echo \"gofmt needed: \$unformatted\"; exit 1; }; }"
+    run_step "${label}:vet"    bash -c "cd '$dir' && go vet ./..."
+    if command -v golangci-lint >/dev/null 2>&1; then
+      run_step "${label}:lint" bash -c "cd '$dir' && golangci-lint run"
+    else
+      note "  → ${label}: golangci-lint not on PATH — skipping lint (coverage gap)"
+      missing_toolchains+=("golangci-lint (${label})")
+    fi
+    run_step "${label}:test"   bash -c "cd '$dir' && go test -race ./..."
+  elif [ -f "$dir/Cargo.toml" ]; then
+    require_toolchain cargo "$label" || return 0
+    run_step "${label}:format" bash -c "cd '$dir' && cargo fmt --check"
+    run_step "${label}:lint"   bash -c "cd '$dir' && cargo clippy --all-targets -- -D warnings"
+    run_step "${label}:test"   bash -c "cd '$dir' && cargo test"
+  elif [ -f "$dir/gradlew" ]; then
+    require_toolchain java "$label" || return 0
+    run_step "${label}:check" bash -c "cd '$dir' && ./gradlew --no-daemon check"
+  elif [ -f "$dir/mvnw" ]; then
+    require_toolchain java "$label" || return 0
+    run_step "${label}:check" bash -c "cd '$dir' && ./mvnw -q verify"
+  elif [ -f "$dir/Package.swift" ]; then
+    require_toolchain swift "$label" || return 0
+    run_step "${label}:build" bash -c "cd '$dir' && swift build"
+    run_step "${label}:test"  bash -c "cd '$dir' && swift test"
+  elif [ -f "$dir/package.json" ]; then
+    require_toolchain npx "$label" || return 0
+    pushd "$dir" >/dev/null
+    run_step "${label}:lint" npx --no-install biome check .
+    run_step "${label}:type" npx --no-install tsc --noEmit
+    # No `npm audit` here: dependency-CVE gating lives in security:trivy-fs,
+    # which can block on fixable CVEs only — `npm audit` cannot make that
+    # distinction and would wedge the push on advisories with no released fix.
+    if npx --no-install jest --version >/dev/null 2>&1; then
+      run_step "${label}:test" npx --no-install jest
+    elif npx --no-install vitest --version >/dev/null 2>&1; then
+      run_step "${label}:test" npx --no-install vitest run
+    else
+      note "  → ${label}: no jest/vitest resolvable — skipping unit tests (coverage gap)"
+      missing_toolchains+=("jest|vitest (${label})")
+    fi
+    popd >/dev/null
+  else
+    note "  → ${label}: no ci-checks.sh and no recognized build manifest — skipping stack checks"
+  fi
 }
+
+run_stack_checks() {
+  local found=0
+  if [ -d "$cwd/backend" ];  then found=1; run_surface_checks "$cwd/backend" "backend"; fi
+  if [ -d "$cwd/frontend" ]; then found=1; run_surface_checks "$cwd/frontend" "frontend"; fi
+  if [ "$found" -eq 0 ]; then
+    # Single-package layout — the manifest sits at the worktree root.
+    run_surface_checks "$cwd" "root"
+  fi
+}
+
+# Non-blocking vulnerability advisories (unfixable CVEs). Collected by
+# run_security_scans; surfaced via allow_with_context after the verdict so
+# the engineer files tracking issues without the push being held hostage.
+ADVISORIES=""
 
 run_security_scans() {
-  # Cross-language static security scans. Each scanner runs when its binary
-  # is on PATH. When a binary is absent the hook still flags the coverage
-  # gap in the deny-context (via `missing_scanners`) so the engineer / user
-  # can't mistake "scanner not installed" for "no findings."
+  # Universal, language-agnostic security scans with a FIX-AWARE policy (see
+  # the header). Each scanner runs when its binary is on PATH. When a binary
+  # is absent the hook still flags the coverage gap (via `missing_scanners`)
+  # so the engineer / user can't mistake "scanner not installed" for "no
+  # findings."
   missing_scanners=()
 
+  # gitleaks — BACKSTOP for secrets. The primary defense is the consuming
+  # project's pre-commit hook (scaffold-project wires .githooks/pre-commit
+  # with `gitleaks protect --staged`), which stops a secret before it enters
+  # a commit at all. Here we scan only the OUTGOING commit range: cheap, and
+  # it doesn't re-flag already-pushed history this push can't rewrite.
   if command -v gitleaks >/dev/null 2>&1; then
-    run_step "security:gitleaks" gitleaks detect --source "$cwd" --no-banner --redact
+    local upstream
+    upstream="$(git -C "$cwd" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+    if [ -n "$upstream" ]; then
+      run_step "security:gitleaks" gitleaks detect --source "$cwd" --no-banner --redact --log-opts "${upstream}..HEAD"
+    else
+      # First push of the branch — no upstream yet; scan the full worktree.
+      run_step "security:gitleaks" gitleaks detect --source "$cwd" --no-banner --redact
+    fi
   else
     note "security:gitleaks — binary not on PATH; coverage gap"
     missing_scanners+=("gitleaks")
   fi
 
+  # trivy — dependency CVEs (all lockfile ecosystems) + secrets + IaC
+  # misconfig. One JSON scan, partitioned by actionability:
+  #   - vulnerabilities WITH a FixedVersion → block (bump the dep/base image)
+  #   - secrets + misconfigurations        → block (always fixable in-tree)
+  #   - vulnerabilities WITHOUT a fix      → advisory: never blocks; the
+  #     engineer files a tracking issue (kind:enhancement) per finding.
   if command -v trivy >/dev/null 2>&1; then
-    run_step "security:trivy-fs" trivy fs \
-      --severity HIGH,CRITICAL \
-      --skip-dirs node_modules \
-      --skip-dirs .venv \
-      --skip-dirs .git \
-      --exit-code 1 \
-      "$cwd"
+    local trivy_json trivy_err
+    trivy_json="$(mktemp)"
+    if ! trivy_err="$(trivy fs --quiet \
+        --severity HIGH,CRITICAL \
+        --scanners vuln,secret,misconfig \
+        --skip-dirs node_modules --skip-dirs .venv --skip-dirs .git \
+        --format json --output "$trivy_json" \
+        "$cwd" 2>&1)"; then
+      failures+=("security:trivy-fs")
+      fail_logs+=$'\n--- security:trivy-fs ---\ntrivy scan itself failed:\n'"${trivy_err}"$'\n'
+    else
+      local fixable unfixable leaked misconf
+      fixable="$(jq -r '[.Results[]?.Vulnerabilities[]? | select((.FixedVersion // "") != "")] | .[:20][] | "  - \(.VulnerabilityID) \(.PkgName)@\(.InstalledVersion) → fixed in \(.FixedVersion)"' "$trivy_json" 2>/dev/null || true)"
+      unfixable="$(jq -r '[.Results[]?.Vulnerabilities[]? | select((.FixedVersion // "") == "")] | .[:20][] | "  - \(.VulnerabilityID) \(.PkgName)@\(.InstalledVersion) (\(.Severity), no fixed version released)"' "$trivy_json" 2>/dev/null || true)"
+      leaked="$(jq -r '[.Results[]? | .Target as $t | .Secrets[]? | "  - \($t): \(.Title)"] | .[:10][]' "$trivy_json" 2>/dev/null || true)"
+      misconf="$(jq -r '[.Results[]? | .Target as $t | .Misconfigurations[]? | "  - \($t): \(.ID) \(.Title)"] | .[:10][]' "$trivy_json" 2>/dev/null || true)"
+      if [ -n "${fixable}${leaked}${misconf}" ]; then
+        failures+=("security:trivy-fs")
+        fail_logs+=$'\n--- security:trivy-fs (actionable findings — fix before pushing) ---\n'
+        [ -n "$fixable" ] && fail_logs+=$'Fixable HIGH/CRITICAL CVEs (upgrade the dependency / base image):\n'"${fixable}"$'\n'
+        [ -n "$leaked"  ] && fail_logs+=$'Secrets in the tree (remove + rotate):\n'"${leaked}"$'\n'
+        [ -n "$misconf" ] && fail_logs+=$'IaC misconfigurations:\n'"${misconf}"$'\n'
+      else
+        note "security:trivy-fs — no actionable HIGH/CRITICAL findings"
+      fi
+      if [ -n "$unfixable" ]; then
+        ADVISORIES+=$'\n--- security:trivy-fs — HIGH/CRITICAL CVEs with NO released fix (non-blocking) ---\n'"${unfixable}"$'\n'
+      fi
+    fi
+    rm -f "$trivy_json"
+  elif command -v osv-scanner >/dev/null 2>&1; then
+    # Fallback when trivy is absent: osv-scanner covers the same lockfile
+    # ecosystems but its exit code can't split fixable from unfixable. An
+    # accepted-unfixable finding is suppressed the OSV-idiomatic way — an
+    # IgnoredVulns entry in osv-scanner.toml with the tracking-issue URL as
+    # the reason — so the gate stays meaningful.
+    run_step "security:osv-scanner" osv-scanner --recursive "$cwd"
   else
-    note "security:trivy-fs — binary not on PATH; coverage gap"
-    missing_scanners+=("trivy")
+    note "security:trivy-fs / osv-scanner — neither binary on PATH; dependency-CVE coverage gap"
+    missing_scanners+=("trivy (or osv-scanner)")
   fi
 
+  # semgrep — multi-language SAST. A code-pattern finding is always
+  # actionable (the fix is editing the flagged code — there is no upstream
+  # release to wait for), so ERROR severity blocks unconditionally.
   if command -v semgrep >/dev/null 2>&1; then
     run_step "security:semgrep" semgrep scan \
       --config auto \
@@ -611,28 +782,39 @@ run_container_presence_checks
 run_lockfile_tracked_check
 run_worktree_committed_check
 run_dep_bootstrap
-run_backend_checks
-run_frontend_checks
+run_stack_checks
 run_security_scans
 run_container_smoke
 run_e2e_checks
 
 # --- verdict -----------------------------------------------------------------
 
+coverage_gaps=""
+if [ "${#missing_scanners[@]}" -gt 0 ]; then
+  coverage_gaps+="
+NOTE: the following security scanners were not on PATH and contributed no coverage to this run: ${missing_scanners[*]}. Install them locally (or in the engineer's container image) to close the gap."
+fi
+if [ "${#missing_toolchains[@]}" -gt 0 ]; then
+  coverage_gaps+="
+NOTE: the following toolchains were not on PATH, so their stack checks were skipped: ${missing_toolchains[*]}. Install them (or ship a scripts/ci-checks.sh that provides equivalent gating) to close the gap."
+fi
+
 if [ "${#failures[@]}" -gt 0 ]; then
   reason="engineer-pre-push: blocking git push for ${slice_branch} — ${#failures[@]} check(s) failed: ${failures[*]}"
-  context="Failed checks: ${failures[*]}. Fix every failure before pushing again — re-run the failing command(s) locally to see full output, commit the fix, then retry the push.${fail_logs}"
-  if [ "${#missing_scanners[@]}" -gt 0 ]; then
-    context="${context}
-
-NOTE: the following security scanners were not on PATH and contributed no coverage to this run: ${missing_scanners[*]}. Install them locally (or in the engineer's container image) to close the gap."
-  fi
+  context="Failed checks: ${failures[*]}. Fix every failure before pushing again — re-run the failing command(s) locally to see full output, commit the fix, then retry the push.${fail_logs}${coverage_gaps}"
   deny "$reason" "$context"
 fi
 
-if [ "${#missing_scanners[@]}" -gt 0 ]; then
-  note "all enforced checks passed, but ${#missing_scanners[@]} scanner(s) were skipped (not on PATH): ${missing_scanners[*]}"
+if [ "${#missing_scanners[@]}" -gt 0 ] || [ "${#missing_toolchains[@]}" -gt 0 ]; then
+  note "all enforced checks passed, but coverage gaps exist:${coverage_gaps}"
 else
   note "all pre-push checks passed — allowing git push"
+fi
+
+if [ -n "${ADVISORIES}" ]; then
+  # Unfixable HIGH/CRITICAL CVEs: the push proceeds, but each advisory must
+  # get a tracking issue so the debt is visible and revisited — never fixed
+  # ad hoc in this slice, never silently suppressed.
+  allow_with_context "engineer-pre-push: push ALLOWED, but the dependency scan found HIGH/CRITICAL CVEs with no released fix. They do not block this push and you must NOT try to fix them in this slice. AFTER the push completes, create one tracking issue per finding: \`gh issue create --label kind:enhancement --title \"chore(security): track <CVE-id> in <package>\"\` with the affected package@version, why no fix exists yet, and the upgrade trigger to watch. Do not suppress the scanner.${ADVISORIES}${coverage_gaps}"
 fi
 exit 0

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Committed pre-commit hook materialized by scaffold-project and wired via
+#   git config core.hooksPath .githooks
+#
+# Single job: stop a secret from ever ENTERING a commit. Push-time scanning
+# (the engineer pre-push gate, CI) is only a backstop — by the time it fires
+# the secret is already in history and must be rotated even if the push is
+# denied. The cheap, correct place to stop a leak is here, on the staged
+# diff only (fast: scans just what this commit adds).
+#
+# Bypass for a confirmed false positive: `git commit --no-verify`, then add
+# a .gitleaks.toml allowlist entry so the bypass isn't needed twice.
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: WARNING — gitleaks not on PATH; staged-secret scan skipped (coverage gap). Install gitleaks to close it." >&2
+  exit 0
+fi
+
+gitleaks protect --staged --no-banner --redact

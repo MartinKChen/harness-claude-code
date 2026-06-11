@@ -1,13 +1,13 @@
 ---
 name: pattern-reviewer-database
-description: "Migration audit: code-first (models drive migration); autogenerate review; `pytest-alembic` round-trip; post-state assertions by **name** (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`); extensions dropped by downgrade; migration in a `migrate` compose service. Runtime DB audit: column types; FK + RLS-policy indexing; `OFFSET`; `SKIP LOCKED` queues; lock order; `EXPLAIN ANALYZE`. Activate when the diff touches `alembic/versions/*`, ORM models, the `migrate` service, or `pytest-alembic`."
+description: "Migration audit across stacks: code-first, chain-to-head, round-trip (up→down→up reverts), post-state by **name** (`pk_*`/`fk_*`/`uq_*`/`idx_*`/`ck_*`), model↔migration parity, both-direction constraint tests, `migrate` before app. Per-tool: Alembic/pytest-alembic (deep), Prisma/Drizzle, Flyway/Liquibase, golang-migrate/Atlas, sqlx/SeaORM. Runtime: types, FK/RLS indexes, `OFFSET`, `SKIP LOCKED`. Activate on `alembic/versions/`, `prisma/schema.prisma`, `*.sql` migration dirs, `migrate` service."
 ---
 
 # pattern-reviewer-database
 
 ## When to activate
 
-- Reviewing a diff that touches `alembic/versions/*.py`, ORM models with new tables / columns / constraints, `compose.yaml` `migrate` service, or `pytest-alembic` test files.
+- Reviewing a diff that touches a database migration in any tool — Alembic (`alembic/versions/*.py`), Prisma (`prisma/schema.prisma`, `prisma/migrations/`), Drizzle (`drizzle/`), Flyway/Liquibase (`db/migration/*.sql`, `changelog.xml`), golang-migrate/Atlas (`migrations/*.sql`, `atlas.hcl`), sqlx (`migrations/*.sql`)/SeaORM (`migration/`) — ORM/schema models with new tables / columns / constraints, the `compose.yaml` `migrate` service, or migration test files (`pytest-alembic` et al.).
 - Reviewing a diff that adds or substantially changes SQL queries, RLS policies, indexes, pagination, or worker-queue locking logic.
 
 ## Project memory overlay
@@ -21,13 +21,101 @@ After loading this skill, also check `$MAIN_ROOT/.claude/memory/patterns/pattern
 - **Severity is load-bearing.** CRITICAL / HIGH block the gate; MEDIUM / LOW are informational. Use the per-pattern severity assigned below.
 - **Never refer to a finding as `#N`** — GitHub auto-links those to issues. Use a non-numeric handle (quoted title, `F1` / `F2`, `Finding 1`).
 
-## Patterns to review
+## Contract source
+
+The schema contract is `docs/data-model/<entity>.yaml` — entities, columns, types, constraints, indexes. The naming target every migration is audited against (`pk_*`, `fk_*`, `uq_*`, `idx_*`, `ck_*`, `vw_*`) is below under post-state assertions.
+
+## Migration core (tool-neutral)
+
+These rules apply whichever migration tool the diff uses; the **per-tool idiom map** translates each into the tool's spelling, and the **Alembic** section carries the fully-worked detection apparatus.
 
 ### Code-first (HIGH)
 
-- Hand-written migration with no matching ORM model change → flag.
+- Hand-written migration with no matching model/schema change → flag.
 - Schema edited directly in the DB (no migration) → CRITICAL.
 - Model changed without a corresponding migration in the same commit → flag.
+- **Migration-first tools (Flyway/Liquibase):** there is no model to generate from, so map this rule to **schema source of truth + drift check** — a checked-in schema baseline plus a drift check (Flyway `validate`, Liquibase `diff`, Atlas against entities). A migration with no drift gate → flag.
+
+### Chain to head (HIGH)
+
+- New migration that branches off a non-head revision, creating a forked / parallel head → flag (`alembic heads` shows >1; golang-migrate gap; Liquibase merge conflict in the changelog). Two engineers branching from the same head independently is the common cause; resolve to a single head before merge.
+
+### Round-trip reverts (HIGH)
+
+- A migration whose `downgrade`/`down` doesn't actually revert the `upgrade`/`up` — leftover tables/columns/constraints, un-dropped extensions → flag.
+- `upgrade → downgrade → upgrade` not exercised in a test (apply-only) → flag.
+
+### Post-state assertions by name (HIGH)
+
+After applying to head, introspect (`information_schema` / `inspect()` / `prisma db pull` / JDBC metadata) and assert every artifact lands with the explicit name. Naming convention:
+
+| Kind | Prefix | Example |
+|------|--------|---------|
+| Primary key | `pk_<table>` | `pk_users` |
+| Foreign key | `fk_<table>_<col>` | `fk_orders_user_id` |
+| Unique constraint | `uq_<table>_<col>` | `uq_users_email` |
+| Index | `idx_<table>_<col>` | `idx_orders_created_at` |
+| Check constraint | `ck_<table>_<rule>` | `ck_groups_currency_iso4217` |
+| View | `vw_<name>` | `vw_active_users` |
+
+A test that only asserts the migration ran (no schema introspection) or only checks existence without the name → flag. See the Alembic section for a worked BAD/GOOD.
+
+### Model ↔ migration name parity (HIGH)
+
+- The migration must create exactly what the model declares, by the same name. An anonymous constraint on the model side that the migration names explicitly → reflection sees both → flag. Pass explicit names on the model side. (Alembic BAD/GOOD below; the same applies to SeaORM entity vs. migration, Drizzle schema vs. generated SQL.)
+
+### Both-direction constraint tests (HIGH)
+
+For every CHECK / UNIQUE / FK / regex constraint, test BOTH directions — a violating insert is rejected AND a valid insert is accepted. Positive-only → flag.
+
+```python
+# BAD — only positive case (PR #167 shipped a wrong regex this way)
+def test_currency_accepts_alphabetic(db_session):
+    db_session.execute(insert(groups).values(name="x", currency="USD"))  # PASSES
+
+# GOOD — positive + negative cases
+def test_currency_accepts_alphabetic_iso4217(db_session):
+    db_session.execute(insert(groups).values(name="x", currency="USD"))
+
+def test_currency_rejects_digits(db_session):
+    with pytest.raises(IntegrityError):
+        db_session.execute(insert(groups).values(name="x", currency="1A2"))
+
+def test_currency_rejects_lowercase(db_session):
+    with pytest.raises(IntegrityError):
+        db_session.execute(insert(groups).values(name="x", currency="usd"))
+```
+
+Author the negative test(s) BEFORE the constraint regex / index expression — that's what proves the constraint is doing work. **False-positive guard:** a NOT NULL or type constraint enforced by the column definition itself doesn't need a hand-written negative test; reserve this for CHECK / UNIQUE / FK / regex semantics.
+
+### Data ≠ schema migrations (MEDIUM)
+
+- A single migration mixing a schema change (`ALTER TABLE`) and a large data backfill (`UPDATE …`) → flag; split so the schema change can be applied/reverted independently of the slow backfill.
+- A data backfill that isn't idempotent (re-running it double-applies or errors) → flag. Backfills must be re-runnable (`WHERE col IS NULL`, `INSERT … ON CONFLICT DO NOTHING`). **False-positive guard:** a small in-revision backfill of a freshly-added NOT NULL column, guarded by the column not yet existing, is fine.
+
+### `migrate` runs before the app (HIGH)
+
+- Migration runs inside the backend image's entrypoint (`alembic upgrade head` / `prisma migrate deploy` chained into the app start) → flag; the app accepts traffic against a stale schema and N replicas race.
+- Migration runs in a framework `startup` hook (FastAPI `startup`, Spring `ApplicationRunner` doing `flyway.migrate()` in-process) → flag (same problem).
+- Correct shape: `migrate` is a dedicated compose service running once before the app starts, same image with a different `command:` (the tool's apply step). See `templates/compose-migrate.yaml`.
+
+### Irreversible migrations (MEDIUM)
+
+- Migration drops a column with data and has no documentation in the revision body → flag.
+- `downgrade`/`down` of an irreversible migration silently passes instead of failing loudly → flag.
+- Recommended shape: fail loudly (`raise NotImplementedError("irreversible: data loss")`) + skip the round-trip test with a reason.
+
+## Per-tool idiom map
+
+| Tool (stack) | Generate | Round-trip / test | Audit notes |
+|---|---|---|---|
+| **Alembic + pytest-alembic** (Python) | `alembic revision --autogenerate` | `migrate_up_one`/`migrate_down_one` + `inspect()` | Deep apparatus below. |
+| **Prisma / Drizzle** (Node/TS) | `prisma migrate dev` / `drizzle-kit generate` | introspect after apply; `drizzle-kit check` for drift | Edited generated SQL without regenerating from schema → flag. |
+| **Flyway / Liquibase** (JVM) | *migration-first* | `migrate`/`update` + `rollback`; JDBC metadata | No model to generate from → require schema baseline + drift check (see Code-first). |
+| **golang-migrate / Atlas** (Go) | golang-migrate paired `*.up.sql`/`*.down.sql`; Atlas `migrate diff` | `up`/`down`; Atlas `migrate lint` | Missing/empty `*.down.sql` → round-trip fail. Plain golang-migrate is migration-first → drift check. |
+| **sqlx / SeaORM** (Rust) | sqlx hand-authored; SeaORM `migrate generate` | `sqlx migrate run/revert`; `Migrator::up/down` | SeaORM `up`/`down` must mirror; assert artifacts via introspection. |
+
+## Alembic (deep default — Python)
 
 ### Autogenerate review (MEDIUM)
 
@@ -44,20 +132,7 @@ Autogenerate misses these — verify the revision body covers each that applies:
 - `migrate_up_to("head")` only, no `migrate_down_one()` / `migrate_up_one()` → flag (round-trip not exercised).
 - Test exists but only asserts "did not crash" — no schema introspection → flag.
 
-### Post-state assertions by name (HIGH)
-
-After `migrate_up_to("head")`, query `information_schema` (or `inspect()`) and assert every artifact lands with the explicit name. Naming convention:
-
-| Kind | Prefix | Example |
-|------|--------|---------|
-| Primary key | `pk_<table>` | `pk_users` |
-| Foreign key | `fk_<table>_<col>` | `fk_orders_user_id` |
-| Unique constraint | `uq_<table>_<col>` | `uq_users_email` |
-| Index | `idx_<table>_<col>` | `idx_orders_created_at` |
-| Check constraint | `ck_<table>_<rule>` | `ck_groups_currency_iso4217` |
-| View | `vw_<name>` | `vw_active_users` |
-
-Missing name assertion (only existence checked) → flag.
+### Post-state assertions by name — worked example
 
 ```python
 # BAD — only existence checked
@@ -82,7 +157,7 @@ def test_groups_migration(alembic_runner, alembic_engine):
 - Upgrade installs an extension (`CREATE EXTENSION IF NOT EXISTS citext` / `uuid-ossp` / `pgcrypto`) but downgrade doesn't `DROP EXTENSION IF EXISTS` → flag.
 - Downgrade test doesn't assert the extension is gone → flag.
 
-### ORM ↔ migration name parity (HIGH)
+### ORM ↔ migration name parity — worked example
 
 ```python
 # BAD — anonymous constraint on model; migration creates `uq_users_email`; reflection sees both
@@ -91,30 +166,6 @@ __table_args__ = (UniqueConstraint("email"),)
 # GOOD — explicit name matching the migration
 __table_args__ = (UniqueConstraint("email", name="uq_users_email"),)
 ```
-
-### Both-direction constraint tests (HIGH)
-
-For every CHECK / UNIQUE / FK / regex constraint, test BOTH directions:
-
-```python
-# BAD — only positive case (PR #167 shipped a wrong regex this way)
-def test_currency_accepts_alphabetic(db_session):
-    db_session.execute(insert(groups).values(name="x", currency="USD"))  # PASSES
-
-# GOOD — positive + negative cases
-def test_currency_accepts_alphabetic_iso4217(db_session):
-    db_session.execute(insert(groups).values(name="x", currency="USD"))
-
-def test_currency_rejects_digits(db_session):
-    with pytest.raises(IntegrityError):
-        db_session.execute(insert(groups).values(name="x", currency="1A2"))
-
-def test_currency_rejects_lowercase(db_session):
-    with pytest.raises(IntegrityError):
-        db_session.execute(insert(groups).values(name="x", currency="usd"))
-```
-
-Author the negative test(s) BEFORE the constraint regex / index expression — that's what proves the constraint is doing work.
 
 ### `conftest.py` pre-warming (HIGH)
 
@@ -127,11 +178,7 @@ Author the negative test(s) BEFORE the constraint regex / index expression — t
 - `migrate_up_to("head")` without matching `migrate_down_to("base")` or transactional fixture → flag (DB stays dirty for next test).
 - Shared session-scope DB without rollback → flag.
 
-### `migrate` compose service (HIGH)
-
-- Migration runs inside the backend image's entrypoint (`alembic upgrade head` chained into `uvicorn ...`) → flag; the app accepts traffic against a stale schema and N replicas race.
-- Migration runs in a FastAPI `startup` hook → flag (same problem).
-- Correct shape: `migrate` is a dedicated compose service running once before `backend` starts, same image with a different `command:`.
+## Runtime DB audit
 
 ### Column types (HIGH)
 
@@ -224,12 +271,6 @@ External HTTP / queue / email call inside an open transaction → HIGH.
 
 - New or substantially-changed query that hits a large table, joins ≥2 tables, or appears in a user-facing list endpoint, with no `EXPLAIN ANALYZE` evidence in the PR description or a comment → MEDIUM. Request the plan.
 - `Seq Scan` on a >10k-row table in the planner output → HIGH (missing index or bad predicate).
-
-### Irreversible migrations (MEDIUM)
-
-- Migration drops a column with data and has no documentation in the revision body → flag.
-- `downgrade()` of an irreversible migration silently passes instead of raising → flag.
-- Recommended shape: `raise NotImplementedError("irreversible: data loss")` + `@pytest.mark.skip(reason="irreversible — see <revision>")`.
 
 ## Templates
 

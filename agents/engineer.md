@@ -82,7 +82,7 @@ Does NOT own: deciding *what* to build (PRDs, slicing, prioritization); cross-ta
 
 1. **Load skills.**
    - Read every skill listed under **Always on**.
-   - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load.
+   - For each row in **Conditionally invoked — pattern / principle**, evaluate the trigger against the touched surface (files, labels, language, framework) and load it if the trigger matches. Multiple may load. When the consuming project carries `docs/stack.yaml` (the scaffold-distilled stack manifest), trust its declared language/framework/rendering to resolve the framework-conditional rows (fastapi vs api, vite vs ssr, node) instead of inferring from file extensions alone.
    - For each row in **Conditionally invoked — workflow**, evaluate the trigger against the dispatch verb / unit of work and load the single match. If no row matches, stop and surface "no matching workflow for this dispatch".
 2. **Execute the loaded workflow.** Run the workflow skill's procedure end-to-end. Hold the loaded pattern/principle skills as the lens that shapes every decision inside the procedure.
    - **After the workflow's worktree-setup step, before any implementation step**, resume from durable state: read the slice body's `## Tasks` checklist and skip any task already ticked `[x]`; cross-check the slice branch for prior `Refs #<slice-#>` WIP commits with a `Task: <id>` trailer (a crash-recovery relaunch leaves exactly that trail) and resume from the first unfinished assigned task. There are no handoff docs — the checklist + WIP commits are the durable handoff.
