@@ -1,11 +1,11 @@
 ---
 name: workflow-engineer-fix-slice
-description: "Address slice-review findings on one slice. Read the slice body and the newest slice-review comment (newer than the last `Refs #<slice#>` commit), set up the slice worktree, drive TDD per findings (production code only — never modify E2E specs), commit with `Refs #<slice#>` + `Task: <id>` trailers, push, post a summary comment. Activate when dispatched with `Fix the review feedback on slice #<n>` or '/workflow-engineer-fix-slice'."
+description: "Address slice-review findings on one slice. Read the slice body and EVERY slice-review + human comment newer than the last `Refs #<slice#>` commit (union their findings — newest does not supersede older un-actioned reviews), set up the slice worktree, drive TDD per findings (production code only — never modify E2E specs), commit with `Refs #<slice#>` + `Task: <id>` trailers, push, post a summary comment. Activate when dispatched with `Fix the review feedback on slice #<n>` or '/workflow-engineer-fix-slice'."
 ---
 
 # workflow-engineer-fix-slice
 
-Address slice-review findings on a single slice. Dispatched after the slice review (the `runReviewSlice()` fan-out in `implement-slice`) returns a BLOCK verdict. Scope is read from the most recent slice-review comment on the slice (newer than the slice branch's last `Refs #<slice#>` commit), with user directives in the same window overriding.
+Address slice-review findings on a single slice. Dispatched after the slice review (the `runReviewSlice()` fan-out in `implement-slice`) returns a BLOCK verdict. Scope is the **union of every slice-review comment newer than the slice branch's last `Refs #<slice#>` commit** — not just the newest one — with all user directives in the same window overriding. A later review never supersedes an earlier un-actioned review; only a landed fix commit retires findings and advances the window.
 
 In the new model, E2E passing is a separate earlier phase (`workflow-engineer-diagnose-e2e` + `workflow-engineer-fix-e2e`); this fix loop only addresses the reviewer's findings. The calling workflow re-runs the slice review after the fix — this skill does no re-validation and flips no labels.
 
@@ -53,7 +53,12 @@ The cutoff is the authored timestamp of the most recent commit on the slice bran
 
 If no `Refs #<slice#>` commit exists on the branch yet, read all comments on the slice.
 
-Pull every comment on the slice issue. Read **non-reviewer comments first** — user-posted directives in this window are binding and override reviewer suggestions, ADRs, and default conventions. Then read the latest slice-review comment newer than the cutoff. The fan-out posts **two** review headers — `# Slice Gate Review` (spec / contract / security — the gating verdict) and `# Slice Quality Review` (code-quality, advisory) — while the single-context fallback reviewer posts a combined `# Slice Review`; match any of `# Slice Gate Review` / `# Slice Quality Review` / `# Slice Review` / `# Review`. Your dispatch verb tells you which to act on: a **gating** fix targets the newest `# Slice Gate Review`, a **quality/polish** fix targets the newest `# Slice Quality Review`.
+Pull every comment on the slice issue, then keep only those **newer than the cutoff** — that set is the in-scope window. Two comment kinds matter:
+
+- **Human (non-reviewer) comments.** Read these first. EVERY user-posted comment in the window is binding and overrides reviewer suggestions, ADRs, and default conventions. There can be more than one — honor all of them, not just the latest.
+- **Reviewer comments.** The fan-out posts **two** review headers — `# Slice Gate Review` (spec / contract / security — the gating verdict) and `# Slice Quality Review` (code-quality, advisory) — while the single-context fallback reviewer posts a combined `# Slice Review`; match any of `# Slice Gate Review` / `# Slice Quality Review` / `# Slice Review` / `# Review`. Your dispatch verb tells you which kind to act on: a **gating** fix targets `# Slice Gate Review` (plus `# Slice Review` / `# Review`), a **quality/polish** fix targets `# Slice Quality Review`.
+
+**Take the UNION of every in-window review comment of your target kind — never just the newest one.** More than one un-actioned review can sit in the window: a killed-then-relaunched run, a re-review that fired before a fix landed, or a reviewer re-run can each post a fresh review with NO fix commit between them. Because the cutoff is the last `Refs #<slice#>` fix commit, *every* review newer than it is un-addressed by definition. Collect the must-fix findings from ALL of them and dedupe (same `file` + same finding ≈ same class → address once, preferring the newest comment's BAD/GOOD detail). A finding raised in an earlier in-window review but missing from the newest is STILL in scope — a fresh-look re-review routinely fails to re-surface a prior finding (or a fix introduces a new one), and silently dropping it is the exact failure mode this rule exists to prevent. Only a landed fix commit retires findings.
 
 If no in-scope reviewer comment exists, halt and surface `fix dispatched but no reviewer comment newer than the last Refs #<slice#> commit on the slice`.
 
@@ -63,9 +68,9 @@ If no in-scope reviewer comment exists, halt and surface `fix dispatched but no 
 - **Defer** — advisory; do NOT address this cycle. The reviewer explicitly traded impact against effort and decided it's not worth the churn now. Skipping it is the correct action. Defer is a **quality-lane** class: gate reviews class every gating I:H *and* I:M finding as `Fix now` (gating findings are never deferred — a skipped gating MEDIUM can be re-graded HIGH by a later round and read as a "new" blocker), so a `Defer` you encounter will almost always be in a `# Slice Quality Review`. Slice-level Defer findings are common there — cross-task integration fixes often demand multi-task or schema-level churn that doesn't earn its keep within a single slice cycle.
 - **Nit** — optional. Fix only when obviously trivial AND already in-scope.
 
-**Gate-fix dispatches inline the pickup set.** A gating fix dispatch (the `Fix the gating review feedback …` verb) usually carries the `Fix`-class findings inline in the dispatch prompt itself — the workflow holds them structurally. Treat that inlined list as the authoritative pickup set: address EVERY finding on it this cycle (I:M included), using the `# Slice Gate Review` comment for full detail (BAD/GOOD snippets). If the dispatch carries no inlined list, fall back to the comment's `Fix now` findings as before.
+**Gate-fix dispatches inline a pickup set.** A gating fix dispatch (the `Fix the gating review feedback …` verb) usually carries the latest round's `Fix`-class findings inline in the dispatch prompt itself — the workflow holds them structurally. Treat that inlined list as a must-fix **floor, not a ceiling**: address EVERY finding on it this cycle (I:M included), AND union it with the must-fix findings you collected from every in-window review comment (the step above) so an earlier un-actioned review's findings are never dropped. Use the `# Slice Gate Review` comment(s) for full detail (BAD/GOOD snippets). If the dispatch carries no inlined list, the union of in-window must-fix findings IS the pickup set.
 
-A user directive in the comment window can promote a `Defer` or `Nit` to must-fix, or demote a `Fix now` to skip — user directives always win. If no `Fix now` finding exists, no inlined dispatch list names anything, *and* no user directive promotes anything, halt and surface `fix dispatched but no Fix-now findings or promoting user directives in the in-scope window`.
+A user directive in the comment window can promote a `Defer` or `Nit` to must-fix, or demote a `Fix now` to skip — user directives always win. If no `Fix now` finding exists in any in-window review, no inlined dispatch list names anything, *and* no user directive promotes anything, halt and surface `fix dispatched but no Fix-now findings or promoting user directives in the in-scope window`.
 
 **Legacy reviewer comments** (severity-only, no `[<class> · I:<x>/E:<y>]` prefix): treat CRITICAL / HIGH as `Fix now`, MEDIUM as `Defer`, LOW as `Nit`.
 
@@ -114,7 +119,7 @@ Terminal action. Exit. Do NOT flip any label — the calling workflow re-runs th
 ## Iron rules
 
 - **User directives in the comment window override everything else.**
-- **Scope from the comment window, not from labels.** Only comments newer than the last `Refs #<slice#>` commit are in scope.
+- **Scope from the comment window, not from labels.** Only comments newer than the last `Refs #<slice#>` commit are in scope — but address the UNION of EVERY review comment (and every human comment) in that window, never just the newest. A later review does not supersede an earlier un-actioned one; only a landed fix commit retires findings and advances the cutoff.
 - **Production-only fixes.** Never modify E2E specs from this lane. (E2E passing is the separate Pass-E2E phase — `workflow-engineer-diagnose-e2e` + `workflow-engineer-fix-e2e`; this loop only addresses review findings.)
 - **Contracts are read-only in this lane.** Never edit `docs/api-contract/*` or `docs/data-model/*`. A finding that the implementation diverges from the contract is fixed by changing the CODE to match the contract — never the contract to match the code. If the contract itself is wrong/incomplete, flip the slice to `status:need-attention`, post a `# Contract change requested` comment (entity, exact clause, what's needed, why), and exit. Do not self-amend.
 - **Every commit carries `Refs #<slice#>`** plus a `Task: <id>` trailer where the finding maps to one.
