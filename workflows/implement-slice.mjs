@@ -1475,7 +1475,7 @@ if (gateApprovedAtTip) {
   if (gateEntry.action === 'fix-first') {
     log(`Gate review: standing BLOCK with no landed fix — ${gateEntry.reason}. Dispatching an engineer fix before the first review.`)
     await agent(
-      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment.`,
+      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — address the UNION of EVERY \`# Slice Gate Review\` BLOCK comment newer than the last \`Refs #${SLICE}\` fix commit (a relaunch with no landed fix can leave more than one standing review, and a fresh-look re-review may not re-surface a prior finding), plus any human directives in that same window. Do NOT act on only the newest comment.`,
       { agentType: ENGINEER, phase: 'Gate review', label: 'gate-fix:resume' },
     )
   }
@@ -1510,16 +1510,20 @@ if (gateApprovedAtTip) {
       return halt(`Gate review churn-stalled — ${CHURN_ROUNDS} consecutive rounds each surfaced NEW blocker(s) on code unchanged since the prior round (reviewer noise, not fix regressions); a human should look. Latest churn: ${fmtChurn(churn)}`)
     if (r.reviewedSha) prior = { reviewedSha: r.reviewedSha, findings: r.findings ?? [] }
     log(`Gate review: round ${round} returned BLOCK — dispatching an engineer fix and re-reviewing.`)
-    // The dispatch inlines every Fix-class gating finding (the workflow already
-    // holds them structurally) so the engineer doesn't have to re-find and re-parse
-    // the verdict comment — and so the gating I:M findings (class Fix, see
+    // The dispatch inlines THIS round's Fix-class gating findings (the workflow
+    // already holds them structurally) so the engineer doesn't have to re-find and
+    // re-parse the verdict comment — and so the gating I:M findings (class Fix, see
     // scoreFinding) ride along in the same round instead of waiting to flap into a
-    // later-round blocker. The comment stays the source of full detail (BAD/GOOD
-    // snippets).
+    // later-round blocker. The inlined list is a must-fix FLOOR, not a ceiling: per
+    // workflow-engineer-fix-slice the engineer unions it with the findings of every
+    // OTHER gate-review comment still in the fix window (newer than the last
+    // `Refs #<slice#>` commit), so an earlier un-actioned review whose findings this
+    // round's fresh-look re-review failed to re-surface is never silently dropped.
+    // The comment(s) stay the source of full detail (BAD/GOOD snippets).
     const fixList = (r.findings ?? []).filter(f => f.cls === 'Fix')
       .map(f => `- [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\`\n  Fix: ${f.fix}`).join('\n')
     await agent(
-      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the newest \`# Slice Gate Review\` comment for full detail. Every finding below is \`Fix\`-class and MUST be addressed this round (gating findings are never deferred):\n${fixList}`,
+      `Fix the gating review feedback (spec-compliance / contract / security) on slice #${SLICE} — see the \`# Slice Gate Review\` comment(s) newer than the last \`Refs #${SLICE}\` fix commit for full detail (union them; do NOT act on only the newest). Every finding below is \`Fix\`-class and MUST be addressed this round (gating findings are never deferred); union them with any in-window finding not listed here:\n${fixList}`,
       { agentType: ENGINEER, phase: 'Gate review', label: `gate-fix:${round}` },
     )
   }
@@ -1587,7 +1591,7 @@ if (!qualityAlreadyRan) {
     // Defer/Nit findings. Behavior-preserving — the existing tests stay green.
     log(`Quality review: one polish pass over ${debt1.length} non-blocking finding(s), then one re-review.`)
     await agent(
-      `Address the code-quality feedback on slice #${SLICE}. This is the ONE-SHOT polish pass AFTER the slice's acceptance / contract / security gate already APPROVED — the gating blockers are resolved, so fix the non-blocking code-quality findings (the \`Defer\` / \`Nit\` items) in the newest \`# Slice Quality Review\` comment. Production code only, behavior-preserving (existing tests stay green). Whatever you don't get to this pass is fine — it will be triaged into refactor / enhancement issues afterward.`,
+      `Address the code-quality feedback on slice #${SLICE}. This is the ONE-SHOT polish pass AFTER the slice's acceptance / contract / security gate already APPROVED — the gating blockers are resolved, so fix the non-blocking code-quality findings (the \`Defer\` / \`Nit\` items) across EVERY \`# Slice Quality Review\` comment newer than the last \`Refs #${SLICE}\` fix commit (union them; do NOT act on only the newest), honoring any human directives in that same window. Production code only, behavior-preserving (existing tests stay green). Whatever you don't get to this pass is fine — it will be triaged into refactor / enhancement issues afterward.`,
       { agentType: ENGINEER, phase: 'Quality review', label: 'quality-fix' },
     )
     // The +1 review: re-review once so the triage below files only what actually
