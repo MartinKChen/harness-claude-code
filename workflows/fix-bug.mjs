@@ -109,8 +109,8 @@ const REVIEW_PREP = {
     haltReason:   { type: ['string', 'null'] },
     worktreePath: { type: 'string' },
     headSha:      { type: 'string', description: 'the worktree HEAD commit sha (`git rev-parse HEAD`) — the exact commit this review judges' },
-    scopeNote:    { type: ['string', 'null'], description: 'set only if diff scope had to fall back' },
-    touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main..HEAD` paths, unclassified' },
+    scopeNote:    { type: ['string', 'null'], description: 'set only if the diff scope had to fall back OR the branch is materially behind origin/main (staleness warning); null otherwise' },
+    touchedPaths: { type: 'array', items: { type: 'string' }, description: 'raw `git diff --name-only origin/main...HEAD` (three-dot, merge-base scoped) paths, unclassified' },
     changedSincePaths: { type: 'array', items: { type: 'string' }, description: 'paths changed since the prior review round (`git diff --name-only <priorSha>..HEAD`); [] when there is no prior round' },
   },
   required: ['ok', 'haltReason', 'worktreePath', 'headSha', 'scopeNote', 'touchedPaths', 'changedSincePaths'],
@@ -573,12 +573,13 @@ async function runReview(phaseTitle, fixBranch, reviewMode = 'gate', roundCtx = 
 
 Steps:
 1. Set up the read-only worktree on the fix branch \`${fixBranch}\`: \`bash skills/operation-git/scripts/setup-worktree.sh ${fixBranch}\` (NO --merge-main). Capture the printed worktreePath. If it fails, return ok=false with a haltReason.
-2. Compute the touched paths vs origin/main inside the worktree: \`git -C <worktreePath> diff --name-only origin/main..HEAD\`. If that is empty, set scopeNote explaining the fallback; otherwise scopeNote=null.
-3. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
-4. ${roundCtx?.reviewedSha
+2. Compute the paths this fix actually changed — THREE-DOT, scoped to the merge-base so commits that landed on origin/main AFTER this branch forked are excluded: \`git -C <worktreePath> diff --name-only origin/main...HEAD\` (three dots, NOT two — two-dot \`origin/main..HEAD\` compares the diverged tips directly and drags every later main commit into the diff as a phantom deletion, ballooning the review far beyond what the fix touched). If that is empty, set scopeNote explaining the fallback.
+3. Branch-freshness guard: measure how far the branch is behind main with \`git -C <worktreePath> rev-list --count HEAD..origin/main\`. If that count is 25 or more the branch forked long ago and its merge-base is stale; set scopeNote to a warning like "branch is N commits behind origin/main — integrate origin/main before opening the PR; this review is correctly merge-base-scoped, but conflicts and cross-slice contract drift will not surface until PR time" (append it if scopeNote already carries the fallback note from step 2). Otherwise leave scopeNote null.
+4. Capture the worktree HEAD sha: \`git -C <worktreePath> rev-parse HEAD\` → headSha.
+5. ${roundCtx?.reviewedSha
     ? `Compute the paths changed since the prior review round: \`git -C <worktreePath> diff --name-only ${roundCtx.reviewedSha}..HEAD\` → changedSincePaths (an empty array if the command fails).`
     : 'changedSincePaths = [] (there is no prior review round).'}
-5. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
+6. Return those touched paths verbatim as touchedPaths (the raw list) — do NOT classify or interpret them.
 
 Return the REVIEW_PREP object. The worktreePath you return is handed verbatim to every downstream dimension agent — make sure it is correct and on the fix branch tip.`,
       { label: 'review-prep', phase: phaseTitle, schema: REVIEW_PREP, model: WRITER_MODEL },
@@ -631,7 +632,7 @@ The prior round judged commit \`${roundCtx.reviewedSha}\` and reported the findi
 Prior findings to closure-check:
 ${roundCtx.findings.map((f, i) => `${i + 1}. [${f.severity} · ${f.dimension}] ${f.title} — \`${f.file}\``).join('\n')}` : ''
 
-    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main..HEAD\`. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.${anchorBlock}`
+    const diffCtx = `Review the bug-fix branch \`${fixBranch}\` checked out READ-ONLY at \`${rprep.worktreePath}\`. The diff under review is \`git -C ${rprep.worktreePath} diff origin/main...HEAD\` — a THREE-DOT diff, scoped to the merge-base, so it is EXACTLY what this fix changed since it forked from main and EXCLUDES commits that landed on main afterward. Review ONLY this diff: a file or hunk absent from it is out of scope — do NOT flag it, even if it looks wrong on its own (it belongs to another branch, or to main). Use two dots (\`origin/main..HEAD\`) NOWHERE — on a branch that has fallen behind main it reverses every later main commit into a phantom deletion and floods the review with out-of-scope findings. Read the changed files and their surrounding context inside that worktree. Do NOT edit anything.${anchorBlock}`
 
     // The gate review and the quality review are now SEPARATE passes (see the Gate
     // review / Quality review phases), so a single runReview call never mixes the two:
